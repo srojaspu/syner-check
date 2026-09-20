@@ -1,0 +1,87 @@
+/** Backend contract mirrors (same JSON the FastAPI endpoints return). */
+
+export type TipoDocumento = "FACTURA" | "BOLETA" | "NOTA DE CREDITO";
+
+export interface SessionUser {
+  email: string;
+  name: string;
+  picture: string;
+  auth_mode: string;
+}
+
+export interface Currency {
+  isoCode?: string;
+  name?: string;
+  symbol?: string;
+}
+
+export interface Contact {
+  idNumber?: string;
+  name?: string;
+  email?: string;
+}
+
+export interface DocItem {
+  sku?: string;
+  skuPu?: string;
+  description?: string;
+  quantity?: number;
+  crossUnitPrice?: number;
+  crossPrice?: number;
+}
+
+export interface DocTax {
+  name?: string;
+  base?: number;
+  amount?: number;
+}
+
+export interface DocPayment {
+  medio?: string;
+  name?: string;
+  cardProvider?: string;
+  serviceProvider?: string;
+  authorization?: string;
+  amount?: number;
+  currency?: Currency;
+}
+
+/** One voucher row, from summary lists or search results. */
+export interface Voucher {
+  oid: string;
+  number?: string;
+  date?: string;
+  /** Emission timestamp; absent on credit notes (schema has none). */
+  createdDate?: string;
+  tipo: TipoDocumento;
+  seller?: string;
+  contactName?: string;
+  contact?: Contact;
+  currency?: Currency;
+  netTotal?: number;
+  crossTotal?: number;
+  docRef?: string;
+  items?: DocItem[];
+  taxes?: DocTax[];
+  payments?: DocPayment[];
+  in_sql: boolean;
+  /** SQL index row, present only on sql_index search hits. */
+  sql?: Record<string, unknown>;
+}
+
+export interface SummaryResponse {
+  documents: Record<string, Voucher[]>;
+  sql_count: number;
+  graphql_count: number;
+  range: { start: string; end: string };
+}
+
+export interface SearchResponse {
+  results: Voucher[];
+  source: "sql_index" | "graphql_fallback";
+  searched_range?: { start: string; end: string };
+}
+
+export interface DocumentResponse {
+  document: Voucher;
+}

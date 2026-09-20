@@ -25,6 +25,9 @@ class FakeGateway:
     def __init__(self, docs_by_key):
         self.docs_by_key = docs_by_key
         self.calls: list[tuple[str, str, str]] = []
+        self.summary_calls: list[tuple[str, str, tuple]] = []
+        self.serie_calls: list[tuple[str, str]] = []
+        self.detail_serie_calls: list[tuple[str, str]] = []
 
     def detail(self, tipo, start_iso, end_iso, number=None):
         self.calls.append((tipo, start_iso, end_iso))
@@ -35,31 +38,61 @@ class FakeGateway:
         return docs
 
     def summary(self, start_iso, end_iso, tipos):
-        raise AssertionError("not used here")
+        self.summary_calls.append((start_iso, end_iso, tuple(tipos)))
+        out: dict[str, list[dict]] = {t: [] for t in tipos}
+        for (tipo, doc_date), docs in self.docs_by_key.items():
+            if tipo in out and start_iso <= doc_date <= end_iso:
+                out[tipo].extend(docs)
+        return out
+
+    def search_by_serie(self, tipo, number):
+        self.serie_calls.append((tipo, number))
+        prefix = (number or "").strip().upper()
+        out = []
+        for (t, _date), docs in self.docs_by_key.items():
+            if t == tipo:
+                for d in docs:
+                    if str(d.get("number", "")).strip().upper().startswith(prefix):
+                        out.append(d)
+        return out
+
+    def detail_by_serie(self, tipo, number):
+        self.detail_serie_calls.append((tipo, number))
+        prefix = (number or "").strip().upper()
+        out = []
+        for (t, _date), docs in self.docs_by_key.items():
+            if t == tipo:
+                for d in docs:
+                    if str(d.get("number", "")).strip().upper().startswith(prefix):
+                        out.append(d)
+        return out
 
 
 class SearchTests(unittest.TestCase):
     def test_sql_index_caches_and_dedups(self):
         rows = [
-            {"TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
-            {"TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
+            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
+            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
         ]
-        gw = FakeGateway({("FACTURA", "2026-09-01"): [{"oid": "A1", "number": "F001"}]})
+        gw = FakeGateway({("FACTURA", "2026-09-01"): [
+            {"oid": "A1", "number": "F001"},
+            {"oid": "A2", "number": "F001"},
+        ]})
         res = search_by_number(
             FakeReader(rows),
             gw,
             number="F001",
-            tipos=[TipoDocumento.FACTURA, TipoDocumento.BOLETA],
-            start_iso=None,
-            end_iso=None,
-            max_range_days=93,
             fallback_days=90,
             today=date(2026, 9, 20),
         )
         self.assertEqual(res["source"], "sql_index")
-        self.assertEqual(len(res["results"]), 1)
-        self.assertTrue(res["results"][0]["in_sql"])
-        self.assertEqual(gw.calls.count(("FACTURA", "2026-09-01", "2026-09-01")), 1)
+        self.assertEqual(len(res["results"]), 2)
+        by_oid = {r["oid"]: r for r in res["results"]}
+        self.assertTrue(by_oid["A1"]["in_sql"])
+        self.assertFalse(by_oid["A2"]["in_sql"])
+        # serie is used for FACTURA/BOLETA (once per tipo, not per SQL row)
+        self.assertIn(("FACTURA", "F001"), gw.serie_calls)
+        self.assertIn(("BOLETA", "F001"), gw.serie_calls)
 
     def test_graphql_fallback(self):
         gw = FakeGateway({("BOLETA", "2026-09-02"): [{"oid": "B9", "number": "B009"}]})
@@ -67,10 +100,6 @@ class SearchTests(unittest.TestCase):
             FakeReader([]),
             gw,
             number="B009",
-            tipos=[TipoDocumento.BOLETA],
-            start_iso=None,
-            end_iso=None,
-            max_range_days=93,
             fallback_days=90,
             today=date(2026, 9, 20),
         )
@@ -113,10 +142,23 @@ class SummarizeTests(unittest.TestCase):
 class DetailTests(unittest.TestCase):
     def test_found_and_not_found(self):
         gw = FakeGateway({("BOLETA", "2026-09-02"): [{"oid": "B9", "number": "B009"}]})
-        doc = get_detail(gw, tipo=TipoDocumento.BOLETA, oid="B9", doc_date_iso="2026-09-02")
+        doc = get_detail(
+            gw,
+            tipo=TipoDocumento.BOLETA,
+            oid="B9",
+            doc_date_iso="2026-09-02",
+            number="B009",
+        )
         self.assertEqual(doc["document"]["oid"], "B9")
+        self.assertIn(("BOLETA", "B009"), gw.detail_serie_calls)
         with self.assertRaises(NotFoundError):
-            get_detail(gw, tipo=TipoDocumento.BOLETA, oid="ZZ", doc_date_iso="2026-09-02")
+            get_detail(
+                gw,
+                tipo=TipoDocumento.BOLETA,
+                oid="ZZ",
+                doc_date_iso="2026-09-02",
+                number="B009",
+            )
 
 
 if __name__ == "__main__":

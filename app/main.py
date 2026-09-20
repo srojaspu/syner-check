@@ -90,7 +90,9 @@ async def security_and_request_middleware(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    html = (BASE_DIR / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+    html = (BASE_DIR / "app" / "static" / "frontend" / "index.html").read_text(
+        encoding="utf-8"
+    )
     return HTMLResponse(html)
 
 
@@ -199,28 +201,15 @@ async def api_summary(
 async def api_search(
     request: Request,
     number: str = Query(..., min_length=1, max_length=80),
-    start_date: str | None = None,
-    end_date: str | None = None,
-    types: str = "FACTURA,BOLETA,NOTA DE CREDITO",
 ):
     protected(request)
     number = number.strip()
-    tipos = parse_types(types)
     if not number:
         raise HTTPException(400, "Ingresa un número de comprobante.")
-    if bool(start_date) != bool(end_date):
-        raise HTTPException(400, "Debes indicar ambas fechas o ninguna.")
-    if start_date and end_date:
-        validate_range(start_date, end_date)
-
     try:
         return await asyncio.to_thread(
             clean_search,
             number,
-            tipos,
-            start_date,
-            end_date,
-            MAX_RANGE_DAYS,
             SEARCH_FALLBACK_DAYS,
             date.today(),
         )
@@ -232,10 +221,14 @@ async def api_search(
 
 
 @app.get("/api/document/{tipo}/{oid}")
-async def api_document(request: Request, tipo: str, oid: str, doc_date: str):
+async def api_document(
+    request: Request, tipo: str, oid: str, doc_date: str, number: str | None = None
+):
     protected(request)
     try:
-        return await asyncio.to_thread(clean_document_detail, tipo, oid, doc_date)
+        return await asyncio.to_thread(
+            clean_document_detail, tipo, oid, doc_date, number
+        )
     except HTTPException:
         raise
     except Exception as exc:

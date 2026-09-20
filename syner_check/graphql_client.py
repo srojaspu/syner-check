@@ -43,7 +43,9 @@ class GraphQLClient:
         if variables:
             payload["variables"] = variables
 
-        self._auth_retried = False
+        # Per-request flag (not instance state): the client is shared across
+        # threads, so a single auth retry must be scoped to this call.
+        auth_retried = False
         timeout = self.timeout
         for attempt in range(1, 4):
             try:
@@ -74,11 +76,11 @@ class GraphQLClient:
 
             status = response.status_code
             if status in (401, 403) and self.on_unauthorized is not None:
-                if getattr(self, "_auth_retried", False):
+                if auth_retried:
                     raise RuntimeError(
                         f"HTTP {status}: GraphQL request failed."
                     )
-                self._auth_retried = True
+                auth_retried = True
                 try:
                     new_token = self.on_unauthorized()
                 except Exception as exc:

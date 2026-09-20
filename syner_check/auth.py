@@ -9,7 +9,9 @@ the HTTP status only.
 
 from __future__ import annotations
 
+import json
 import os
+import threading
 import time
 
 import requests
@@ -19,6 +21,80 @@ _SKEW_SECONDS = 30
 _DEFAULT_EXPIRES_IN = 300
 
 _cache: dict = {}
+_token_lock = threading.Lock()
+
+
+def _cache_file() -> str:
+    """Disk cache path, or empty when file persistence is disabled.
+
+    Opt-in via KC_CACHE_FILE (e.g. a path outside the repo). When unset,
+    behavior is memory-only, exactly as before. The file holds bearer
+    tokens: it is created with owner-only permissions and its content is
+    never logged.
+    """
+    return (os.getenv("KC_CACHE_FILE", "") or "").strip()
+
+
+def _load_file_cache() -> None:
+    """Merge the disk cache into memory when memory is empty."""
+    if _cache.get("access_token") or _cache.get("refresh_token"):
+        return
+    path = _cache_file()
+    if not path:
+        return
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    if not data.get("access_token") and not data.get("refresh_token"):
+        return
+    _cache.clear()
+    _cache.update(
+        {
+            "access_token": str(data.get("access_token", "")),
+            "refresh_token": str(data.get("refresh_token", "")),
+            "expires_at": float(data.get("expires_at", 0) or 0),
+        }
+    )
+
+
+def _save_file_cache() -> None:
+    """Persist the in-memory tokens with owner-only permissions."""
+    path = _cache_file()
+    if not path:
+        return
+    try:
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp_path = f"{path}.tmp"
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "access_token": _cache.get("access_token", ""),
+                        "refresh_token": _cache.get("refresh_token", ""),
+                        "expires_at": _cache.get("expires_at", 0),
+                    },
+                    handle,
+                )
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        try:
+            os.chmod(tmp_path, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp_path, path)
+    except OSError:
+        pass
 
 
 def _token_endpoint() -> str:
@@ -80,6 +156,7 @@ def _post_token(data: dict) -> dict:
     }
     _cache.clear()
     _cache.update(token)
+    _save_file_cache()
     return dict(_cache)
 
 
@@ -118,17 +195,30 @@ def refresh(token: dict | None = None) -> dict:
     )
 
 
+def _is_valid_cached() -> bool:
+    return bool(_cache.get("access_token")) and _cache.get("expires_at", 0) > time.time()
+
+
 def ensure_token() -> str:
-    """Return a valid access_token (cached, refreshed, or newly obtained)."""
-    cached_access = _cache.get("access_token", "")
-    if cached_access and _cache.get("expires_at", 0) > time.time():
-        return cached_access
-    if _cache.get("refresh_token"):
-        try:
-            return refresh()["access_token"]
-        except RuntimeError:
-            pass
-    return get_token()["access_token"]
+    """Return a valid access_token (cached, refreshed, or newly obtained).
+
+    Token acquisition is serialized behind a lock so concurrent callers do not
+    trigger parallel Keycloak grants/refreshes (thundering herd). A double-check
+    after acquiring the lock lets waiting threads reuse the token another thread
+    just obtained.
+    """
+    _load_file_cache()
+    if _is_valid_cached():
+        return _cache["access_token"]
+    with _token_lock:
+        if _is_valid_cached():
+            return _cache["access_token"]
+        if _cache.get("refresh_token"):
+            try:
+                return refresh()["access_token"]
+            except RuntimeError:
+                pass
+        return get_token()["access_token"]
 
 
 def clear_cache() -> None:

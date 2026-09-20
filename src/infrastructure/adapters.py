@@ -69,3 +69,23 @@ class GraphqlGatewayAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+
+    def search_by_serie(self, tipo: str, number: str) -> list[dict]:
+        from app import graphql as app_gql
+
+        try:
+            return app_gql.search_by_serie(tipo, number)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+
+    def detail_by_serie(self, tipo: str, number: str) -> list[dict]:
+        from app import graphql as app_gql
+
+        try:
+            return app_gql.detail_by_serie(tipo, number)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc

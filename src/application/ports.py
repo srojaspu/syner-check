@@ -35,3 +35,17 @@ class GraphqlGateway(Protocol):
         self, start_iso: str, end_iso: str, tipos: Sequence[str]
     ) -> dict[str, list[dict]]:
         ...
+
+    def search_by_serie(self, tipo: str, number: str) -> list[dict]:
+        """Light docs filtered server-side by `serie` (<number>%).
+
+        Only FACTURA and BOLETA support it.
+        """
+        ...
+
+    def detail_by_serie(self, tipo: str, number: str) -> list[dict]:
+        """Full detail docs filtered server-side by `serie` (<number>%).
+
+        Only FACTURA and BOLETA support it.
+        """
+        ...
