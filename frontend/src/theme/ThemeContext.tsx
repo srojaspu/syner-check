@@ -48,8 +48,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const resolved = useMemo(() => resolve(choice), [choice]);
 
+  // shadcn / Tailwind v4 dark mode keys off the `.dark` class.
   useEffect(() => {
-    document.documentElement.dataset.theme = resolved;
+    document.documentElement.classList.toggle("dark", resolved === "dark");
+    document.documentElement.style.colorScheme = resolved;
   }, [resolved]);
 
   useEffect(() => {

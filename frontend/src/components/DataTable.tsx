@@ -21,14 +21,42 @@ import {
   type Column,
   type Table,
 } from "@tanstack/react-table";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsUpDown,
-  ArrowUp,
-  ArrowDown,
-  FilterX,
-} from "lucide-react";
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  FilterRemoveIcon,
+  Loading02Icon,
+  SearchXIcon,
+  UnfoldMoreIcon,
+} from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table as UiTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const TableContext = createContext<{ table: Table<unknown> } | null>(null);
 
@@ -46,7 +74,7 @@ interface RootProps<T> {
   onRowClick?: (row: T) => void;
 }
 
-/** Per-column filter configuration read from columnDef.meta. */
+/** Per-column filter configuration read from columnDef.meta.filter. */
 export interface ColumnFilterConfig {
   variant: "text" | "select";
   placeholder?: string;
@@ -96,7 +124,7 @@ function Root<T>({
   // consumers while they still read the same underlying table.
   return (
     <TableContext.Provider value={{ table: table as Table<unknown> }}>
-      <div className="datatable">{children}</div>
+      <div className="w-full">{children}</div>
     </TableContext.Provider>
   );
 }
@@ -122,15 +150,16 @@ function Toolbar({ action }: { action?: ReactNode }) {
   const active = table.getState().columnFilters.length;
   if (!action && active === 0) return null;
   return (
-    <div className="dt-toolbar">
+    <div className="flex items-center justify-between gap-2 py-2">
       {active > 0 ? (
-        <button
+        <Button
           type="button"
-          className="quick"
+          variant="outline"
+          size="sm"
           onClick={() => table.resetColumnFilters()}
         >
-          <FilterX size={15} aria-hidden /> Limpiar filtros ({active})
-        </button>
+          <HugeiconsIcon icon={FilterRemoveIcon} size={15} strokeWidth={2} aria-hidden /> Limpiar filtros ({active})
+        </Button>
       ) : (
         <span />
       )}
@@ -139,36 +168,52 @@ function Toolbar({ action }: { action?: ReactNode }) {
   );
 }
 
+/** Sentinel for the "all values" option: Base UI items need a real value. */
+const ALL = "__all";
+
 function ColumnFilter<T>({ column }: { column: Column<T> }) {
-  const config = column.columnDef.meta as ColumnFilterConfig | undefined;
+  const config = (
+    column.columnDef.meta as { filter?: ColumnFilterConfig } | undefined
+  )?.filter;
   if (!config) return null;
-  const value = (column.getFilterValue() ?? "") as string;
+  const label = `Filtrar por ${String(column.id)}`;
   if (config.variant === "select") {
+    const value = (column.getFilterValue() ?? "") as string;
     return (
-      <select
-        value={value}
-        onChange={(event) =>
-          column.setFilterValue(event.target.value || undefined)
+      <Select
+        value={value || ALL}
+        onValueChange={(next) =>
+          column.setFilterValue(next === ALL ? undefined : next)
         }
-        onClick={(event) => event.stopPropagation()}
-        aria-label={`Filtrar por ${String(column.id)}`}
       >
-        <option value="">Todos</option>
-        {(config.options ?? []).map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          size="sm"
+          className="h-8 w-full min-w-28"
+          aria-label={label}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>Todos</SelectItem>
+          {(config.options ?? []).map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     );
   }
   return (
-    <input
-      value={value}
-      onChange={(event) => column.setFilterValue(event.target.value || undefined)}
+    <Input
+      value={(column.getFilterValue() ?? "") as string}
+      onChange={(event) =>
+        column.setFilterValue(event.target.value || undefined)
+      }
       onClick={(event) => event.stopPropagation()}
       placeholder={config.placeholder ?? "Filtrar…"}
-      aria-label={`Filtrar por ${String(column.id)}`}
+      aria-label={label}
+      className="h-8"
     />
   );
 }
@@ -178,36 +223,42 @@ const SKELETON_ROWS = 8;
 function SkeletonRows<T>({ table }: { table: Table<T> }) {
   const colCount = table.getAllLeafColumns().length;
   return (
-    <div className="table-wrap" aria-busy="true" aria-label="Cargando resultados">
-      <table className="table">
-        <thead>
+    <div role="status" aria-busy="true" aria-label="Cargando resultados">
+      <UiTable>
+        <TableHeader>
           {table.getHeaderGroups().map((group) => (
-            <tr key={group.id}>
+            <TableRow key={group.id}>
               {group.headers.map((header) => (
-                <th key={header.id}>
+                <TableHead key={header.id}>
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
                   )}
-                </th>
+                </TableHead>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </thead>
-        <tbody>
+        </TableHeader>
+        <TableBody>
           {Array.from({ length: SKELETON_ROWS }).map((_, r) => (
-            <tr key={r} className="skeleton-row" aria-hidden="true">
+            <TableRow key={r} aria-hidden="true">
               {Array.from({ length: colCount }).map((_, c) => (
-                <td key={c}>
-                  <span className="skeleton" />
-                </td>
+                <TableCell key={c}>
+                  <Skeleton className="h-4 w-full" />
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </UiTable>
     </div>
   );
+}
+
+function sortDirection<T>(column: Column<T>): "ascending" | "descending" | "none" {
+  if (column.getIsSorted() === "asc") return "ascending";
+  if (column.getIsSorted() === "desc") return "descending";
+  return "none";
 }
 
 function View<T>({ loading }: { loading?: boolean }) {
@@ -218,77 +269,91 @@ function View<T>({ loading }: { loading?: boolean }) {
   const rows = table.getRowModel().rows;
   if (!rows.length) {
     return (
-      <div className="empty">
-        <b>No encontramos comprobantes</b>
-        <span>Prueba otro rango, tipo o número.</span>
-      </div>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <HugeiconsIcon icon={SearchXIcon} strokeWidth={2} />
+          </EmptyMedia>
+          <EmptyTitle>No encontramos comprobantes</EmptyTitle>
+          <EmptyDescription>
+            Prueba otro rango, tipo o número.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
   const onRowClick = (table.options.meta as { onRowClick?: (row: T) => void })
     ?.onRowClick;
   return (
-    <div className="table-wrap">
-      <table className="table">
-        <thead>
-          {table.getHeaderGroups().map((group) => (
-            <tr key={group.id}>
-              {group.headers.map((header) => (
-                <th
-                  key={header.id}
-                  onClick={
-                    header.column.getCanSort()
-                      ? header.column.getToggleSortingHandler()
-                      : undefined
-                  }
-                  className={header.column.getCanSort() ? "sortable" : undefined}
-                  title={header.column.getCanSort() ? "Ordenar" : undefined}
-                >
-                  <span className="th-label">
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
-                    {header.column.getCanSort() ? (
-                      <span className="sort-icon" aria-hidden>
-                        {header.column.getIsSorted() === "asc" ? (
-                          <ArrowUp size={13} />
-                        ) : header.column.getIsSorted() === "desc" ? (
-                          <ArrowDown size={13} />
-                        ) : (
-                          <ChevronsUpDown size={13} />
-                        )}
-                      </span>
-                    ) : null}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          ))}
-          <tr className="filter-row">
-            {table.getHeaderGroups()[0]?.headers.map((header) => (
-              <th key={`filter-${header.id}`}>
-                <ColumnFilter column={header.column} />
-              </th>
-            )) ?? null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-              className={onRowClick ? "clickable" : undefined}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <UiTable>
+      <TableHeader>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id}>
+            {group.headers.map((header) => (
+              <TableHead
+                key={header.id}
+                onClick={
+                  header.column.getCanSort()
+                    ? header.column.getToggleSortingHandler()
+                    : undefined
+                }
+                aria-sort={
+                  header.column.getCanSort()
+                    ? sortDirection(header.column)
+                    : undefined
+                }
+                className={
+                  header.column.getCanSort()
+                    ? "cursor-pointer select-none"
+                    : undefined
+                }
+                title={header.column.getCanSort() ? "Ordenar" : undefined}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  )}
+                  {header.column.getCanSort() ? (
+                    <span aria-hidden>
+                      {header.column.getIsSorted() === "asc" ? (
+                        <HugeiconsIcon icon={ArrowUp01Icon} size={13} strokeWidth={2} />
+                      ) : header.column.getIsSorted() === "desc" ? (
+                        <HugeiconsIcon icon={ArrowDown01Icon} size={13} strokeWidth={2} />
+                      ) : (
+                        <HugeiconsIcon icon={UnfoldMoreIcon} size={13} strokeWidth={2} />
+                      )}
+                    </span>
+                  ) : null}
+                </span>
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
+        <TableRow>
+          {table.getHeaderGroups()[0]?.headers.map((header) => (
+            <TableHead key={`filter-${header.id}`}>
+              <ColumnFilter column={header.column} />
+            </TableHead>
+          )) ?? null}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow
+            key={row.id}
+            onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+            className={onRowClick ? "cursor-pointer" : undefined}
+          >
+            {row.getVisibleCells().map((cell) => (
+              <TableCell key={cell.id}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </UiTable>
   );
 }
 
@@ -296,7 +361,17 @@ function Pagination({ loading }: { loading?: boolean }) {
   const table = useTableInstance();
   if (loading) {
     return (
-      <div className="pagination" aria-busy="true">
+      <div
+        className="flex items-center gap-2 py-2 text-sm text-muted-foreground"
+        aria-busy="true"
+      >
+        <HugeiconsIcon
+          icon={Loading02Icon}
+          size={16}
+          strokeWidth={2}
+          className="animate-spin"
+          aria-hidden
+        />
         <span>Cargando resultados…</span>
       </div>
     );
@@ -306,44 +381,51 @@ function Pagination({ loading }: { loading?: boolean }) {
   const from = total === 0 ? 0 : pageIndex * pageSize + 1;
   const to = Math.min(from + table.getRowModel().rows.length - 1, total);
   return (
-    <div className="pagination">
-      <span>
+    <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-sm text-muted-foreground">
         Mostrando {from}–{to} de {total}
       </span>
-      <div className="page-actions">
-        <label>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Filas{" "}
-          <select
-            value={pageSize}
-            onChange={(event) => table.setPageSize(Number(event.target.value))}
+          <Select
+            value={String(pageSize)}
+            onValueChange={(next) => table.setPageSize(Number(next))}
           >
-            {[25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="h-8" aria-label="Filas">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[25, 50, 100].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
-        <button
-          className="page-btn"
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
           aria-label="Anterior"
         >
-          <ChevronLeft size={16} />
-        </button>
-        <b>
+          <HugeiconsIcon icon={ChevronLeftIcon} size={16} strokeWidth={2} />
+        </Button>
+        <span className="text-sm font-medium tabular-nums">
           {table.getPageCount() === 0 ? 0 : pageIndex + 1} /{" "}
           {table.getPageCount()}
-        </b>
-        <button
-          className="page-btn"
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
           aria-label="Siguiente"
         >
-          <ChevronRight size={16} />
-        </button>
+          <HugeiconsIcon icon={ChevronRightIcon} size={16} strokeWidth={2} />
+        </Button>
       </div>
     </div>
   );

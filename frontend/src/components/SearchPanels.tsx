@@ -1,47 +1,26 @@
 import { useState, type ReactNode } from "react";
-import { CalendarDays, Hash, Search } from "lucide-react";
+import type { DateRange } from "react-day-picker";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  CalendarDaysIcon,
+  HashIcon,
+  Search01Icon,
+  TriangleAlertIcon,
+} from "@hugeicons/core-free-icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DateRangePicker } from "./search/DateRangePicker";
+import { ALL_TIPOS, TypeChips } from "./search/TypeChips";
 import { toISODate } from "../api/format";
 
-export const ALL_TIPOS = ["FACTURA", "BOLETA", "NOTA DE CREDITO"] as const;
+export { ALL_TIPOS, TypeChips };
 
 export function defaultRange(): { start: string; end: string } {
   const today = toISODate(new Date());
   return { start: today, end: today };
-}
-
-export function TypeChips({
-  values,
-  onChange,
-}: {
-  values: string[];
-  onChange: (values: string[]) => void;
-}) {
-  const toggle = (tipo: string) => {
-    onChange(
-      values.includes(tipo)
-        ? values.filter((value) => value !== tipo)
-        : [...values, tipo],
-    );
-  };
-  const labels: Record<string, string> = {
-    FACTURA: "Factura",
-    BOLETA: "Boleta",
-    "NOTA DE CREDITO": "Nota de crédito",
-  };
-  return (
-    <div className="type-options">
-      {ALL_TIPOS.map((tipo) => (
-        <label key={tipo} className="check-chip">
-          <input
-            type="checkbox"
-            checked={values.includes(tipo)}
-            onChange={() => toggle(tipo)}
-          />
-          <span>{labels[tipo]}</span>
-        </label>
-      ))}
-    </div>
-  );
 }
 
 function Panel({
@@ -52,12 +31,17 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <div className="filters">
-      <span className="panel-icon" aria-hidden>
-        {icon}
-      </span>
-      {children}
-    </div>
+    <Card>
+      <CardContent className="flex flex-wrap items-end gap-4">
+        <span
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+          aria-hidden
+        >
+          {icon}
+        </span>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -68,57 +52,53 @@ export function RangePanel({
   disabled: boolean;
   onSearch: (start: string, end: string, types: string) => void;
 }) {
-  const initial = defaultRange();
-  const [start, setStart] = useState(initial.start);
-  const [end, setEnd] = useState(initial.end);
+  const [range, setRange] = useState<DateRange | undefined>(() => {
+    const now = new Date();
+    return { from: now, to: now };
+  });
   const [tipos, setTipos] = useState<string[]>([...ALL_TIPOS]);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
-    if (!tipos.length) {
-      alert("Selecciona al menos un tipo de documento.");
+    if (!range?.from || !range?.to) {
+      setError("Selecciona el rango completo (inicio y fin).");
       return;
     }
-    onSearch(start, end, tipos.join(","));
+    if (!tipos.length) {
+      setError("Selecciona al menos un tipo de documento.");
+      return;
+    }
+    setError(null);
+    onSearch(toISODate(range.from), toISODate(range.to), tipos.join(","));
   };
 
   return (
-    <div>
-      <Panel icon={<CalendarDays size={18} />}>
-        <label>
-          Desde
-          <input
-            type="date"
-            value={start}
-            onChange={(event) => setStart(event.target.value)}
-          />
-        </label>
-        <label>
-          Hasta
-          <input
-            type="date"
-            value={end}
-            onChange={(event) => {
-              setEnd(event.target.value);
-              if (!start) setStart(event.target.value);
-            }}
-          />
-        </label>
-        <div className="filter-group">
-          <span className="filter-label">Tipo de documento</span>
+    <div className="flex flex-col gap-3">
+      <Panel
+        icon={<HugeiconsIcon icon={CalendarDaysIcon} size={18} strokeWidth={2} />}
+      >
+        <DateRangePicker value={range} onChange={setRange} />
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Tipo de documento</span>
           <TypeChips values={tipos} onChange={setTipos} />
         </div>
-        <div className="range-actions">
-          <button
-            type="button"
-            className="btn primary"
-            onClick={submit}
-            disabled={disabled}
-          >
-            Consultar
-          </button>
-        </div>
+        <Button
+          type="button"
+          className="sm:ml-auto"
+          onClick={submit}
+          disabled={disabled}
+        >
+          Consultar
+        </Button>
       </Panel>
-      <p className="hint">
+      {error ? (
+        <Alert variant="destructive">
+          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
+          <AlertTitle>Revisa los filtros</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      <p className="text-sm text-muted-foreground">
         Filtra por <b>rango de fechas + tipo de documento</b>. La consulta
         general usa campos resumidos para responder más rápido; abre un
         documento para cargar el detalle completo.
@@ -135,21 +115,24 @@ export function NumberPanel({
   onSearch: (number: string) => void;
 }) {
   const [number, setNumber] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
     if (!number.trim()) {
-      alert("Ingresa un número.");
+      setError("Ingresa un número.");
       return;
     }
+    setError(null);
     onSearch(number.trim());
   };
 
   return (
-    <div>
-      <Panel icon={<Hash size={18} />}>
-        <label className="grow">
-          Número
-          <input
+    <div className="flex flex-col gap-3">
+      <Panel icon={<HugeiconsIcon icon={HashIcon} size={18} strokeWidth={2} />}>
+        <div className="flex min-w-52 flex-1 flex-col gap-1.5">
+          <Label htmlFor="numero-comprobante">Número</Label>
+          <Input
+            id="numero-comprobante"
             value={number}
             onChange={(event) => setNumber(event.target.value)}
             onKeyDown={(event) => {
@@ -158,17 +141,19 @@ export function NumberPanel({
             placeholder="Ej. F001-00012345"
             autoComplete="off"
           />
-        </label>
-        <button
-          type="button"
-          className="btn primary"
-          onClick={submit}
-          disabled={disabled}
-        >
-          <Search size={16} aria-hidden /> Buscar
-        </button>
+        </div>
+        <Button type="button" onClick={submit} disabled={disabled}>
+          <HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={2} aria-hidden /> Buscar
+        </Button>
       </Panel>
-      <p className="hint">
+      {error ? (
+        <Alert variant="destructive">
+          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
+          <AlertTitle>Revisa los filtros</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      <p className="text-sm text-muted-foreground">
         Busca el comprobante por número en el índice local. Si no está indexado,
         se consulta GraphQL sobre el rango de los últimos días.
       </p>

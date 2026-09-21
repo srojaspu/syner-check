@@ -1,23 +1,47 @@
 import type { ReactNode } from "react";
-import { Copy, Printer, ReceiptText, X } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Copy01Icon,
+  Loading02Icon,
+  PrinterIcon,
+  ReceiptTextIcon,
+} from "@hugeicons/core-free-icons";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { Voucher } from "../api/types";
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="kv">
-      <span>{label}</span>
-      <b>{value ?? "—"}</b>
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium">{value ?? "—"}</dd>
     </div>
   );
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="detail-section">
-      <h3>{title}</h3>
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-semibold">{title}</h3>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -26,45 +50,48 @@ function ItemsTable({ doc }: { doc: Voucher }) {
   const currency = doc.currency?.isoCode ?? "PEN";
   return (
     <Section title={`Productos (${doc.items.length})`}>
-      <div className="table-wrap">
-        <table className="mini-table">
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Descripción</th>
-              <th>Cant.</th>
-              <th>Precio</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {doc.items.map((item, index) => (
-              <tr key={index}>
-                <td>{item.sku || item.skuPu || "—"}</td>
-                <td>
-                  {item.description || "—"}
-                  {!!(item.promotion?.crossDiscount || item.promotion?.netDiscount) && (
-                    <small className="promo">
-                      {item.promotion?.label ||
-                        item.promotion?.name ||
-                        "Promo"}
-                      : −
-                      {formatMoney(
-                        item.promotion?.crossDiscount ??
-                          item.promotion?.netDiscount,
-                        currency,
-                      )}
-                    </small>
-                  )}
-                </td>
-                <td>{item.quantity ?? "—"}</td>
-                <td>{formatMoney(item.crossUnitPrice, currency)}</td>
-                <td>{formatMoney(item.crossPrice, currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>SKU</TableHead>
+            <TableHead>Descripción</TableHead>
+            <TableHead>Cant.</TableHead>
+            <TableHead>Precio</TableHead>
+            <TableHead>Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {doc.items.map((item, index) => (
+            <TableRow key={index}>
+              <TableCell>{item.sku || item.skuPu || "—"}</TableCell>
+              <TableCell>
+                {item.description || "—"}
+                {!!(item.promotion?.crossDiscount ||
+                  item.promotion?.netDiscount) && (
+                  <small className="block text-muted-foreground">
+                    {item.promotion?.label ||
+                      item.promotion?.name ||
+                      "Promo"}
+                    : −
+                    {formatMoney(
+                      item.promotion?.crossDiscount ??
+                        item.promotion?.netDiscount,
+                      currency,
+                    )}
+                  </small>
+                )}
+              </TableCell>
+              <TableCell>{item.quantity ?? "—"}</TableCell>
+              <TableCell className="tabular-nums">
+                {formatMoney(item.crossUnitPrice, currency)}
+              </TableCell>
+              <TableCell className="tabular-nums">
+                {formatMoney(item.crossPrice, currency)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </Section>
   );
 }
@@ -74,17 +101,21 @@ function TaxesTable({ doc }: { doc: Voucher }) {
   const currency = doc.currency?.isoCode ?? "PEN";
   return (
     <Section title="Impuestos">
-      <table className="mini-table">
-        <tbody>
+      <Table>
+        <TableBody>
           {doc.taxes.map((tax, index) => (
-            <tr key={index}>
-              <td>{tax.name}</td>
-              <td>{formatMoney(tax.base, currency)}</td>
-              <td>{formatMoney(tax.amount, currency)}</td>
-            </tr>
+            <TableRow key={index}>
+              <TableCell>{tax.name}</TableCell>
+              <TableCell className="tabular-nums">
+                {formatMoney(tax.base, currency)}
+              </TableCell>
+              <TableCell className="tabular-nums">
+                {formatMoney(tax.amount, currency)}
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </Section>
   );
 }
@@ -94,33 +125,33 @@ function PaymentsTable({ doc }: { doc: Voucher }) {
   const currency = doc.currency?.isoCode ?? "PEN";
   return (
     <Section title="Pagos">
-      <div className="table-wrap">
-        <table className="mini-table">
-          <thead>
-            <tr>
-              <th>Medio</th>
-              <th>Proveedor</th>
-              <th>Autorización</th>
-              <th>Importe</th>
-            </tr>
-          </thead>
-          <tbody>
-            {doc.payments.map((payment, index) => (
-              <tr key={index}>
-                <td>{payment.medio || payment.name}</td>
-                <td>{payment.cardProvider || payment.serviceProvider || "—"}</td>
-                <td>{payment.authorization || "—"}</td>
-                <td>
-                  {formatMoney(
-                    payment.amount,
-                    payment.currency?.isoCode ?? currency,
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Medio</TableHead>
+            <TableHead>Proveedor</TableHead>
+            <TableHead>Autorización</TableHead>
+            <TableHead>Importe</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {doc.payments.map((payment, index) => (
+            <TableRow key={index}>
+              <TableCell>{payment.medio || payment.name}</TableCell>
+              <TableCell>
+                {payment.cardProvider || payment.serviceProvider || "—"}
+              </TableCell>
+              <TableCell>{payment.authorization || "—"}</TableCell>
+              <TableCell className="tabular-nums">
+                {formatMoney(
+                  payment.amount,
+                  payment.currency?.isoCode ?? currency,
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </Section>
   );
 }
@@ -142,52 +173,72 @@ export function DetailDrawer({
   onCopy: () => void;
   onClose: () => void;
 }) {
-  if (!open) return null;
   const currency = document?.currency?.isoCode ?? "PEN";
   const emitted = formatDateTime(document?.createdDate, document?.date);
   return (
-    <div className="drawer-wrap">
-      <div className="drawer-backdrop" onClick={onClose} aria-hidden />
-      <aside className="drawer" role="dialog" aria-label="Detalle del documento">
-        <button className="close" onClick={onClose} aria-label="Cerrar">
-          <X size={18} />
-        </button>
+    <Sheet
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="w-full overflow-y-auto sm:max-w-lg"
+        aria-label="Detalle del documento"
+      >
         {loading ? (
-          <div className="empty">Cargando detalle…</div>
+          <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+            <HugeiconsIcon
+              icon={Loading02Icon}
+              size={16}
+              strokeWidth={2}
+              className="animate-spin"
+              aria-hidden
+            />
+            Cargando detalle…
+          </div>
         ) : error ? (
-          <div className="empty">{error}</div>
+          <div className="p-6">
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          </div>
         ) : document ? (
-          <div id="detail">
-            <div className="detail-title">
-              <div className="eyebrow">{document.tipo}</div>
-              <h2>
-                <ReceiptText size={20} aria-hidden />{" "}
+          <div id="detail" className="flex flex-col gap-6">
+            <SheetHeader className="items-start text-left">
+              <Badge variant="secondary">{document.tipo}</Badge>
+              <SheetTitle className="flex items-center gap-2 text-lg">
+                <HugeiconsIcon icon={ReceiptTextIcon} size={20} strokeWidth={2} aria-hidden />{" "}
                 {document.number || "Sin número"}
-              </h2>
-              <p>
+              </SheetTitle>
+              <SheetDescription>
                 {emitted.text} ·{" "}
                 {document.contactName ||
                   document.contact?.name ||
                   "Cliente no informado"}
-              </p>
-              <div className="detail-actions">
-                <button
-                  type="button"
-                  className="btn secondary"
-                  onClick={onCopy}
-                >
-                  <Copy size={15} aria-hidden /> {copied ? "Copiado ✓" : "Copiar número"}
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
-                  onClick={() => window.print()}
-                >
-                  <Printer size={15} aria-hidden /> Imprimir
-                </button>
-              </div>
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex flex-wrap gap-2 px-6">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onCopy}
+              >
+                <HugeiconsIcon icon={Copy01Icon} size={15} strokeWidth={2} aria-hidden />{" "}
+                {copied ? "Copiado ✓" : "Copiar número"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => window.print()}
+              >
+                <HugeiconsIcon icon={PrinterIcon} size={15} strokeWidth={2} aria-hidden /> Imprimir
+              </Button>
             </div>
-            <div className="detail-grid">
+            <dl className="grid grid-cols-2 gap-3 px-6">
               <Field label="OID" value={document.oid} />
               <Field
                 label="Cliente"
@@ -220,28 +271,38 @@ export function DetailDrawer({
               {!!document.taxNumber && (
                 <Field label="RUC" value={document.taxNumber} />
               )}
+            </dl>
+            <div className="flex flex-col gap-2 px-6">
+              {document.docRef ? (
+                <Alert>
+                  <AlertDescription>
+                    Nota de crédito relacionada: <b>{document.docRef}</b>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {!!document.motivo && (
+                <Alert>
+                  <AlertDescription>
+                    Motivo: <b>{document.motivo}</b>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!!document.motivoAnulacion && (
+                <Alert>
+                  <AlertDescription>
+                    Motivo anulación: <b>{document.motivoAnulacion}</b>
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
-            {document.docRef ? (
-              <div className="reference">
-                Nota de crédito relacionada: <b>{document.docRef}</b>
-              </div>
-            ) : null}
-            {!!document.motivo && (
-              <div className="reference">
-                Motivo: <b>{document.motivo}</b>
-              </div>
-            )}
-            {!!document.motivoAnulacion && (
-              <div className="reference">
-                Motivo anulación: <b>{document.motivoAnulacion}</b>
-              </div>
-            )}
-            <ItemsTable doc={document} />
-            <TaxesTable doc={document} />
-            <PaymentsTable doc={document} />
+            <div className="flex flex-col gap-6 px-6 pb-6">
+              <ItemsTable doc={document} />
+              <TaxesTable doc={document} />
+              <PaymentsTable doc={document} />
+            </div>
           </div>
         ) : null}
-      </aside>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

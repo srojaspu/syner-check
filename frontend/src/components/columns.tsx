@@ -1,5 +1,10 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  CancelCircleIcon,
+  CheckmarkCircle02Icon,
+} from "@hugeicons/core-free-icons";
+import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { TipoDocumento, Voucher } from "../api/types";
 import type { ColumnFilterConfig } from "./DataTable";
@@ -27,9 +32,11 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
       cell: ({ row }) => {
         const doc = row.original;
         return (
-          <span className="doc-cell">
-            <span className="docnum">{doc.number || "—"}</span>
-            {doc.seller ? <small>{doc.seller}</small> : null}
+          <span className="flex flex-col">
+            <span className="docnum font-medium">{doc.number || "—"}</span>
+            {doc.seller ? (
+              <small className="text-muted-foreground">{doc.seller}</small>
+            ) : null}
           </span>
         );
       },
@@ -39,7 +46,9 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
       header: "OID",
       meta: { filter: { variant: "text", placeholder: "OID…" } },
       cell: ({ row }) => (
-        <code className="oid">{row.original.oid || "—"}</code>
+        <code className="oid font-mono text-xs">
+          {row.original.oid || "—"}
+        </code>
       ),
     },
     {
@@ -57,7 +66,7 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
         },
       },
       cell: ({ row }) => (
-        <span className="type">{TIPO_LABEL[row.original.tipo]}</span>
+        <Badge variant="secondary">{TIPO_LABEL[row.original.tipo]}</Badge>
       ),
     },
     {
@@ -75,9 +84,11 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
         const { text, iso } = formatDateTime(doc.createdDate, doc.date);
         const hasTime = Boolean((doc.createdDate ?? "").trim());
         return (
-          <span className="datetime" title={iso}>
+          <span className="datetime tabular-nums" title={iso}>
             {text}
-            {hasTime ? null : <small className="no-time">s/h</small>}
+            {hasTime ? null : (
+              <small className="no-time ml-1 text-muted-foreground">s/h</small>
+            )}
           </span>
         );
       },
@@ -88,14 +99,16 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
       accessorFn: (doc) => doc.contactName ?? doc.contact?.name ?? "",
       meta: { filter: { variant: "text", placeholder: "Cliente…" } },
       cell: ({ row }) => (
-        <span>{row.original.contactName || row.original.contact?.name || "—"}</span>
+        <span>
+          {row.original.contactName || row.original.contact?.name || "—"}
+        </span>
       ),
     },
     {
       accessorKey: "crossTotal",
       header: "Total",
       cell: ({ row }) => (
-        <span className="amount">
+        <span className="amount text-right font-medium tabular-nums">
           {formatMoney(
             row.original.crossTotal,
             row.original.currency?.isoCode,
@@ -119,13 +132,25 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
       },
       cell: ({ row }) =>
         row.original.in_sql ? (
-          <span className="status ok">
-            <CheckCircle2 size={14} aria-hidden /> Encontrado
-          </span>
+          <Badge variant="default">
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={14}
+              strokeWidth={2}
+              aria-hidden
+            />{" "}
+            Encontrado
+          </Badge>
         ) : (
-          <span className="status missing">
-            <XCircle size={14} aria-hidden /> No encontrado
-          </span>
+          <Badge variant="outline">
+            <HugeiconsIcon
+              icon={CancelCircleIcon}
+              size={14}
+              strokeWidth={2}
+              aria-hidden
+            />{" "}
+            No encontrado
+          </Badge>
         ),
     },
   ];

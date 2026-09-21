@@ -1,9 +1,16 @@
+import path from "path";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Build output is served by FastAPI under /static/frontend/.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   base: "/static/frontend/",
   build: {
     outDir: "../app/static/frontend",
@@ -18,7 +25,7 @@ export default defineConfig({
         manualChunks: {
           "react-vendor": ["react", "react-dom"],
           table: ["@tanstack/react-table"],
-          icons: ["lucide-react"],
+          icons: ["@hugeicons/react", "@hugeicons/core-free-icons"],
         },
       },
     },

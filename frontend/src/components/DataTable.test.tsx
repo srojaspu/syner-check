@@ -65,8 +65,8 @@ describe("DataTable interactions", () => {
   it("changes page size", async () => {
     const user = userEvent.setup();
     render(<Harness rows={makeRows(49)} />);
-    const select = screen.getByLabelText(/filas/i);
-    await user.selectOptions(select, "50");
+    await user.click(screen.getByRole("combobox", { name: /filas/i }));
+    await user.click(screen.getByRole("option", { name: "50" }));
     expect(screen.getByText("F001-00048")).toBeTruthy();
   });
 });
