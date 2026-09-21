@@ -92,6 +92,14 @@ DB_APPLICATION_INTENT_READ_ONLY=true
 
 Si el SQL Server utiliza un certificado interno/autofirmado, `DB_TRUST_SERVER_CERTIFICATE=yes` puede ser necesario, pero es preferible instalar y validar el certificado correctamente.
 
+Para desarrollo local con recargas frecuentes (`--reload`), cada reinicio pide un token nuevo por password grant. Para reutilizar el refresh token entre reinicios:
+
+```env
+KC_CACHE_FILE=C:\ruta\fuera\del\repo\kc-token-cache.json
+```
+
+Es opt-in: sin esa variable todo sigue solo en memoria. El archivo se crea con permisos solo-propietario, vive fuera del repo (no commitearlo) y su contenido nunca se loguea.
+
 ## Ejecución local
 
 Requiere Python 3.13+, ODBC Driver 18 para SQL Server y conectividad al GraphQL/SQL.

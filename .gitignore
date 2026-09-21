@@ -7,3 +7,5 @@ output/
 dist/
 app.zip
 .atl/
+frontend/node_modules/
+app/static/frontend/
