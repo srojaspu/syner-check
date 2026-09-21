@@ -16,6 +16,7 @@ class GraphQLClient:
         token: str | None = None,
         on_unauthorized: Callable[[], str] | None = None,
         timeout: float | None = None,
+        company_id: str | None = None,
     ):
         self.url = url
         self.on_unauthorized = on_unauthorized
@@ -33,6 +34,14 @@ class GraphQLClient:
         if token:
             self.session.headers.update({
                 "Authorization": f"Bearer {token}"
+            })
+
+        # Company context (integration manual §1, critical). Falls back to
+        # env so direct GraphQLClient users also send it.
+        resolved_company = (company_id or os.getenv("GRAPHQL_COMPANY_ID", "") or "").strip()
+        if resolved_company:
+            self.session.headers.update({
+                "X-CONTEXT-COMPANY": resolved_company
             })
 
     def execute(self, query: str, variables: dict | None = None) -> dict[str, Any]:

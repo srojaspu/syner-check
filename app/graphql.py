@@ -3,25 +3,29 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from syner_check.graphql_client import GraphQLClient
 from syner_check import auth as keycloak_auth
-from syner_check.config import get_graphql_url, resolve_graphql_token
+from syner_check.config import (
+    get_graphql_company_id,
+    get_graphql_url,
+    resolve_graphql_token,
+)
 
 SUMMARY_QUERIES = {
-"BOLETA": """query Receipts($startDate:String!,$endDate:String!){receipts(startDate:$startDate,endDate:$endDate){oid number date createdDate seller crossTotal netTotal contactName}}""",
-"FACTURA": """query Invoices($startDate:String!,$endDate:String!){invoices(startDate:$startDate,endDate:$endDate){oid number date createdDate seller crossTotal netTotal contact{name idNumber email}}}""",
-"NOTA DE CREDITO": """query CreditNotes($startDate:String!,$endDate:String!){creditNotes(startDate:$startDate,endDate:$endDate){oid number date crossTotal netTotal contactName seller}}"""
+"BOLETA": """query Receipts($startDate:String!,$endDate:String!){receipts(startDate:$startDate,endDate:$endDate){oid number date createdDate seller crossTotal netTotal contactName currency{isoCode isoNumber name symbol} contact{name idNumber email}}}""",
+"FACTURA": """query Invoices($startDate:String!,$endDate:String!){invoices(startDate:$startDate,endDate:$endDate){oid number date createdDate seller crossTotal netTotal contact{name idNumber email} currency{isoCode isoNumber name symbol}}}""",
+"NOTA DE CREDITO": """query CreditNotes($startDate:String!,$endDate:String!){creditNotes(startDate:$startDate,endDate:$endDate){oid number date crossTotal netTotal contactName seller docRef currency{isoCode isoNumber name symbol}}}"""
 }
 
 # Server-side number filtering via `serie` (integration manual §5-6).
 # Only invoices and receipts support it; creditNotes must still be fetched
 # by date range. Same light field set as SUMMARY_QUERIES.
 SERIE_QUERIES = {
-"BOLETA": """query Receipts($serie:String!){receipts(serie:$serie){oid number date createdDate seller crossTotal netTotal contactName}}""",
-"FACTURA": """query Invoices($serie:String!){invoices(serie:$serie){oid number date createdDate seller crossTotal netTotal contact{name idNumber email}}}""",
+"BOLETA": """query Receipts($serie:String!){receipts(serie:$serie){oid number date createdDate seller crossTotal netTotal contactName currency{isoCode isoNumber name symbol} contact{name idNumber email}}}""",
+"FACTURA": """query Invoices($serie:String!){invoices(serie:$serie){oid number date createdDate seller crossTotal netTotal contact{name idNumber email} currency{isoCode isoNumber name symbol}}}""",
 }
 
 DETAIL_QUERIES = {
 "BOLETA": """query Receipts($startDate:String!,$endDate:String!){receipts(startDate:$startDate,endDate:$endDate){
-seller crossTotal createdDate nota contactName oid netTotal date number
+seller crossTotal crossTotalDiscount netTotalDiscount createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}
@@ -73,7 +77,10 @@ def _client() -> GraphQLClient:
             if _client_instance is None or _client_instance.url != graphql_url:
                 token = resolve_graphql_token()[0]
                 _client_instance = GraphQLClient(
-                    graphql_url, token=token, on_unauthorized=_reauth
+                    graphql_url,
+                    token=token,
+                    on_unauthorized=_reauth,
+                    company_id=get_graphql_company_id(),
                 )
     return _client_instance
 
@@ -118,7 +125,7 @@ def search_by_serie(tipo, number):
 # Used by the detail drawer so it fetches ONE voucher instead of a full day.
 DETAIL_BY_SERIE_QUERIES = {
 "BOLETA": """query Receipts($serie:String!){receipts(serie:$serie){
-seller crossTotal createdDate nota contactName oid netTotal date number
+seller crossTotal crossTotalDiscount netTotalDiscount createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}

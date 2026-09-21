@@ -9,6 +9,10 @@ load_dotenv()
 
 GRAPHQL_URL = os.getenv("GRAPHQL_URL", "")
 
+# Company context for GraphQL (integration manual §1, critical header
+# X-CONTEXT-COMPANY). Set GRAPHQL_COMPANY_ID in .env (see .env.example).
+GRAPHQL_COMPANY_ID = os.getenv("GRAPHQL_COMPANY_ID", "")
+
 KC_BASE_URL = os.getenv("KC_BASE_URL", "https://sso.synercom.pe/auth")
 KC_REALM = os.getenv("KC_REALM", "SynerCOM")
 KC_CLIENT_ID = os.getenv("KC_CLIENT_ID", "pu")
@@ -20,6 +24,11 @@ KC_PASSWORD = os.getenv("KC_PASSWORD", "")
 def get_graphql_url() -> str:
     """Fresh read of GRAPHQL_URL (import-time globals go stale)."""
     return os.getenv("GRAPHQL_URL", "")
+
+
+def get_graphql_company_id() -> str:
+    """Fresh read of GRAPHQL_COMPANY_ID (company context header)."""
+    return (os.getenv("GRAPHQL_COMPANY_ID", "") or "").strip()
 
 
 OUTPUT_DIR = Path("output")

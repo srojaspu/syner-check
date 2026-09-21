@@ -184,12 +184,27 @@ export function DetailDrawer({
                 label="Subtotal"
                 value={formatMoney(document.netTotal, currency)}
               />
+              {!!document.netTotalDiscount && (
+                <Field
+                  label="Dscto. subtotal"
+                  value={formatMoney(document.netTotalDiscount, currency)}
+                />
+              )}
               <Field
                 label="Total"
                 value={formatMoney(document.crossTotal, currency)}
               />
+              {!!document.crossTotalDiscount && (
+                <Field
+                  label="Descuento"
+                  value={formatMoney(document.crossTotalDiscount, currency)}
+                />
+              )}
               <Field label="Moneda" value={document.currency?.name || currency} />
               <Field label="Vendedor" value={document.seller} />
+              {!!document.taxNumber && (
+                <Field label="RUC" value={document.taxNumber} />
+              )}
             </div>
             {document.docRef ? (
               <div className="reference">

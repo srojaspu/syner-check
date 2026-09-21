@@ -5,9 +5,8 @@ import { toISODate } from "../api/format";
 export const ALL_TIPOS = ["FACTURA", "BOLETA", "NOTA DE CREDITO"] as const;
 
 export function defaultRange(): { start: string; end: string } {
-  const end = new Date();
-  const start = new Date(end.getTime() - 6 * 86400000);
-  return { start: toISODate(start), end: toISODate(end) };
+  const today = toISODate(new Date());
+  return { start: today, end: today };
 }
 
 export function TypeChips({
@@ -74,13 +73,6 @@ export function RangePanel({
   const [end, setEnd] = useState(initial.end);
   const [tipos, setTipos] = useState<string[]>([...ALL_TIPOS]);
 
-  const preset = (days: number) => {
-    const to = new Date();
-    const from = new Date(to.getTime() - (days - 1) * 86400000);
-    setStart(toISODate(from));
-    setEnd(toISODate(to));
-  };
-
   const submit = () => {
     if (!tipos.length) {
       alert("Selecciona al menos un tipo de documento.");
@@ -116,22 +108,6 @@ export function RangePanel({
           <TypeChips values={tipos} onChange={setTipos} />
         </div>
         <div className="range-actions">
-          <button
-            type="button"
-            className="quick"
-            onClick={() => preset(7)}
-            disabled={disabled}
-          >
-            7 días
-          </button>
-          <button
-            type="button"
-            className="quick"
-            onClick={() => preset(30)}
-            disabled={disabled}
-          >
-            30 días
-          </button>
           <button
             type="button"
             className="btn primary"

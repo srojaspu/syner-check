@@ -60,6 +60,9 @@ export interface Voucher {
   currency?: Currency;
   netTotal?: number;
   crossTotal?: number;
+  netTotalDiscount?: number;
+  crossTotalDiscount?: number;
+  taxNumber?: string;
   docRef?: string;
   items?: DocItem[];
   taxes?: DocTax[];
