@@ -9,6 +9,19 @@ export default defineConfig({
     outDir: "../app/static/frontend",
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Split large vendors into dedicated chunks to keep the initial
+        // bundle under the default 500 kB chunk-size warning limit.
+        // xlsx is not listed here: it is lazy-loaded via dynamic import
+        // and already lands in its own chunk.
+        manualChunks: {
+          "react-vendor": ["react", "react-dom"],
+          table: ["@tanstack/react-table"],
+          icons: ["lucide-react"],
+        },
+      },
+    },
   },
   server: {
     port: 5173,

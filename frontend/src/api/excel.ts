@@ -1,9 +1,10 @@
-import * as XLSX from "xlsx";
 import { formatDateTime, formatMoney, toISODate } from "../api/format";
 import type { Voucher } from "../api/types";
 
 /** Excel export of the current rows (client-side, no backend change). */
-export function exportExcel(rows: Voucher[]) {
+export async function exportExcel(rows: Voucher[]): Promise<void> {
+  // Lazy-load xlsx so it lands in its own chunk instead of the initial bundle.
+  const XLSX = await import("xlsx");
   const sheet = XLSX.utils.json_to_sheet(
     rows.map((doc) => {
       const emitted = formatDateTime(doc.createdDate, doc.date);

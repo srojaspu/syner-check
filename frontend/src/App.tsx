@@ -98,7 +98,7 @@ function Workspace() {
               type="button"
               className="btn secondary"
               disabled={!vouchers.rows.length}
-              onClick={() => exportExcel(vouchers.rows)}
+              onClick={() => void exportExcel(vouchers.rows)}
             >
               <FileDown size={16} aria-hidden /> Exportar Excel
             </button>
