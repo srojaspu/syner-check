@@ -8,3 +8,5 @@ odd/
 output/
 tests/
 *.log
+frontend/node_modules/
+app/static/frontend/

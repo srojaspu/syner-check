@@ -1,3 +1,13 @@
+# Stage 1: build the React frontend (vite outDir ../app/static/frontend).
+FROM node:20-slim AS frontend-build
+
+WORKDIR /repo/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python backend serving the API + the built frontend.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -19,6 +29,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
 COPY syner_check ./syner_check
 COPY src ./src
+COPY --from=frontend-build /repo/app/static/frontend ./app/static/frontend
 
 RUN pip install --no-cache-dir . \
     && useradd --create-home --shell /usr/sbin/nologin appuser \
