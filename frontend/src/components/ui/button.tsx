@@ -45,6 +45,8 @@ type ButtonProps = ButtonPrimitive.Props &
  * Forwards its ref so Base UI `render` hosts (PopoverTrigger, SheetClose,
  * …) can wire focus and positioning. Without this, triggers warn
  * "Function components cannot be given refs" and misbehave.
+ * NOTE: `shadcn add --overwrite` reverts this file to a ref-less version;
+ * re-apply this wrapper after regenerating.
  */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(

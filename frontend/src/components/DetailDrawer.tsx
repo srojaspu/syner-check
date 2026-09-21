@@ -178,13 +178,18 @@ export function DetailDrawer({
   return (
     <Sheet
       open={open}
-      onOpenChange={(value) => {
+      onOpenChange={(value, eventDetails) => {
+        // The detail only closes from its X button: backdrop clicks are
+        // ignored so an accidental outside press never loses the view.
+        if (eventDetails?.reason === "outside-press") return;
         if (!value) onClose();
       }}
     >
+      {/* sm:max-w-2xl needs `!`: the base sheet caps right panels at
+          sm:max-w-sm with a higher-specificity data-attribute selector. */}
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto sm:max-w-lg"
+        className="w-full overflow-y-auto sm:max-w-2xl!"
         aria-label="Detalle del documento"
       >
         {loading ? (
