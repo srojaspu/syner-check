@@ -127,3 +127,80 @@
     @apply bg-background text-foreground;
   }
 }
+
+@page {
+  margin: 12mm;
+}
+
+@media print {
+  /* The detail lives in a portal outside #root: hide the whole app so no
+     blank pages are rendered behind it. */
+  #root {
+    display: none !important;
+  }
+
+  /* The sheet chrome never prints: overlay, close button and the
+     copy/print action buttons inside the detail. */
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-close"],
+  [data-slot="popover-content"],
+  #detail button {
+    display: none !important;
+  }
+
+  /* Flatten the sheet panel: no fixed positioning, no width cap, no scroll. */
+  [data-slot="sheet-content"] {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+
+  #detail {
+    width: 100% !important;
+  }
+
+  /* Expand every scroll container so all rows print instead of only the
+     visible viewport slice. */
+  #detail [data-slot="table-container"],
+  #detail [data-slot="table-container"] > table,
+  #detail .overflow-y-auto,
+  #detail .overflow-x-auto {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* Force the light theme on paper: dark-mode text would be unreadable. */
+  :root,
+  .dark {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+  }
+
+  #detail * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}
