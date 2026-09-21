@@ -542,6 +542,35 @@ body {
   background: var(--surface-2);
 }
 
+.skeleton {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--border) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: dt-shimmer 1.2s infinite linear;
+}
+
+@keyframes dt-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
 .doc-cell {
   display: flex;
   flex-direction: column;
@@ -817,18 +846,68 @@ body {
 }
 
 @media print {
+  @page {
+    margin: 12mm;
+  }
+
+  /* Print only the open drawer: hide app chrome, results and overlays. */
   .topbar,
   .hero,
   .tabs,
   .panel,
+  .stats,
+  .drawer-backdrop,
   .detail-actions,
   .close {
     display: none !important;
   }
 
+  .drawer-wrap {
+    position: static;
+  }
+
   .drawer {
     position: static;
     width: 100%;
+    overflow: visible;
     border: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+  }
+
+  /* Force light, high-contrast print regardless of app theme. */
+  .drawer .detail-title h2,
+  .drawer .kv b,
+  .mini-table td {
+    color: #000;
+  }
+
+  .drawer .kv span,
+  .drawer .detail-title p,
+  .mini-table thead th {
+    color: #333;
+  }
+
+  .kv,
+  .reference,
+  .mini-table th,
+  .mini-table td {
+    border-color: #ccc;
+  }
+
+  .reference {
+    background: none;
+  }
+
+  .table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  /* Long item lists may flow across pages, but never split a row. */
+  tr,
+  .kv {
+    break-inside: avoid;
   }
 }

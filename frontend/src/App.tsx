@@ -115,8 +115,8 @@ function Workspace() {
           onRowClick={showDetail}
         >
           <DataTable.Toolbar />
-          <DataTable.View<Voucher> />
-          <DataTable.Pagination />
+          <DataTable.View<Voucher> loading={vouchers.loading} />
+          <DataTable.Pagination loading={vouchers.loading} />
         </DataTable.Root>
       </section>
 

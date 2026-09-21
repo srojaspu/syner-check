@@ -173,8 +173,48 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
   );
 }
 
-function View<T>() {
+const SKELETON_ROWS = 8;
+
+function SkeletonRows<T>({ table }: { table: Table<T> }) {
+  const colCount = table.getAllLeafColumns().length;
+  return (
+    <div className="table-wrap" aria-busy="true" aria-label="Cargando resultados">
+      <table className="table">
+        <thead>
+          {table.getHeaderGroups().map((group) => (
+            <tr key={group.id}>
+              {group.headers.map((header) => (
+                <th key={header.id}>
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  )}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {Array.from({ length: SKELETON_ROWS }).map((_, r) => (
+            <tr key={r} className="skeleton-row" aria-hidden="true">
+              {Array.from({ length: colCount }).map((_, c) => (
+                <td key={c}>
+                  <span className="skeleton" />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function View<T>({ loading }: { loading?: boolean }) {
   const table = useTableInstance<T>();
+  if (loading) {
+    return <SkeletonRows table={table} />;
+  }
   const rows = table.getRowModel().rows;
   if (!rows.length) {
     return (
@@ -252,8 +292,15 @@ function View<T>() {
   );
 }
 
-function Pagination() {
+function Pagination({ loading }: { loading?: boolean }) {
   const table = useTableInstance();
+  if (loading) {
+    return (
+      <div className="pagination" aria-busy="true">
+        <span>Cargando resultados…</span>
+      </div>
+    );
+  }
   const { pageIndex, pageSize } = table.getState().pagination;
   const total = table.getFilteredRowModel().rows.length;
   const from = total === 0 ? 0 : pageIndex * pageSize + 1;
