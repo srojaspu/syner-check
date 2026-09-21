@@ -41,7 +41,22 @@ function ItemsTable({ doc }: { doc: Voucher }) {
             {doc.items.map((item, index) => (
               <tr key={index}>
                 <td>{item.sku || item.skuPu || "—"}</td>
-                <td>{item.description || "—"}</td>
+                <td>
+                  {item.description || "—"}
+                  {!!(item.promotion?.crossDiscount || item.promotion?.netDiscount) && (
+                    <small className="promo">
+                      {item.promotion?.label ||
+                        item.promotion?.name ||
+                        "Promo"}
+                      : −
+                      {formatMoney(
+                        item.promotion?.crossDiscount ??
+                          item.promotion?.netDiscount,
+                        currency,
+                      )}
+                    </small>
+                  )}
+                </td>
                 <td>{item.quantity ?? "—"}</td>
                 <td>{formatMoney(item.crossUnitPrice, currency)}</td>
                 <td>{formatMoney(item.crossPrice, currency)}</td>
@@ -211,6 +226,16 @@ export function DetailDrawer({
                 Nota de crédito relacionada: <b>{document.docRef}</b>
               </div>
             ) : null}
+            {!!document.motivo && (
+              <div className="reference">
+                Motivo: <b>{document.motivo}</b>
+              </div>
+            )}
+            {!!document.motivoAnulacion && (
+              <div className="reference">
+                Motivo anulación: <b>{document.motivoAnulacion}</b>
+              </div>
+            )}
             <ItemsTable doc={document} />
             <TaxesTable doc={document} />
             <PaymentsTable doc={document} />

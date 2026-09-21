@@ -21,6 +21,17 @@ export interface Contact {
   email?: string;
 }
 
+export interface DocPromotion {
+  oid?: string;
+  label?: string;
+  name?: string;
+  description?: string;
+  netDiscount?: number;
+  crossDiscount?: number;
+  netUnitDiscount?: number;
+  crossUnitDiscount?: number;
+}
+
 export interface DocItem {
   sku?: string;
   skuPu?: string;
@@ -28,6 +39,7 @@ export interface DocItem {
   quantity?: number;
   crossUnitPrice?: number;
   crossPrice?: number;
+  promotion?: DocPromotion;
 }
 
 export interface DocTax {
@@ -64,6 +76,8 @@ export interface Voucher {
   crossTotalDiscount?: number;
   taxNumber?: string;
   docRef?: string;
+  motivo?: string;
+  motivoAnulacion?: string;
   items?: DocItem[];
   taxes?: DocTax[];
   payments?: DocPayment[];

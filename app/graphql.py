@@ -40,7 +40,7 @@ payments{merchantId medio type name cardProvider authorization message panMask s
 taxes{amount base factor name} currency{isoCode isoNumber name symbol}
 }}""",
 "NOTA DE CREDITO": """query CreditNotes($startDate:String!,$endDate:String!){creditNotes(startDate:$startDate,endDate:$endDate){
-number netTotal date crossTotal contactName seller oid docRef
+number netTotal date crossTotal contactName seller oid docRef motivo motivoAnulacion
 items{idx crossPrice crossUnitPrice description netUnitPrice quantity sap sku uom netPrice lote{oid sku description} taxes{amount base factor name} currency{isoCode isoNumber name symbol}}
 currency{isoCode isoNumber name symbol} contact{idNumber idTypeKey idTypeName name email} taxes{amount base factor name}
 payments{pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey name authorization panMask transactionId cardProvider type serviceProvider amount exchangeRate medio message merchantId currency{isoCode symbol name isoNumber}}

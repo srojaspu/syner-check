@@ -829,6 +829,13 @@ body {
   text-transform: uppercase;
 }
 
+.promo {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--primary);
+}
+
 @media (max-width: 640px) {
   .filters {
     flex-direction: column;
