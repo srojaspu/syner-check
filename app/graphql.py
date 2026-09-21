@@ -25,7 +25,7 @@ SERIE_QUERIES = {
 
 DETAIL_QUERIES = {
 "BOLETA": """query Receipts($startDate:String!,$endDate:String!){receipts(startDate:$startDate,endDate:$endDate){
-seller crossTotal crossTotalDiscount netTotalDiscount createdDate nota contactName oid netTotal date number
+seller crossTotal createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}
@@ -125,7 +125,7 @@ def search_by_serie(tipo, number):
 # Used by the detail drawer so it fetches ONE voucher instead of a full day.
 DETAIL_BY_SERIE_QUERIES = {
 "BOLETA": """query Receipts($serie:String!){receipts(serie:$serie){
-seller crossTotal crossTotalDiscount netTotalDiscount createdDate nota contactName oid netTotal date number
+seller crossTotal createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}
