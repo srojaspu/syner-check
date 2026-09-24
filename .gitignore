@@ -9,3 +9,4 @@ app.zip
 .atl/
 frontend/node_modules/
 app/static/frontend/
+opencode.json

@@ -69,7 +69,7 @@ export function Account({ user }: { user: SessionUser }) {
 export function TopBar({ actions }: { actions: ReactNode }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex w-full max-w-11/12 items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary font-semibold text-primary-foreground">
             S
@@ -152,7 +152,7 @@ export function AppShell({
   return (
     <div id="app" className="min-h-screen bg-background text-foreground">
       {topbar}
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-11/12 px-4 py-6 sm:px-6">
         {children}
       </main>
     </div>
