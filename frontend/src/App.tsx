@@ -118,14 +118,14 @@ function Workspace() {
         {vouchers.searched ? <StatsBar rows={vouchers.rows} /> : null}
 
         <Card>
-          <CardHeader className="flex-row flex-wrap items-start justify-between gap-4">
+          <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div className="flex flex-col gap-1">
               <CardTitle>Resultados</CardTitle>
               <CardDescription>
                 {vouchers.error ?? vouchers.subtitle}
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:justify-self-end">
               <Button
                 type="button"
                 variant="secondary"

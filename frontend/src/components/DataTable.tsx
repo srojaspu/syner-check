@@ -150,7 +150,7 @@ function Toolbar({ action }: { action?: ReactNode }) {
   const active = table.getState().columnFilters.length;
   if (!action && active === 0) return null;
   return (
-    <div className="flex items-center justify-between gap-2 py-2">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
       {active > 0 ? (
         <Button
           type="button"
