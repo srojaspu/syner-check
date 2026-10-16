@@ -28,6 +28,35 @@ class IntelisisReader(Protocol):
         ...
 
 
+class SunatValidator(Protocol):
+    """SUNAT Validator microservice (batch submit + job polling)."""
+
+    def submit_batch(
+        self, documentos: list[dict], usuario: str = "", origen: str = ""
+    ) -> dict:
+        ...
+
+    def job_status(self, trabajo_id: int, detalle: bool = False) -> dict:
+        ...
+
+    def validate_single(
+        self, documento: dict, usuario: str = "", origen: str = ""
+    ) -> dict:
+        ...
+
+
+class SunatCacheStore(Protocol):
+    """Persistent SUNAT validation cache (dbo.SunatValidacion)."""
+
+    def fetch_many(
+        self, keys: Sequence[tuple[str, str, str, str]]
+    ) -> dict[tuple[str, str, str], dict]:
+        ...
+
+    def upsert(self, row: dict) -> None:
+        ...
+
+
 class GraphqlGateway(Protocol):
     def detail(
         self,

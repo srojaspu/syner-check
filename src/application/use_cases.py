@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from hmac import compare_digest
-from typing import Sequence
+from typing import Any, Sequence
 
 from src.domain.entities import FechaRango, TipoDocumento
 from src.domain.errors import InvalidRangeError, NotFoundError
 
-from .ports import GraphqlGateway, IntelisisReader, SqlDocumentReader
+from .ports import (
+    GraphqlGateway,
+    IntelisisReader,
+    SqlDocumentReader,
+    SunatCacheStore,
+    SunatValidator,
+)
 
 logger = logging.getLogger("syner_check.use_cases")
 
@@ -127,6 +133,8 @@ def summarize(
     tipos: Sequence[TipoDocumento],
     max_range_days: int,
     intelisis: IntelisisReader | None = None,
+    sunat_store: SunatCacheStore | None = None,
+    sunat_ruc: str = "",
 ) -> dict:
     FechaRango.from_iso(start_iso, end_iso, max_range_days)
     tipo_values = [t.value for t in tipos]
@@ -244,6 +252,19 @@ def summarize(
     }
     if intelisis_warning is not None:
         result["intelisis_warning"] = intelisis_warning
+    # SUNAT cache read only (zero live calls on this path).
+    try:
+        if sunat_store is not None and sunat_ruc:
+            attach_sunat_status(
+                [e for rows in out.values() for e in rows],
+                sunat_store,
+                sunat_ruc,
+            )
+            result["sunat_enabled"] = True
+        else:
+            result["sunat_enabled"] = False
+    except Exception:
+        result["sunat_enabled"] = False
     return result
 
 
@@ -255,6 +276,8 @@ def search_by_number(
     fallback_days: int,
     today: date,
     intelisis: IntelisisReader | None = None,
+    sunat_store: SunatCacheStore | None = None,
+    sunat_ruc: str = "",
 ) -> dict:
     """Find one voucher by number across all document types.
 
@@ -395,6 +418,14 @@ def search_by_number(
         out["searched_range"] = searched_range
     if intelisis_warning is not None:
         out["intelisis_warning"] = intelisis_warning
+    try:
+        if sunat_store is not None and sunat_ruc:
+            attach_sunat_status(results, sunat_store, sunat_ruc)
+            out["sunat_enabled"] = True
+        else:
+            out["sunat_enabled"] = False
+    except Exception:
+        out["sunat_enabled"] = False
     return out
 
 
@@ -420,3 +451,392 @@ def get_detail(
             continue
         return {"document": {**doc, "tipo": tipo.value}}
     raise NotFoundError("Document not found.")
+
+
+# --- SUNAT validation (4th stage, on-demand only) ---
+#
+# Never inline in the range summary path: SUNAT calls are slow, quota
+# limited and worker-paced. The summary only READS this cache (zero SUNAT
+# calls); live validation happens through submit_sunat_batch (explicit
+# batch jobs) and sunat_revalidate (manual single doc).
+
+_SUNAT_TIPO_CODES = {
+    "FACTURA": "01",
+    "BOLETA": "03",
+    "NOTA DE CREDITO": "07",
+}
+
+_SUNAT_TERMINAL = ("ACEPTADO", "ANULADO")
+
+_SUNAT_KNOWN = (
+    "ACEPTADO",
+    "NO_EXISTE",
+    "ANULADO",
+    "AUTORIZADO",
+    "NO_AUTORIZADO",
+    "DESCONOCIDO",
+)
+
+
+def _norm_numero(raw: object) -> str:
+    """Cache-key numero: leading zeros are insignificant ('00000152'='152').
+
+    The API payload keeps the original string (spec recommends preserving
+    zeros); only the local cache key is normalized so validator echoes
+    (which may come back stripped) hit the same row.
+    """
+    text = str(raw or "").strip()
+    return text.lstrip("0") or "0" if text else ""
+
+
+def _sunat_key(
+    ruc: str, tipo_value: str, number: str
+) -> tuple[str, str, str, str] | None:
+    """SUNAT identity key (ruc, tipo_code, serie, numero), or None if bad."""
+    code = _SUNAT_TIPO_CODES.get(str(tipo_value or "").strip().upper(), "")
+    text = str(number or "").strip().upper()
+    if not code or "-" not in text:
+        return None
+    serie, _, numero = text.rpartition("-")
+    serie = serie.strip()
+    if not serie or not numero.strip().isdigit():
+        return None
+    numero = _norm_numero(numero)
+    if not serie or not numero:
+        return None
+    return (ruc, code, serie, numero)
+
+
+def _sunat_doc_payload(
+    ruc: str, tipo_value: str, number: str, date_iso: str, importe: object
+) -> dict[str, Any]:
+    """Validator payload for one voucher; raises ValueError when invalid."""
+    clean_ruc = str(ruc or "").strip()
+    if not clean_ruc.isdigit() or len(clean_ruc) != 11:
+        raise ValueError(f"RUC emisor inválido para SUNAT: {ruc!r}.")
+    key = _sunat_key(clean_ruc, tipo_value, number)
+    if key is None:
+        raise ValueError(f"Número/tipo no válido para SUNAT: {number!r}.")
+    try:
+        day = date.fromisoformat(str(date_iso or "")[:10])
+    except ValueError as exc:
+        raise ValueError(f"Fecha no válida para SUNAT: {date_iso!r}.") from exc
+    try:
+        amount = round(float(importe), 2)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Importe no válido para SUNAT: {importe!r}.") from exc
+    if amount < 0:
+        raise ValueError(f"Importe no válido para SUNAT: {importe!r}.")
+    _, code, serie, numero = key
+    return {
+        "ruc": ruc,
+        "tipo": code,
+        "serie": serie,
+        "numero": numero,
+        "fecha_emision": day.isoformat(),
+        "importe": amount,
+    }
+
+
+def _sunat_fresh(row: dict, revalidate_hours: int, now: datetime) -> bool:
+    """True when a cached row is still fresh (no revalidation needed)."""
+    estado = str(row.get("Estado", "")).strip().upper()
+    if estado in _SUNAT_TERMINAL:
+        return True
+    raw = str(row.get("FechaConsulta", ""))
+    try:
+        seen = datetime.fromisoformat(raw[:19])
+    except ValueError:
+        return False
+    return (now - seen) < timedelta(hours=revalidate_hours)
+
+
+def submit_sunat_batch(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    documentos: list[dict[str, Any]],
+    usuario: str,
+    ruc: str,
+    revalidate_hours: int = 24,
+    now: datetime | None = None,
+    batch_max: int = 500,
+    request_max: int = 2000,
+) -> dict:
+    """Validate vouchers against SUNAT via async batch jobs (explicit only).
+
+    Skips terminally cached docs; records PENDIENTE rows at submit time.
+    Returns {trabajos, enviados, omitidos, total}. Never raises for SUNAT
+    4xx per-doc issues: those land in omitidos/invalidos.
+    """
+    current = now if isinstance(now, datetime) else datetime.now()
+    docs = list(documentos or [])
+    if len(docs) > request_max:
+        raise ValueError(f"Límite por solicitud: {request_max} documentos.")
+    if not (ruc or "").strip() or not ruc.strip().isdigit():
+        raise ValueError("RUC emisor inválido.")
+
+    payloads: list[dict[str, Any]] = []
+    keys: list[tuple[str, str, str, str]] = []
+    invalidos: list[dict[str, str]] = []
+    for item in docs:
+        data = item if isinstance(item, dict) else {}
+        try:
+            payload = _sunat_doc_payload(
+                ruc.strip(),
+                data.get("tipo", ""),
+                data.get("number", ""),
+                data.get("date", ""),
+                data.get("crossTotal", data.get("importe", "")),
+            )
+        except ValueError:
+            invalidos.append(
+                {
+                    "tipo": str(data.get("tipo", "")),
+                    "number": str(data.get("number", "")),
+                    "reason": "datos insuficientes para SUNAT",
+                }
+            )
+            continue
+        payloads.append(payload)
+        keys.append(
+            (
+                payload["ruc"],
+                payload["tipo"],
+                str(payload["serie"]).strip().upper(),
+                _norm_numero(payload["numero"]),
+            )
+        )
+
+    cached = store.fetch_many(keys)
+    def _is_fresh(key: tuple[str, str, str, str]) -> bool:
+        return key in cached and _sunat_fresh(cached[key], revalidate_hours, current)
+
+    fresh = sum(1 for k in keys if _is_fresh(k))
+    pendientes = [
+        (payload, key)
+        for payload, key in zip(payloads, keys)
+        if not _is_fresh(key)
+    ]
+
+    trabajos: list[dict[str, Any]] = []
+    enviados = 0
+    for pos in range(0, len(pendientes), batch_max):
+        chunk = pendientes[pos : pos + batch_max]
+        body = validator.submit_batch(
+            [
+                {**payload, "forzar_consulta": False}
+                for payload, _ in chunk
+            ],
+            usuario=usuario,
+            origen="syner-check",
+        )
+        trabajo_id = int(body["trabajo_id"])
+        for payload, key in chunk:
+            try:
+                store.upsert(
+                    {
+                        "Ruc": key[0],
+                        "Tipo": key[1],
+                        "Serie": key[2],
+                        "Numero": key[3],
+                        "Estado": "PENDIENTE",
+                        "Importe": payload["importe"],
+                        "FechaEmision": payload["fecha_emision"],
+                        "TrabajoID": trabajo_id,
+                        "Intentos": int(cached.get(key, {}).get("Intentos") or 0) + 1,
+                        "UsuarioOrigen": (usuario or "")[:100],
+                    }
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Sunat cache upsert failed for %s: %s",
+                    key[2:],
+                    type(exc).__name__,
+                )
+        enviados += len(chunk)
+        trabajos.append(
+            {"trabajo_id": trabajo_id, "cantidad": len(chunk)}
+        )
+
+    return {
+        "trabajos": trabajos,
+        "enviados": enviados,
+        "omitidos": {
+            "cache_terminal": fresh,
+            "invalidos": invalidos,
+        },
+        "total": len(docs),
+    }
+
+
+def _sunat_map_estado(raw: object) -> str:
+    token = str(raw or "").strip().upper()
+    return token if token in _SUNAT_KNOWN else "DESCONOCIDO"
+
+
+def sunat_job_status(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    trabajo_id: int,
+    usuario: str = "",
+) -> dict:
+    """Poll one batch job, persist per-doc results, return slim progress."""
+    body = validator.job_status(int(trabajo_id), detalle=True)
+    trabajo = body.get("trabajo", {}) if isinstance(body, dict) else {}
+    detalle = body.get("detalle", []) if isinstance(body, dict) else []
+    resultados: list[dict[str, str]] = []
+    for item in detalle if isinstance(detalle, list) else []:
+        if not isinstance(item, dict):
+            continue
+        item_estado = str(item.get("Estado", "")).strip().upper()
+        if item_estado == "OK":
+            estado = _sunat_map_estado(item.get("ResultadoEstado"))
+            ultimo_error = (
+                f"{item.get('ErrorTipo')}: {item.get('Mensaje')}"
+                if item.get("ErrorTipo") or item.get("Mensaje")
+                else ""
+            )
+        elif item_estado == "ERROR":
+            estado = "ERROR"
+            ultimo_error = str(
+                item.get("Mensaje") or item.get("ErrorTipo") or "ERROR"
+            )[:500]
+        else:
+            continue  # PENDIENTE/PROCESANDO: el worker aún no termina
+        key = (
+            str(item.get("Ruc", "")).strip(),
+            str(item.get("Tipo", "")).strip(),
+            str(item.get("Serie", "")).strip().upper(),
+            _norm_numero(item.get("Numero", "")),
+        )
+        if not all(key):
+            continue
+        try:
+            previous = store.fetch_many([key]).get(key, {})
+            store.upsert(
+                {
+                    "Ruc": key[0],
+                    "Tipo": key[1],
+                    "Serie": key[2],
+                    "Numero": key[3],
+                    "Estado": estado,
+                    "CodigoSunat": str(item.get("CodigoSunat", "")),
+                    "ConsultaID": item.get("ConsultaID"),
+                    "CorrelationID": str(item.get("CorrelationID", "")),
+                    "TrabajoID": int(trabajo_id),
+                    "Intentos": int(previous.get("Intentos") or 0) + 1,
+                    "UltimoError": ultimo_error,
+                    "UsuarioOrigen": (usuario or "")[:100],
+                }
+            )
+        except Exception as exc:
+            logger.warning(
+                "Sunat cache upsert failed for %s: %s", key, type(exc).__name__
+            )
+        resultados.append(
+            {
+                "serie": key[2],
+                "numero": key[3],
+                "estado": estado,
+            }
+        )
+    estado_job = str(trabajo.get("Estado", "")) if isinstance(trabajo, dict) else ""
+    return {
+        "trabajo_id": int(trabajo_id),
+        "estado": estado_job,
+        "total": trabajo.get("Total") if isinstance(trabajo, dict) else None,
+        "procesados": trabajo.get("Procesados") if isinstance(trabajo, dict) else None,
+        "resultados": resultados,
+    }
+
+
+def sunat_revalidate(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    tipo: str,
+    number: str,
+    date_iso: str,
+    importe: object,
+    usuario: str,
+    ruc: str,
+) -> dict:
+    """Manual single-doc revalidation (forces fresh SUNAT query)."""
+    payload = _sunat_doc_payload(ruc.strip(), tipo, number, date_iso, importe)
+    payload["forzar_consulta"] = True
+    body = validator.validate_single(payload, usuario=usuario, origen="syner-check")
+    resultado = body.get("resultado", {}) if isinstance(body, dict) else {}
+    estado = _sunat_map_estado(resultado.get("estado"))
+    key = (payload["ruc"], payload["tipo"], payload["serie"], payload["numero"])
+    try:
+        previous = store.fetch_many([key]).get(key, {})
+        store.upsert(
+            {
+                "Ruc": key[0],
+                "Tipo": key[1],
+                "Serie": key[2],
+                "Numero": key[3],
+                "Estado": estado,
+                "CodigoSunat": str(resultado.get("codigo_sunat", "")),
+                "RucEstado": str(resultado.get("ruc_estado", "")),
+                "RucCondicion": str(resultado.get("ruc_condicion", "")),
+                "Observaciones": resultado.get("observaciones", []),
+                "Importe": payload["importe"],
+                "FechaEmision": payload["fecha_emision"],
+                "ConsultaID": body.get("consulta_id"),
+                "CorrelationID": str(body.get("correlation_id", "")),
+                "Intentos": int(previous.get("Intentos") or 0) + 1,
+                "UsuarioOrigen": (usuario or "")[:100],
+            }
+        )
+    except Exception as exc:
+        logger.warning(
+            "Sunat cache upsert failed for %s: %s", key[2:], type(exc).__name__
+        )
+    return {"estado": estado, "resultado": resultado if isinstance(resultado, dict) else {}}
+
+
+def attach_sunat_status(
+    entries: list[dict],
+    store: SunatCacheStore,
+    ruc: str,
+) -> None:
+    """Attach cached {estado, fecha_consulta} to voucher entries in place.
+
+    Cache reads only: zero SUNAT calls. Missing rows leave sunat=None.
+    """
+    if store is None or not (ruc or "").strip():
+        for entry in entries:
+            entry["sunat"] = None
+        return
+    keys: list[tuple[str, str, str, str]] = []
+    order: list[tuple[str, str, str, str] | None] = []
+    for entry in entries:
+        data = entry if isinstance(entry, dict) else {}
+        key = _sunat_key(
+            ruc.strip(), data.get("tipo", ""), data.get("number", "")
+        )
+        order.append(key)
+        if key is not None:
+            keys.append(key)
+    try:
+        cached = store.fetch_many(keys)
+    except Exception as exc:
+        logger.warning(
+            "Sunat cache read failed; continuing without status: %s",
+            type(exc).__name__,
+        )
+        for entry in entries:
+            entry["sunat"] = None
+        return
+    for entry, key in zip(entries, order):
+        row = cached.get(key) if key is not None else None
+        if row is None:
+            entry["sunat"] = None
+        else:
+            entry["sunat"] = {
+                "estado": str(row.get("Estado", "")),
+                "fecha_consulta": str(row.get("FechaConsulta", "")),
+            }

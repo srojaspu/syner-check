@@ -86,6 +86,8 @@ export interface Voucher {
   in_intelisis?: boolean;
   /** Cabecera Intelisis matcheada por (tipo, número, fecha). */
   intelisis?: Record<string, unknown>;
+  /** SUNAT cache status (null = aún no consultado). */
+  sunat?: { estado?: string; fecha_consulta?: string } | null;
   /** SQL index row, present only on sql_index search hits. */
   sql?: Record<string, unknown>;
 }
@@ -107,6 +109,7 @@ export interface SummaryResponse {
   graphql_count: number;
   intelisis_enabled: boolean;
   intelisis_count: number;
+  sunat_enabled: boolean;
   flow?: { per_tipo: Record<string, FlowPerTipo>; totals: FlowPerTipo };
   intelisis_warning?: string | null;
   range: { start: string; end: string };
@@ -118,6 +121,25 @@ export interface SearchResponse {
   searched_range?: { start: string; end: string };
   intelisis_enabled: boolean;
   intelisis_warning?: string | null;
+  sunat_enabled: boolean;
+}
+
+export interface SunatSubmitResponse {
+  trabajos: { trabajo_id: number; cantidad: number }[];
+  enviados: number;
+  omitidos: {
+    cache_terminal: number;
+    invalidos: { tipo: string; number: string; reason: string }[];
+  };
+  total: number;
+}
+
+export interface SunatJobResponse {
+  trabajo_id: number;
+  estado: string;
+  total: number | null;
+  procesados: number | null;
+  resultados: { serie: string; numero: string; estado: string }[];
 }
 
 export interface DocumentResponse {

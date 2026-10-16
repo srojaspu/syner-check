@@ -41,6 +41,8 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
                 (doc.intelisis as Record<string, unknown>).EstatusIntelisis ?? "",
               )
             : "",
+        SUNAT: doc.sunat?.estado ?? "",
+        "Fecha SUNAT": doc.sunat?.fecha_consulta ?? "",
         Flujo:
           doc.in_intelisis === undefined
             ? doc.in_sql
@@ -68,6 +70,8 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
     { wch: 12 },
     { wch: 14 },
     { wch: 14 },
+    { wch: 12 },
+    { wch: 19 },
     { wch: 22 },
   ];
   const book = XLSX.utils.book_new();

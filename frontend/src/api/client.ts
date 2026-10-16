@@ -3,6 +3,9 @@ import type {
   SearchResponse,
   SessionUser,
   SummaryResponse,
+  SunatJobResponse,
+  SunatSubmitResponse,
+  Voucher,
 } from "./types";
 
 export class AuthError extends Error {
@@ -63,4 +66,18 @@ export function logout(): void {
   form.action = "/auth/logout";
   document.body.appendChild(form);
   form.submit();
+}
+
+export function submitSunatLote(
+  documentos: Pick<Voucher, "tipo" | "number" | "date" | "crossTotal">[],
+): Promise<SunatSubmitResponse> {
+  return api("/api/sunat/lotes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ documentos }),
+  });
+}
+
+export function sunatJobStatus(trabajoId: number): Promise<SunatJobResponse> {
+  return api(`/api/sunat/lotes/${trabajoId}`);
 }

@@ -17,6 +17,9 @@ from src.interfaces.wiring import (
     document_detail as clean_document_detail,
     search as clean_search,
     summary as clean_summary,
+    sunat_single as clean_sunat_single,
+    sunat_status as clean_sunat_status,
+    sunat_submit as clean_sunat_submit,
 )
 from .config import (
     BASE_DIR,
@@ -234,3 +237,67 @@ async def api_document(
     except Exception as exc:
         logger.exception("Document detail failed request_id=%s", request.state.request_id)
         raise HTTPException(502, "No fue posible cargar el detalle.") from exc
+
+
+def _actor_email(request: Request) -> str:
+    user = current_user(request) or {}
+    if isinstance(user, dict):
+        return str(user.get("email", ""))
+    return ""
+
+
+@app.post("/api/sunat/lotes")
+async def api_sunat_submit(request: Request):
+    protected(request)
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Cuerpo JSON inválido.") from exc
+    documentos = body.get("documentos", []) if isinstance(body, dict) else []
+    try:
+        return await asyncio.to_thread(
+            clean_sunat_submit, documentos, _actor_email(request)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Sunat submit failed request_id=%s", request.state.request_id)
+        raise HTTPException(502, "No fue posible registrar el lote SUNAT.") from exc
+
+
+@app.get("/api/sunat/lotes/{trabajo_id}")
+async def api_sunat_status(request: Request, trabajo_id: int):
+    protected(request)
+    try:
+        return await asyncio.to_thread(
+            clean_sunat_status, trabajo_id, _actor_email(request)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Sunat status failed request_id=%s", request.state.request_id)
+        raise HTTPException(502, "No fue posible consultar el trabajo SUNAT.") from exc
+
+
+@app.post("/api/sunat/revalidar")
+async def api_sunat_revalidate(request: Request):
+    protected(request)
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Cuerpo JSON inválido.") from exc
+    data = body if isinstance(body, dict) else {}
+    try:
+        return await asyncio.to_thread(
+            clean_sunat_single,
+            str(data.get("tipo", "")),
+            str(data.get("number", "")),
+            str(data.get("date", "")),
+            data.get("importe", ""),
+            _actor_email(request),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Sunat revalidate failed request_id=%s", request.state.request_id)
+        raise HTTPException(502, "No fue posible validar en SUNAT.") from exc

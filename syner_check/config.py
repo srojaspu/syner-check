@@ -110,6 +110,86 @@ def get_intelisis_password() -> str:
     return os.getenv("INTELISIS_PASSWORD", "")
 
 
+# --- SUNAT Validator (microservicio HTTP/JSON, ver docs/) ---
+# Cosas separadas: (a) credenciales del microservicio, (b) RUC emisor,
+# (c) conexión de ESCRITURA a Pu_synerpos para dbo.SunatValidacion.
+# La conexión de escritura NO usa ApplicationIntent=ReadOnly y su cuenta
+# solo tiene SELECT+INSERT+UPDATE sobre esa tabla (mínimo privilegio).
+
+SUNAT_BATCH_MAX = 500
+SUNAT_REQUEST_DOCS_MAX = 2000
+
+
+def get_sunat_validator_config() -> dict:
+    """URL + API key + RUC emisor del microservicio SUNAT Validator."""
+    import os
+
+    url = os.getenv("SUNAT_VALIDATOR_URL", "").strip().rstrip("/")
+    api_key = os.getenv("SUNAT_VALIDATOR_API_KEY", "")
+    ruc = os.getenv("SUNAT_RUC_EMISOR", "").strip()
+    if not url:
+        raise RuntimeError("Missing required env var: SUNAT_VALIDATOR_URL.")
+    if not api_key:
+        raise RuntimeError("Missing required env var: SUNAT_VALIDATOR_API_KEY.")
+    if not ruc or not (ruc.isdigit() and len(ruc) == 11):
+        raise RuntimeError(
+            "Missing or invalid env var: SUNAT_RUC_EMISOR (11 digits)."
+        )
+    try:
+        revalidate_hours = int(os.getenv("SUNAT_REVALIDATE_HOURS", "24"))
+    except ValueError:
+        revalidate_hours = 24
+    return {
+        "url": url,
+        "api_key": api_key,
+        "ruc": ruc,
+        "revalidate_hours": max(1, revalidate_hours),
+    }
+
+
+def get_sunat_db_config() -> dict:
+    """Conexión de escritura a Pu_synerpos (dbo.SunatValidacion).
+
+    Sin ApplicationIntent=ReadOnly: con ese flag los writes fallan.
+    """
+    import os
+
+    server = os.getenv("SUNAT_DB_HOST", "").strip()
+    database = os.getenv("SUNAT_DB_NAME", "Pu_synerpos").strip() or "Pu_synerpos"
+    uid = os.getenv("SUNAT_DB_USER", "").strip()
+    pwd = os.getenv("SUNAT_DB_PASSWORD", "")
+    if not server:
+        raise RuntimeError("Missing required env var: SUNAT_DB_HOST.")
+    if not uid:
+        raise RuntimeError("Missing required env var: SUNAT_DB_USER.")
+    if not pwd:
+        raise RuntimeError("Missing required env var: SUNAT_DB_PASSWORD.")
+    return {
+        "driver": DB_DRIVER_DEFAULT,
+        "server": server,
+        "database": database,
+        "table": "dbo.SunatValidacion",
+        "uid": uid,
+        "trusted": False,
+        "port": "",
+        "instance": "",
+        "timeout": int(os.getenv("SUNAT_DB_TIMEOUT", str(DB_TIMEOUT_DEFAULT))),
+        "encrypt": os.getenv("SUNAT_DB_ENCRYPT", "yes"),
+        "trust_server_certificate": os.getenv(
+            "SUNAT_DB_TRUST_SERVER_CERTIFICATE", "no"
+        ),
+        # Escritura: jamás ReadOnly.
+        "application_intent_read_only": False,
+    }
+
+
+def get_sunat_db_password() -> str:
+    """Return the SunatValidacion writer password (never log or print it)."""
+    import os
+
+    return os.getenv("SUNAT_DB_PASSWORD", "")
+
+
 def is_intelisis_configured() -> bool:
     """True when the Punidas/Intelisis connection is fully configured.
 

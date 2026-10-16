@@ -173,6 +173,41 @@ export function voucherColumns(
         return <Badge variant="outline">Falta en Mov</Badge>;
       },
     },
+    {
+      id: "sunat",
+      header: "SUNAT",
+      accessorFn: (doc) => doc.sunat?.estado?.trim().toUpperCase() || "—",
+      filterFn: "equalsString",
+      meta: {
+        filter: {
+          variant: "select",
+          options: [
+            { value: "ACEPTADO", label: "Aceptado" },
+            { value: "PENDIENTE", label: "Pendiente" },
+            { value: "NO_EXISTE", label: "No existe" },
+            { value: "ANULADO", label: "Anulado" },
+            { value: "DESCONOCIDO", label: "Desconocido" },
+            { value: "ERROR", label: "Error" },
+            { value: "—", label: "Sin consultar" },
+          ],
+        },
+      },
+      cell: ({ row }) => {
+        const estado = (
+          row.original.sunat?.estado ?? ""
+        ).trim().toUpperCase();
+        if (!estado) {
+          return <Badge variant="outline">—</Badge>;
+        }
+        if (estado === "ACEPTADO") {
+          return <Badge variant="default">Aceptado</Badge>;
+        }
+        if (estado === "PENDIENTE") {
+          return <Badge variant="secondary">Pendiente</Badge>;
+        }
+        return <Badge variant="outline">{estado}</Badge>;
+      },
+    },
   ];
 }
 

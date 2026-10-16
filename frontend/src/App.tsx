@@ -23,6 +23,7 @@ import { StatsBar } from "./components/StatsBar";
 import { voucherColumns } from "./components/columns";
 import { useDocument } from "./hooks/useDocument";
 import { useSession } from "./hooks/useSession";
+import { useSunat } from "./hooks/useSunat";
 import { useVouchers, type SearchMode } from "./hooks/useVouchers";
 import { ThemeProvider } from "./theme/ThemeContext";
 
@@ -30,8 +31,15 @@ function Workspace() {
   const { user, ready, onAuthFailure } = useSession();
   const vouchers = useVouchers(onAuthFailure);
   const detail = useDocument(onAuthFailure);
+  const sunat = useSunat(onAuthFailure);
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
+  const [lastRange, setLastRange] = useState<{
+    start: string;
+    end: string;
+    types: string;
+  } | null>(null);
+  const [lastNumber, setLastNumber] = useState<string | null>(null);
   const columns = useMemo(
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
@@ -77,6 +85,14 @@ function Workspace() {
     void detail.show(row);
   };
 
+  const refreshRows = () => {
+    if (mode === "range" && lastRange) {
+      void vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
+    } else if (mode === "number" && lastNumber) {
+      void vouchers.runNumber(lastNumber);
+    }
+  };
+
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
       <div className="flex flex-col gap-6">
@@ -86,12 +102,20 @@ function Workspace() {
           {mode === "range" ? (
             <RangePanel
               disabled={vouchers.loading}
-              onSearch={(start, end, types) => void vouchers.runRange(start, end, types)}
+              onSearch={(start, end, types) => {
+                setLastRange({ start, end, types });
+                setLastNumber(null);
+                void vouchers.runRange(start, end, types);
+              }}
             />
           ) : (
             <NumberPanel
               disabled={vouchers.loading}
-              onSearch={(number) => void vouchers.runNumber(number)}
+              onSearch={(number) => {
+                setLastNumber(number);
+                setLastRange(null);
+                void vouchers.runNumber(number);
+              }}
             />
           )}
         </section>
@@ -117,10 +141,33 @@ function Workspace() {
             <div className="flex flex-col gap-1">
               <CardTitle>Resultados</CardTitle>
               <CardDescription>
-                {vouchers.error ?? vouchers.subtitle}
+                {sunat.error ??
+                  vouchers.error ??
+                  sunat.progress ??
+                  vouchers.subtitle}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 sm:justify-self-end">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  !vouchers.rows.length || vouchers.loading || sunat.busy
+                }
+                onClick={() => void sunat.runBatch(vouchers.rows, refreshRows)}
+                title="Valida los documentos mostrados contra SUNAT en lotes"
+              >
+                {sunat.busy ? (
+                  <HugeiconsIcon
+                    icon={Loading02Icon}
+                    size={16}
+                    strokeWidth={2}
+                    className="animate-spin"
+                    aria-hidden
+                  />
+                ) : null}{" "}
+                Validar en SUNAT
+              </Button>
               <Button
                 type="button"
                 variant="secondary"
