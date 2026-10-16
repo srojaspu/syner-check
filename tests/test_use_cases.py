@@ -106,6 +106,64 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(res["source"], "graphql_fallback")
 
 
+class NumberIntelisisTests(unittest.TestCase):
+    def _intelisis(self, rows=None, fail=False):
+        class Intelisis:
+            def __init__(self):
+                self.dates: list[tuple[str, str]] = []
+
+            def fetch_headers(self, start_iso, end_iso):
+                self.dates.append((start_iso, end_iso))
+                if fail:
+                    raise RuntimeError("boom")
+                return [r for r in (rows or []) if start_iso <= r["FechaEmision"] <= end_iso]
+
+        return Intelisis()
+
+    def test_marks_in_intelisis(self):
+        rows = [
+            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001-1"},
+        ]
+        gw = FakeGateway({("FACTURA", "2026-09-01"): [
+            {"oid": "A1", "number": "F001-1", "date": "2026-09-01T10:00:00"},
+        ]})
+        intel = self._intelisis([
+            {"IntelisisID": "1", "Mov": "SE-Factura", "MovID": "X",
+             "StoreName": "T", "TransactionType": "factura",
+             "ReceiptNumber": "F001-00000001", "FechaEmision": "2026-09-01",
+             "EstatusIntelisis": "CANCELADO", "SerieSUNAT": "", "TipoDocSUNAT": "01"},
+        ])
+        res = search_by_number(
+            FakeReader(rows),
+            gw,
+            number="F001-1",
+            fallback_days=90,
+            today=date(2026, 9, 20),
+            intelisis=intel,
+        )
+        self.assertTrue(res["intelisis_enabled"])
+        self.assertEqual(intel.dates, [("2026-09-01", "2026-09-01")])
+        hit = res["results"][0]
+        self.assertTrue(hit["in_intelisis"])
+        self.assertEqual(hit["intelisis"]["EstatusIntelisis"], "CANCELADO")
+
+    def test_degraded(self):
+        gw = FakeGateway({("BOLETA", "2026-09-02"): [
+            {"oid": "B9", "number": "B009", "date": "2026-09-02T10:00:00"},
+        ]})
+        res = search_by_number(
+            FakeReader([]),
+            gw,
+            number="B009",
+            fallback_days=1,
+            today=date(2026, 9, 20),
+            intelisis=self._intelisis(fail=True),
+        )
+        self.assertFalse(res["intelisis_enabled"])
+        self.assertEqual(res["intelisis_warning"], "intelisis_unavailable")
+        self.assertFalse(res["results"][0]["in_intelisis"])
+
+
 class SummarizeTests(unittest.TestCase):
     def test_marks_in_sql(self):
         class Reader(FakeReader):

@@ -62,6 +62,62 @@ def _flow_key(tipo_canon: str, receipt_norm: str, fecha10: str) -> tuple[str, st
     )
 
 
+def _intelisis_index(rows: object) -> dict[tuple[str, str, str], dict]:
+    """Index Intelisis/Venta headers by (tipo, receipt_norm, fecha)."""
+    by_key: dict[tuple[str, str, str], dict] = {}
+    for prow in rows or []:
+        if not isinstance(prow, dict):
+            continue
+        tipo_canon = _canon_intelisis_tipo(prow.get("TransactionType"))
+        if not tipo_canon:
+            continue
+        key = _flow_key(
+            tipo_canon,
+            _norm_receipt(prow.get("ReceiptNumber")),
+            str(prow.get("FechaEmision", ""))[:10],
+        )
+        by_key.setdefault(key, prow)
+    return by_key
+
+
+def _intelisis_payload(prow: dict) -> dict:
+    """Minimal Intelisis header attached to a matched voucher."""
+    return {
+        "IntelisisID": str(prow.get("IntelisisID", "")),
+        "Mov": str(prow.get("Mov", "")),
+        "MovID": str(prow.get("MovID", "")),
+        "ReceiptNumber": str(prow.get("ReceiptNumber", "")),
+        "FechaEmision": str(prow.get("FechaEmision", "")),
+        "EstatusIntelisis": str(prow.get("EstatusIntelisis", "")),
+        "StoreName": str(prow.get("StoreName", "")),
+    }
+
+
+def _fetch_intelisis_dates(
+    intelisis: IntelisisReader, dates: set[str] | Sequence[str], limit: int = 10
+) -> tuple[list[dict], str | None]:
+    """Fetch 1-day Intelisis headers for distinct doc dates (capped).
+
+    Returns (rows, warning). Never raises: failures degrade to ([], warn).
+    """
+    wanted = sorted({str(d or "")[:10] for d in dates if str(d or "")[:10]})[:limit]
+    if not wanted:
+        return [], None
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max(1, min(len(wanted), 4))) as pool:
+        futures = {d: pool.submit(intelisis.fetch_headers, d, d) for d in wanted}
+        for future in futures.values():
+            try:
+                rows.extend(future.result() or [])
+            except Exception as exc:
+                logger.warning(
+                    "Intelisis fetch failed; continuing degraded: %s",
+                    type(exc).__name__,
+                )
+                return [], "intelisis_unavailable"
+    return rows, None
+
+
 def summarize(
     reader: SqlDocumentReader,
     gateway: GraphqlGateway,
@@ -109,19 +165,9 @@ def summarize(
     for row in sql:
         sql_by_type.setdefault(str(row.get("TipoDocumento", "")), []).append(row)
 
-    intelisis_by_key: dict[tuple[str, str, str], dict] = {}
-    for prow in intelisis_rows:
-        if not isinstance(prow, dict):
-            continue
-        tipo_canon = _canon_intelisis_tipo(prow.get("TransactionType"))
-        if not tipo_canon:
-            continue
-        key = _flow_key(
-            tipo_canon,
-            _norm_receipt(prow.get("ReceiptNumber")),
-            str(prow.get("FechaEmision", ""))[:10],
-        )
-        intelisis_by_key.setdefault(key, prow)
+    intelisis_by_key: dict[tuple[str, str, str], dict] = _intelisis_index(
+        intelisis_rows
+    )
 
     out: dict[str, list[dict]] = {}
     flow_per_tipo: dict[str, dict] = {}
@@ -160,15 +206,7 @@ def summarize(
             cancelled += 1 if (in_sql and is_cancelled) else 0
             entry = {**doc, "tipo": tipo, "in_sql": in_sql, "in_intelisis": in_intelisis}
             if prow is not None:
-                entry["intelisis"] = {
-                    "IntelisisID": str(prow.get("IntelisisID", "")),
-                    "Mov": str(prow.get("Mov", "")),
-                    "MovID": str(prow.get("MovID", "")),
-                    "ReceiptNumber": str(prow.get("ReceiptNumber", "")),
-                    "FechaEmision": str(prow.get("FechaEmision", "")),
-                    "EstatusIntelisis": str(prow.get("EstatusIntelisis", "")),
-                    "StoreName": str(prow.get("StoreName", "")),
-                }
+                entry["intelisis"] = _intelisis_payload(prow)
             rows.append(entry)
         out[tipo] = rows
         flow_per_tipo[tipo] = {
@@ -216,6 +254,7 @@ def search_by_number(
     number: str,
     fallback_days: int,
     today: date,
+    intelisis: IntelisisReader | None = None,
 ) -> dict:
     """Find one voucher by number across all document types.
 
@@ -223,7 +262,10 @@ def search_by_number(
     lookup, no date range). NOTA DE CREDITO has no `serie` support, so it
     uses date-scoped summaries (the SQL rows' dates when indexed, else the
     last ``fallback_days`` days). The local SQL index decides `source` and
-    `in_sql`; GraphQL provides the display fields.
+    `in_sql`; GraphQL provides the display fields. When an Intelisis reader
+    is given, each hit is also matched against Venta headers for its own
+    date (1-day fetches, capped), so number search reports `in_intelisis`
+    with the same (tipo, number, fecha) key as the range summary.
     """
     cleaned = (number or "").strip()
     if not cleaned:
@@ -315,9 +357,44 @@ def search_by_number(
             entry["sql"] = sql_row
         results.append(entry)
 
-    out: dict = {"results": results, "source": source}
+    # Intelisis (optional, degraded): match each hit against Venta headers
+    # fetched for the hits' own dates, same key as the range summary.
+    intelisis_enabled = False
+    intelisis_warning: str | None = None
+    if intelisis is not None:
+        doc_dates = {
+            str(e.get("date", ""))[:10] for e in results if str(e.get("date", ""))[:10]
+        }
+        fetched, intelisis_warning = _fetch_intelisis_dates(intelisis, doc_dates)
+        if intelisis_warning is None:
+            intelisis_enabled = True
+            by_key = _intelisis_index(fetched)
+            for entry in results:
+                key = _flow_key(
+                    str(entry.get("tipo", "")),
+                    _norm_receipt(entry.get("number", "")),
+                    str(entry.get("date", ""))[:10],
+                )
+                prow = by_key.get(key)
+                entry["in_intelisis"] = prow is not None
+                if prow is not None:
+                    entry["intelisis"] = _intelisis_payload(prow)
+        else:
+            for entry in results:
+                entry["in_intelisis"] = False
+    else:
+        for entry in results:
+            entry["in_intelisis"] = False
+
+    out: dict = {
+        "results": results,
+        "source": source,
+        "intelisis_enabled": intelisis_enabled,
+    }
     if searched_range is not None:
         out["searched_range"] = searched_range
+    if intelisis_warning is not None:
+        out["intelisis_warning"] = intelisis_warning
     return out
 
 

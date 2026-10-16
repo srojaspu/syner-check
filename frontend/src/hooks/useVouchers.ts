@@ -90,9 +90,9 @@ export function useVouchers(onAuthFailure: () => void) {
           loading: false,
           error: null,
           searched: true,
-          intelisisEnabled: false,
+          intelisisEnabled: Boolean(data.intelisis_enabled),
           intelisisCount: 0,
-          intelisisWarning: null,
+          intelisisWarning: data.intelisis_warning ?? null,
           flow: null,
         });
       } catch (error: unknown) {

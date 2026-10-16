@@ -116,6 +116,8 @@ export interface SearchResponse {
   results: Voucher[];
   source: "sql_index" | "graphql_fallback";
   searched_range?: { start: string; end: string };
+  intelisis_enabled: boolean;
+  intelisis_warning?: string | null;
 }
 
 export interface DocumentResponse {

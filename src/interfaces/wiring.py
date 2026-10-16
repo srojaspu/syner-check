@@ -69,6 +69,7 @@ def search(number: str, fallback_days: int, today: date) -> dict:
             number=number,
             fallback_days=fallback_days,
             today=today,
+            intelisis=_intelisis_reader(),
         )
     except InvalidRangeError as exc:
         raise HTTPException(400, str(exc) if str(exc) else "Fechas inválidas.")
