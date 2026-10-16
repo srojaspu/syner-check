@@ -21,6 +21,13 @@ class SqlDocumentReader(Protocol):
         ...
 
 
+class IntelisisReader(Protocol):
+    """Reads Intelisis/Venta headers (SynerPOS origin only: SE-* Movs)."""
+
+    def fetch_headers(self, start_iso: str, end_iso: str) -> list[dict]:
+        ...
+
+
 class GraphqlGateway(Protocol):
     def detail(
         self,

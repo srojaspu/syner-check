@@ -16,7 +16,7 @@ from src.domain.errors import (
     NotFoundError,
     UpstreamError,
 )
-from src.infrastructure import GraphqlGatewayAdapter, SqlReaderAdapter
+from src.infrastructure import GraphqlGatewayAdapter, IntelisisReaderAdapter, SqlReaderAdapter
 
 logger = logging.getLogger("syner_check.wiring")
 
@@ -26,6 +26,18 @@ def _tipos(values: Sequence[str]) -> list[TipoDocumento]:
         return [TipoDocumento.parse(v) for v in values]
     except InvalidDocumentTypeError:
         raise HTTPException(400, "Tipo de documento inválido.")
+
+
+def _intelisis_reader():
+    """Intelisis adapter when configured, else None (degraded flow)."""
+    from app import db as app_db
+
+    try:
+        if app_db.intelisis_enabled():
+            return IntelisisReaderAdapter()
+    except Exception:
+        logger.warning("Intelisis check failed; continuing degraded")
+    return None
 
 
 def summary(
@@ -39,6 +51,7 @@ def summary(
             end_iso=end_iso,
             tipos=_tipos(tipo_values),
             max_range_days=max_range_days,
+            intelisis=_intelisis_reader(),
         )
     except InvalidRangeError:
         raise HTTPException(400, "Fechas inválidas.")

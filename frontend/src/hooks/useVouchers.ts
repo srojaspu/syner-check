@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { AuthError, getSummary, searchByNumber } from "../api/client";
-import type { Voucher } from "../api/types";
+import type { FlowPerTipo, Voucher } from "../api/types";
 
 export type SearchMode = "range" | "number";
 
@@ -10,6 +10,10 @@ interface VoucherState {
   loading: boolean;
   error: string | null;
   searched: boolean;
+  intelisisEnabled: boolean;
+  intelisisCount: number;
+  intelisisWarning: string | null;
+  flow: { per_tipo: Record<string, FlowPerTipo>; totals: FlowPerTipo } | null;
 }
 
 const EMPTY: VoucherState = {
@@ -18,6 +22,10 @@ const EMPTY: VoucherState = {
   loading: false,
   error: null,
   searched: false,
+  intelisisEnabled: false,
+  intelisisCount: 0,
+  intelisisWarning: null,
+  flow: null,
 };
 
 /** Container: owns fetching + rows; presentation lives in components. */
@@ -55,6 +63,10 @@ export function useVouchers(onAuthFailure: () => void) {
           loading: false,
           error: null,
           searched: true,
+          intelisisEnabled: Boolean(data.intelisis_enabled),
+          intelisisCount: Number(data.intelisis_count ?? 0),
+          intelisisWarning: data.intelisis_warning ?? null,
+          flow: data.flow ?? null,
         });
       } catch (error: unknown) {
         fail(error);
@@ -78,6 +90,10 @@ export function useVouchers(onAuthFailure: () => void) {
           loading: false,
           error: null,
           searched: true,
+          intelisisEnabled: false,
+          intelisisCount: 0,
+          intelisisWarning: null,
+          flow: null,
         });
       } catch (error: unknown) {
         fail(error);

@@ -3,9 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   FileDownIcon,
   Loading02Icon,
-  ZapIcon,
 } from "@hugeicons/core-free-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,6 +17,7 @@ import type { Voucher } from "./api/types";
 import { Account, AppShell, LoginCard, Tabs, TopBar } from "./components/AppShell";
 import { DataTable } from "./components/DataTable";
 import { DetailDrawer } from "./components/DetailDrawer";
+import { FlowBar } from "./components/FlowBar";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
 import { StatsBar } from "./components/StatsBar";
 import { voucherColumns } from "./components/columns";
@@ -33,7 +32,10 @@ function Workspace() {
   const detail = useDocument(onAuthFailure);
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
-  const columns = useMemo(() => voucherColumns(), []);
+  const columns = useMemo(
+    () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
+    [vouchers.intelisisEnabled],
+  );
 
   if (!ready) {
     return (
@@ -78,27 +80,6 @@ function Workspace() {
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex max-w-xl flex-col gap-2">
-            <Badge variant="outline" className="w-fit">
-              CENTRO DE CONSULTA
-            </Badge>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Encuentra un comprobante en segundos
-            </h1>
-            <p className="text-muted-foreground">
-              Consulta por rango de fechas o busca directamente por número.
-            </p>
-          </div>
-          <Badge variant="secondary" className="gap-1.5">
-            <span className="relative flex size-2" aria-hidden>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-            </span>
-            <HugeiconsIcon icon={ZapIcon} size={14} strokeWidth={2} aria-hidden /> Conexión protegida
-          </Badge>
-        </div>
-
         <Tabs mode={mode} onChange={setMode} />
 
         <section>
@@ -115,7 +96,21 @@ function Workspace() {
           )}
         </section>
 
-        {vouchers.searched ? <StatsBar rows={vouchers.rows} /> : null}
+        {vouchers.searched && vouchers.flow ? (
+          <FlowBar
+            totals={vouchers.flow.totals}
+            intelisisEnabled={vouchers.intelisisEnabled}
+            intelisisCount={vouchers.intelisisCount}
+            intelisisWarning={vouchers.intelisisWarning}
+          />
+        ) : null}
+
+        {vouchers.searched ? (
+          <StatsBar
+            rows={vouchers.rows}
+            intelisisEnabled={vouchers.intelisisEnabled}
+          />
+        ) : null}
 
         <Card>
           <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">

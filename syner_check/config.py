@@ -103,6 +103,75 @@ def get_db_password() -> str:
     return os.getenv("DB_USER_PASSWORD", "")
 
 
+def get_intelisis_password() -> str:
+    """Return the Intelisis DB password from env (never log or print it)."""
+    import os
+
+    return os.getenv("INTELISIS_PASSWORD", "")
+
+
+def is_intelisis_configured() -> bool:
+    """True when the Punidas/Intelisis connection is fully configured.
+
+    Intelisis lives on a different server/DB than MovSynerPos
+    (Punidas 172.0.1.156 vs Pu_synerpos 172.0.2.162), so it gets its own
+    INTELISIS_* variables. Missing config means "degraded mode":
+    callers return intelisis_enabled=False instead of failing.
+    """
+    import os
+
+    return bool(
+        os.getenv("INTELISIS_HOST", "").strip()
+        and os.getenv("INTELISIS_DB", "").strip()
+        and os.getenv("INTELISIS_USER", "").strip()
+        and os.getenv("INTELISIS_PASSWORD", "")
+    )
+
+
+def get_intelisis_config() -> dict:
+    """Build the Intelisis (Punidas) DB config from INTELISIS_* env vars.
+
+    Raises RuntimeError naming the missing variable (never its value).
+    Reuses driver/timeout/encrypt semantics from get_db_config().
+    """
+    import os
+
+    server = os.getenv("INTELISIS_HOST", "").strip()
+    database = os.getenv("INTELISIS_DB", "").strip()
+    uid = os.getenv("INTELISIS_USER", "").strip()
+    pwd = os.getenv("INTELISIS_PASSWORD", "")
+    if not server:
+        raise RuntimeError("Missing required DB env var: INTELISIS_HOST.")
+    if not database:
+        raise RuntimeError("Missing required DB env var: INTELISIS_DB.")
+    if not uid:
+        raise RuntimeError("Missing required DB env var: INTELISIS_USER.")
+    if not pwd:
+        raise RuntimeError("Missing required DB env var: INTELISIS_PASSWORD.")
+    try:
+        timeout = int(os.getenv("INTELISIS_TIMEOUT", str(DB_TIMEOUT_DEFAULT)))
+    except ValueError:
+        timeout = DB_TIMEOUT_DEFAULT
+    return {
+        "driver": DB_DRIVER_DEFAULT,
+        "server": server,
+        "database": database,
+        "table": "dbo.Venta",
+        "uid": uid,
+        "trusted": False,
+        "port": os.getenv("INTELISIS_PORT", "").strip(),
+        "instance": os.getenv("INTELISIS_INSTANCE", "").strip(),
+        "timeout": timeout,
+        "encrypt": os.getenv("INTELISIS_ENCRYPT", "yes"),
+        "trust_server_certificate": os.getenv(
+            "INTELISIS_TRUST_SERVER_CERTIFICATE", "no"
+        ),
+        "application_intent_read_only": _is_truthy(
+            os.getenv("INTELISIS_READ_ONLY", "true")
+        ),
+    }
+
+
 def resolve_graphql_token() -> tuple[str, str]:
     """Return (token, source) where source is always 'auto'.
 

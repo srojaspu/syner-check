@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from syner_check.config import get_db_config, get_db_password
+from syner_check.config import (
+    get_db_config,
+    get_db_password,
+    is_intelisis_configured,
+)
 from syner_check.db_client import (
     ALLOWED_TIPOS,
     _to_iso_date,
@@ -74,5 +78,51 @@ def fetch_by_number(
         for row in cur.fetchall():
             rows.append(_normalize_row(cols, row))
         return rows
+    finally:
+        cn.close()
+
+
+def intelisis_enabled() -> bool:
+    return is_intelisis_configured()
+
+
+def fetch_intelisis_documents(start_date: str, end_date: str) -> list[dict]:
+    """Read-only fetch of Intelisis/Venta headers (SynerPOS origin).
+
+    Raises when INTELISIS_* is missing; callers treat that as degraded
+    (intelisis_enabled=False) instead of failing the whole summary.
+    """
+    from syner_check import config as cfg
+    from syner_check import db_client as client
+
+    if not cfg.is_intelisis_configured():
+        raise RuntimeError("Missing required DB env var: INTELISIS_HOST.")
+    db_config = cfg.get_intelisis_config()
+    cn = client.connect(db_config, cfg.get_intelisis_password())
+    try:
+        cur = cn.cursor()
+        cur.execute(client.INTELISIS_HEADERS_QUERY, start_date, end_date)
+        cols = [c[0] for c in cur.description]
+        out = []
+        for row in cur.fetchall():
+            data = dict(zip(cols, row))
+            out.append(
+                {
+                    "IntelisisID": _to_str(data.get("IntelisisID")),
+                    "Mov": _to_str(data.get("Mov")),
+                    "MovID": _to_str(data.get("MovID")),
+                    "StoreName": _to_str(data.get("StoreName")),
+                    "TransactionType": _to_str(
+                        data.get("TransactionType")
+                    ),
+                    "ReceiptNumber": _to_str(data.get("ReceiptNumber")),
+                    "FechaEmision": (
+                        _to_iso_date(data.get("FechaEmision"))
+                    ),
+                    "SerieSUNAT": _to_str(data.get("SerieSUNAT")),
+                    "TipoDocSUNAT": _to_str(data.get("TipoDocSUNAT")),
+                }
+            )
+        return out
     finally:
         cn.close()

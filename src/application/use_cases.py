@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from hmac import compare_digest
@@ -10,11 +11,55 @@ from typing import Sequence
 from src.domain.entities import FechaRango, TipoDocumento
 from src.domain.errors import InvalidRangeError, NotFoundError
 
-from .ports import GraphqlGateway, SqlDocumentReader
+from .ports import GraphqlGateway, IntelisisReader, SqlDocumentReader
+
+logger = logging.getLogger("syner_check.use_cases")
 
 
 def _iso(d: date) -> str:
     return d.isoformat()
+
+
+_INTELISIS_TIPO_MAP = {
+    "factura": "FACTURA",
+    "boleta": "BOLETA",
+    "nota_credito": "NOTA DE CREDITO",
+    "nota-credito": "NOTA DE CREDITO",
+}
+
+
+def _canon_intelisis_tipo(raw: object) -> str:
+    token = str(raw or "").strip().lower().replace(" ", "_")
+    if token in ("factura", "boleta", "nota_credito", "nota-credito"):
+        return _INTELISIS_TIPO_MAP[token]
+    return _INTELISIS_TIPO_MAP.get(token.replace("-", "_"), "")
+
+
+def _norm_receipt(raw: object) -> str:
+    """Canonical receipt key: PREFIX + serie + '-' + correlativo sin ceros.
+
+    'F001-00000123' == 'f001-123' == 'F001-00000123 '. Sin '-' se
+    normaliza a UPPER sin espacios (fallback, no colapsa documentos).
+    """
+    text = str(raw or "").strip().upper().replace(" ", "")
+    if not text or "-" not in text:
+        return text
+    head, _, tail = text.rpartition("-")
+    if not head or not tail:
+        return text
+    prefix = head[:1] if head[:1] in ("F", "B", "N") else ""
+    serie = head[1:] if prefix else head
+    serie = serie.lstrip("0") or ("0" if serie else "")
+    correlativo = tail.lstrip("0") or "0"
+    return f"{prefix}{serie}-{correlativo}"
+
+
+def _flow_key(tipo_canon: str, receipt_norm: str, fecha10: str) -> tuple[str, str, str]:
+    return (
+        str(tipo_canon or "").strip().upper(),
+        receipt_norm,
+        str(fecha10 or "")[:10],
+    )
 
 
 def summarize(
@@ -25,22 +70,61 @@ def summarize(
     end_iso: str,
     tipos: Sequence[TipoDocumento],
     max_range_days: int,
+    intelisis: IntelisisReader | None = None,
 ) -> dict:
     FechaRango.from_iso(start_iso, end_iso, max_range_days)
     tipo_values = [t.value for t in tipos]
-    # GraphQL and SQL reads are independent: run them concurrently so total
-    # latency is max(graphql, sql) instead of graphql + sql.
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    # GraphQL, MovSynerPos e Intelisis son independientes: lecturas
+    # concurrentes para que la latencia total sea max() y no la suma.
+    # Intelisis es opcional: si no esta configurado o falla, se degrada
+    # a intelisis_enabled=False sin romper el resumen base.
+    workers = 3 if intelisis is not None else 2
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         gql_future = pool.submit(gateway.summary, start_iso, end_iso, tipo_values)
         sql_future = pool.submit(reader.fetch_documents, start_iso, end_iso, tipo_values)
+        int_future = (
+            pool.submit(intelisis.fetch_headers, start_iso, end_iso)
+            if intelisis is not None
+            else None
+        )
         gql = gql_future.result()
         sql = sql_future.result()
+        intelisis_rows: list[dict] = []
+        intelisis_warning: str | None = None
+        if int_future is not None:
+            try:
+                fetched = int_future.result()
+                intelisis_rows = list(fetched or [])
+            except Exception as exc:
+                logger.warning(
+                    "Intelisis fetch failed; continuing degraded: %s",
+                    type(exc).__name__,
+                )
+                intelisis_rows = []
+                intelisis_warning = "intelisis_unavailable"
+
+    intelisis_enabled = int_future is not None and intelisis_warning is None
 
     sql_by_type: dict[str, list[dict]] = {t: [] for t in tipo_values}
     for row in sql:
         sql_by_type.setdefault(str(row.get("TipoDocumento", "")), []).append(row)
 
+    intelisis_by_key: dict[tuple[str, str, str], dict] = {}
+    for prow in intelisis_rows:
+        if not isinstance(prow, dict):
+            continue
+        tipo_canon = _canon_intelisis_tipo(prow.get("TransactionType"))
+        if not tipo_canon:
+            continue
+        key = _flow_key(
+            tipo_canon,
+            _norm_receipt(prow.get("ReceiptNumber")),
+            str(prow.get("FechaEmision", ""))[:10],
+        )
+        intelisis_by_key.setdefault(key, prow)
+
     out: dict[str, list[dict]] = {}
+    flow_per_tipo: dict[str, dict] = {}
     for tipo in tipo_values:
         docs = gql.get(tipo, [])
         sql_keys = {
@@ -48,16 +132,61 @@ def summarize(
             for r in sql_by_type.get(tipo, [])
         }
         rows = []
+        in_mov = in_int = full = 0
         for doc in docs:
-            key = (str(doc.get("oid", "")).strip().upper(), str(doc.get("date", ""))[:10])
-            rows.append({**doc, "tipo": tipo, "in_sql": key in sql_keys})
+            sql_key = (str(doc.get("oid", "")).strip().upper(), str(doc.get("date", ""))[:10])
+            in_sql = sql_key in sql_keys
+            doc_tipo = str(doc.get("tipo", "") or tipo).strip().upper() or tipo
+            flow_k = _flow_key(
+                doc_tipo,
+                _norm_receipt(doc.get("number", "")),
+                str(doc.get("date", ""))[:10],
+            )
+            prow = intelisis_by_key.get(flow_k)
+            in_intelisis = prow is not None
+            in_mov += 1 if in_sql else 0
+            in_int += 1 if in_intelisis else 0
+            full += 1 if (in_sql and in_intelisis) else 0
+            entry = {**doc, "tipo": tipo, "in_sql": in_sql, "in_intelisis": in_intelisis}
+            if prow is not None:
+                entry["intelisis"] = {
+                    "IntelisisID": str(prow.get("IntelisisID", "")),
+                    "Mov": str(prow.get("Mov", "")),
+                    "MovID": str(prow.get("MovID", "")),
+                    "ReceiptNumber": str(prow.get("ReceiptNumber", "")),
+                    "FechaEmision": str(prow.get("FechaEmision", "")),
+                    "StoreName": str(prow.get("StoreName", "")),
+                }
+            rows.append(entry)
         out[tipo] = rows
-    return {
+        flow_per_tipo[tipo] = {
+            "graphql": len(docs),
+            "in_mov": in_mov,
+            "in_intelisis": in_int,
+            "full": full,
+            "missing_in_mov": len(docs) - in_mov,
+            "missing_in_intelisis": len(docs) - in_int,
+        }
+    totals = {
+        "graphql": sum(v["graphql"] for v in flow_per_tipo.values()),
+        "in_mov": sum(v["in_mov"] for v in flow_per_tipo.values()),
+        "in_intelisis": sum(v["in_intelisis"] for v in flow_per_tipo.values()),
+        "full": sum(v["full"] for v in flow_per_tipo.values()),
+    }
+    totals["missing_in_mov"] = totals["graphql"] - totals["in_mov"]
+    totals["missing_in_intelisis"] = totals["graphql"] - totals["in_intelisis"]
+    result = {
         "documents": out,
         "sql_count": len(sql),
         "graphql_count": sum(len(v) for v in gql.values()),
+        "intelisis_enabled": intelisis_enabled,
+        "intelisis_count": len(intelisis_rows) if intelisis_enabled else 0,
+        "flow": {"per_tipo": flow_per_tipo, "totals": totals},
         "range": {"start": start_iso, "end": end_iso},
     }
+    if intelisis_warning is not None:
+        result["intelisis_warning"] = intelisis_warning
+    return result
 
 
 def search_by_number(

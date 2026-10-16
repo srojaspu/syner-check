@@ -1,9 +1,4 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  CancelCircleIcon,
-  CheckmarkCircle02Icon,
-} from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { TipoDocumento, Voucher } from "../api/types";
@@ -22,7 +17,10 @@ const TIPO_LABEL: Record<TipoDocumento, string> = {
   "NOTA DE CREDITO": "Nota de crédito",
 };
 
-export function voucherColumns(): ColumnDef<Voucher>[] {
+export function voucherColumns(
+  opts: { intelisisEnabled?: boolean } = {},
+): ColumnDef<Voucher>[] {
+  const intelisisEnabled = opts.intelisisEnabled ?? true;
   return [
     {
       id: "documento",
@@ -117,41 +115,47 @@ export function voucherColumns(): ColumnDef<Voucher>[] {
       ),
     },
     {
-      id: "enSql",
-      header: "SQL",
-      accessorFn: (doc) => (doc.in_sql ? "SI" : "NO"),
+      id: "flujo",
+      header: "Flujo",
+      accessorFn: (doc) => {
+        // Intelisis se alimenta solo desde Mov vía job, por lo que un doc
+        // en Intelisis implica en Mov: 3 estados bastan (sin "Solo Intelisis").
+        if (doc.in_intelisis === undefined || !intelisisEnabled) {
+          return doc.in_sql ? "EN_MOV" : "FALTA_MOV";
+        }
+        if (doc.in_sql && doc.in_intelisis) return "COMPLETO";
+        if (doc.in_sql) return "FALTA_INTELISIS";
+        return "FALTA_MOV";
+      },
       filterFn: "equalsString",
       meta: {
         filter: {
           variant: "select",
           options: [
-            { value: "SI", label: "Encontrado" },
-            { value: "NO", label: "No encontrado" },
+            { value: "COMPLETO", label: "Completo" },
+            { value: "FALTA_INTELISIS", label: "Falta en Intelisis" },
+            { value: "FALTA_MOV", label: "Falta en Mov" },
+            { value: "EN_MOV", label: "En Mov (sin Intelisis)" },
           ],
         },
       },
-      cell: ({ row }) =>
-        row.original.in_sql ? (
-          <Badge variant="default">
-            <HugeiconsIcon
-              icon={CheckmarkCircle02Icon}
-              size={14}
-              strokeWidth={2}
-              aria-hidden
-            />{" "}
-            Encontrado
-          </Badge>
-        ) : (
-          <Badge variant="outline">
-            <HugeiconsIcon
-              icon={CancelCircleIcon}
-              size={14}
-              strokeWidth={2}
-              aria-hidden
-            />{" "}
-            No encontrado
-          </Badge>
-        ),
+      cell: ({ row }) => {
+        const doc = row.original;
+        if (doc.in_intelisis === undefined || !intelisisEnabled) {
+          return (
+            <Badge variant="secondary">
+              {doc.in_sql ? "En Mov" : "Falta en Mov"}
+            </Badge>
+          );
+        }
+        if (doc.in_sql && doc.in_intelisis) {
+          return <Badge variant="default">Completo</Badge>;
+        }
+        if (doc.in_sql) {
+          return <Badge variant="outline">Falta en Intelisis</Badge>;
+        }
+        return <Badge variant="outline">Falta en Mov</Badge>;
+      },
     },
   ];
 }

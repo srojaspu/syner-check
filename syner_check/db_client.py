@@ -180,3 +180,95 @@ def fetch_sql_documents(
         return rows
     finally:
         connection.close()
+
+
+# --- Intelisis (Punidas) reader: Venta cabecera, solo origen SynerPOS ---
+#
+# Sintesis de docs/querys/punidas.sql (base sargable + NC correcta) con el
+# aporte diagnostico de docs/querys/bfn.sql (MovTipo como LEFT no excluyente).
+# Solo Mov SE-* (origen SynerPOS); la llave de comparacion con MovSynerPos es
+# (TransactionType, ReceiptNumber, FechaEmision) porque V.ID (identidad
+# Intelisis) no equals IDSynerPos/oid (secuencias distintas).
+# Venta es cabecera (sin Sku): fase 1 compara cabecera; linea via VentaD
+# queda como fase 2.
+# StoreName usa S.Nombre directo (sin dbo.fn_LimpiaTexto: la cuenta
+# read-only no tiene EXECUTE sobre la funcion, verificado 2026-10-16).
+
+INTELISIS_MOVS = ("SE-Boleta", "SE-Factura", "SE-Nota Credito")
+
+INTELISIS_HEADERS_QUERY = """
+SELECT
+  V.ID AS IntelisisID,
+  V.Mov,
+  V.MovID,
+  StoreName = LTRIM(RTRIM(S.Nombre)),
+  TransactionType =
+    CASE WHEN V.Mov = 'SE-Factura' THEN 'factura'
+         WHEN V.Mov = 'SE-Nota Credito' THEN 'nota_credito'
+         ELSE 'boleta' END,
+  ReceiptNumber =
+    CASE WHEN V.Mov = 'SE-Factura' THEN 'F'
+         WHEN V.Mov = 'SE-Nota Credito' THEN 'N'
+         ELSE 'B' END
+    + COALESCE(S.MapaUbicacion, CAST(S.Sucursal AS VARCHAR(10)))
+    + '-' + CASE
+        WHEN STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '')
+             LIKE '%[^0-9]%'
+        THEN STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '')
+        ELSE RIGHT('00000000' + NULLIF(STUFF(V.MovID, 1,
+             NULLIF(CHARINDEX('-', V.MovID), 0), ''), ''), 8) END,
+  V.FechaEmision,
+  SerieSUNAT = LTRIM(RTRIM(B.SeriePU)),
+  TipoDocSUNAT = B.TipoDocumentoPU
+FROM dbo.Venta V WITH (NOLOCK)
+JOIN dbo.Sucursal S WITH (NOLOCK) ON V.Sucursal = S.Sucursal
+LEFT JOIN dbo.MovTipo B WITH (NOLOCK)
+  ON B.Modulo = 'VTAS' AND B.Mov = V.Mov
+WHERE V.Empresa = 'PU'
+  AND V.Mov IN ('SE-Boleta', 'SE-Factura', 'SE-Nota Credito')
+  AND V.FechaEmision >= ?
+  AND V.FechaEmision < DATEADD(DAY, 1, ?)
+  AND V.Estatus = 'CONCLUIDO'
+"""
+
+
+def fetch_intelisis_headers(
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Fetch Intelisis/Venta headers (SynerPOS origin) for [start, end].
+
+    Sargable date range + Mov allowlist (never raw user input), NOLOCK +
+    ApplicationIntent=ReadOnly (see config). Returns dicts with
+    FechaEmision normalized to ISO date string.
+    """
+    from .config import get_intelisis_config, get_intelisis_password
+
+    db_config = get_intelisis_config()
+    password = get_intelisis_password()
+    connection = connect(db_config, password)
+    try:
+        cursor = connection.cursor()
+        cursor.execute(INTELISIS_HEADERS_QUERY, start_date, end_date)
+        columns_out = [col[0] for col in cursor.description]
+        rows: list[dict[str, Any]] = []
+        for record in cursor.fetchall():
+            row = dict(zip(columns_out, record))
+            rows.append(
+                {
+                    "IntelisisID": _to_str(row.get("IntelisisID")),
+                    "Mov": _to_str(row.get("Mov")),
+                    "MovID": _to_str(row.get("MovID")),
+                    "StoreName": _to_str(row.get("StoreName")),
+                    "TransactionType": _to_str(
+                        row.get("TransactionType")
+                    ),
+                    "ReceiptNumber": _to_str(row.get("ReceiptNumber")),
+                    "FechaEmision": _to_iso_date(row.get("FechaEmision")),
+                    "SerieSUNAT": _to_str(row.get("SerieSUNAT")),
+                    "TipoDocSUNAT": _to_str(row.get("TipoDocSUNAT")),
+                }
+            )
+        return rows
+    finally:
+        connection.close()

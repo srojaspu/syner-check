@@ -17,7 +17,19 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
         Total: doc.crossTotal ?? "",
         Moneda: doc.currency?.isoCode ?? "",
         Vendedor: doc.seller ?? "",
-        "En SQL": doc.in_sql ? "SI" : "NO",
+        "En Mov": doc.in_sql ? "SI" : "NO",
+        "En Intelisis":
+          doc.in_intelisis === undefined ? "" : doc.in_intelisis ? "SI" : "NO",
+        Flujo:
+          doc.in_intelisis === undefined
+            ? doc.in_sql
+              ? "EN_MOV"
+              : "FALTA_MOV"
+            : doc.in_sql && doc.in_intelisis
+              ? "COMPLETO"
+              : doc.in_sql
+                ? "FALTA_INTELISIS"
+                : "FALTA_MOV",
         OID: doc.oid,
       };
     }),
@@ -32,6 +44,8 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
     { wch: 8 },
     { wch: 16 },
     { wch: 8 },
+    { wch: 12 },
+    { wch: 14 },
     { wch: 22 },
   ];
   const book = XLSX.utils.book_new();

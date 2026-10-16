@@ -82,14 +82,31 @@ export interface Voucher {
   taxes?: DocTax[];
   payments?: DocPayment[];
   in_sql: boolean;
+  /** Triple-flow: presente en Intelisis/Venta (SE-*). False si degradado. */
+  in_intelisis?: boolean;
+  /** Cabecera Intelisis matcheada por (tipo, número, fecha). */
+  intelisis?: Record<string, unknown>;
   /** SQL index row, present only on sql_index search hits. */
   sql?: Record<string, unknown>;
+}
+
+export interface FlowPerTipo {
+  graphql: number;
+  in_mov: number;
+  in_intelisis: number;
+  full: number;
+  missing_in_mov: number;
+  missing_in_intelisis: number;
 }
 
 export interface SummaryResponse {
   documents: Record<string, Voucher[]>;
   sql_count: number;
   graphql_count: number;
+  intelisis_enabled: boolean;
+  intelisis_count: number;
+  flow?: { per_tipo: Record<string, FlowPerTipo>; totals: FlowPerTipo };
+  intelisis_warning?: string | null;
   range: { start: string; end: string };
 }
 

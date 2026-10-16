@@ -39,6 +39,22 @@ class SqlReaderAdapter:
             raise UpstreamError(f"SQL read failed: {type(exc).__name__}.") from exc
 
 
+class IntelisisReaderAdapter:
+    """Adapts app.db Intelisis/Venta fetch to the IntelisisReader port."""
+
+    def fetch_headers(self, start_iso: str, end_iso: str) -> list[dict]:
+        from app import db as app_db
+
+        try:
+            return app_db.fetch_intelisis_documents(start_iso, end_iso)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"Intelisis read failed: {type(exc).__name__}."
+            ) from exc
+
+
 class GraphqlGatewayAdapter:
     """Adapts app.graphql to the GraphqlGateway port."""
 

@@ -36,9 +36,16 @@ function Stat({
   );
 }
 
-export function StatsBar({ rows }: { rows: Voucher[] }) {
+export function StatsBar({
+  rows,
+  intelisisEnabled,
+}: {
+  rows: Voucher[];
+  intelisisEnabled?: boolean;
+}) {
   const total = rows.length;
   const found = rows.filter((row) => row.in_sql).length;
+  const inIntelisis = rows.filter((row) => row.in_intelisis).length;
   const amount = rows.reduce(
     (sum, row) => sum + (Number(row.crossTotal) || 0),
     0,
@@ -53,23 +60,23 @@ export function StatsBar({ rows }: { rows: Voucher[] }) {
         />
         <Stat
           icon={<HugeiconsIcon icon={FileCheckIcon} size={16} strokeWidth={2} />}
-          label="Encontrados en SQL"
+          label="En MovSynerPos"
           value={found}
         />
         <Stat
+          icon={<HugeiconsIcon icon={DatabaseIcon} size={16} strokeWidth={2} />}
+          label="En Intelisis"
+          value={intelisisEnabled ? inIntelisis : "—"}
+        />
+        <Stat
           icon={<HugeiconsIcon icon={FileXIcon} size={16} strokeWidth={2} />}
-          label="No encontrados en SQL"
-          value={total - found}
+          label="Faltan en Intelisis"
+          value={intelisisEnabled ? total - inIntelisis : "—"}
         />
         <Stat
           icon={<HugeiconsIcon icon={WalletIcon} size={16} strokeWidth={2} />}
           label="Total mostrado"
           value={formatMoney(amount, rows[0]?.currency?.isoCode ?? "PEN")}
-        />
-        <Stat
-          icon={<HugeiconsIcon icon={DatabaseIcon} size={16} strokeWidth={2} />}
-          label="Fuente"
-          value={found > 0 ? "SQL + GraphQL" : "GraphQL"}
         />
       </CardContent>
     </Card>

@@ -137,6 +137,122 @@ class SummarizeTests(unittest.TestCase):
         self.assertEqual(res["graphql_count"], 2)
         self.assertTrue(res["documents"]["FACTURA"][0]["in_sql"])
         self.assertFalse(res["documents"]["BOLETA"][0]["in_sql"])
+        # Backward compatible: triple flow defaults to degraded.
+        self.assertFalse(res["intelisis_enabled"])
+        self.assertEqual(res["intelisis_count"], 0)
+        self.assertFalse(res["documents"]["FACTURA"][0]["in_intelisis"])
+
+
+class TripleFlowTests(unittest.TestCase):
+    def _reader(self, rows):
+        class Reader(FakeReader):
+            def fetch_documents(self, start_iso, end_iso, tipos):
+                return rows
+
+        return Reader([])
+
+    def _gateway(self, docs):
+        class Gateway(FakeGateway):
+            def summary(self, start_iso, end_iso, tipos):
+                return docs
+
+        return Gateway({})
+
+    def _intelisis(self, rows=None, fail=False):
+        class Intelisis:
+            def fetch_headers(self, start_iso, end_iso):
+                if fail:
+                    raise RuntimeError("boom")
+                return rows or []
+
+        return Intelisis()
+
+    def test_full_and_missing(self):
+        from src.application.use_cases import _norm_receipt
+
+        self.assertEqual(_norm_receipt("F001-00000123"), "F1-123")
+        self.assertEqual(_norm_receipt("f001-123 "), "F1-123")
+        res = summarize(
+            self._reader([
+                {"IDSynerPos": "A1", "TipoDocumento": "FACTURA",
+                 "FechaDocumento": "2026-09-01"},
+            ]),
+            self._gateway({
+                "FACTURA": [
+                    {"oid": "A1", "number": "F001-00000123",
+                     "date": "2026-09-01T10:00:00"},
+                    {"oid": "A2", "number": "F001-00000124",
+                     "date": "2026-09-01T11:00:00"},
+                ],
+            }),
+            start_iso="2026-09-01",
+            end_iso="2026-09-01",
+            tipos=[TipoDocumento.FACTURA],
+            max_range_days=93,
+            intelisis=self._intelisis([
+                {"IntelisisID": "99", "Mov": "SE-Factura",
+                 "MovID": "X-F001-00000123", "StoreName": "TIENDA",
+                 "TransactionType": "factura",
+                 "ReceiptNumber": "F001-123",
+                 "FechaEmision": "2026-09-01",
+                 "SerieSUNAT": "001", "TipoDocSUNAT": "01"},
+            ]),
+        )
+        docs = res["documents"]["FACTURA"]
+        self.assertTrue(res["intelisis_enabled"])
+        self.assertEqual(res["intelisis_count"], 1)
+        self.assertTrue(docs[0]["in_sql"])
+        self.assertTrue(docs[0]["in_intelisis"])
+        self.assertEqual(docs[0]["intelisis"]["MovID"], "X-F001-00000123")
+        self.assertFalse(docs[1]["in_intelisis"])
+        flow = res["flow"]["per_tipo"]["FACTURA"]
+        self.assertEqual(flow["graphql"], 2)
+        self.assertEqual(flow["in_mov"], 1)
+        self.assertEqual(flow["in_intelisis"], 1)
+        self.assertEqual(flow["full"], 1)
+        self.assertEqual(flow["missing_in_intelisis"], 1)
+
+    def test_nota_credito_maps(self):
+        res = summarize(
+            self._reader([]),
+            self._gateway({
+                "NOTA DE CREDITO": [
+                    {"oid": "N1", "number": "N001-7",
+                     "date": "2026-09-01T10:00:00"},
+                ],
+            }),
+            start_iso="2026-09-01",
+            end_iso="2026-09-01",
+            tipos=[TipoDocumento.NOTA_DE_CREDITO],
+            max_range_days=93,
+            intelisis=self._intelisis([
+                {"IntelisisID": "5", "Mov": "SE-Nota Credito",
+                 "MovID": "Y-N001-00000007", "StoreName": "T",
+                 "TransactionType": "nota_credito",
+                 "ReceiptNumber": "N001-00000007",
+                 "FechaEmision": "2026-09-01",
+                 "SerieSUNAT": "", "TipoDocSUNAT": "07"},
+            ]),
+        )
+        doc = res["documents"]["NOTA DE CREDITO"][0]
+        self.assertTrue(doc["in_intelisis"])
+
+    def test_degraded_on_failure(self):
+        res = summarize(
+            self._reader([]),
+            self._gateway({"FACTURA": [
+                {"oid": "A1", "number": "F1-1",
+                 "date": "2026-09-01T10:00:00"},
+            ]}),
+            start_iso="2026-09-01",
+            end_iso="2026-09-01",
+            tipos=[TipoDocumento.FACTURA],
+            max_range_days=93,
+            intelisis=self._intelisis(fail=True),
+        )
+        self.assertFalse(res["intelisis_enabled"])
+        self.assertEqual(res["intelisis_warning"], "intelisis_unavailable")
+        self.assertFalse(res["documents"]["FACTURA"][0]["in_intelisis"])
 
 
 class DetailTests(unittest.TestCase):
