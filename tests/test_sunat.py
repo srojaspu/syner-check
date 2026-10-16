@@ -173,15 +173,17 @@ class JobStatusTests(unittest.TestCase):
         validator.job = {
             "trabajo": {"Estado": "COMPLETADO_ERROR", "Total": 2, "Procesados": 2},
             "detalle": [
-                {"Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                {"Estado": "OK", "RUCEmisor": "R", "TipoComprobante": "03",
+                 "Serie": "BS05",
                  "Numero": "00000105", "ResultadoEstado": "ACEPTADO",
                  "ConsultaID": 7, "CodigoSunat": "1"},
                 {"Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
                  "Numero": "00000106", "ResultadoEstado": "WEIRD",
                  "ConsultaID": 8},
-                {"Estado": "ERROR", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                {"Estado": "ERROR", "RUCEmisor": "R", "TipoComprobante": "03",
+                 "Serie": "BS05",
                  "Numero": "00000107", "Mensaje": "timeout"},
-                {"Estado": "PENDIENTE", "Ruc": "R", "Tipo": "03",
+                {"Estado": "PENDIENTE", "RUCEmisor": "R", "TipoComprobante": "03",
                  "Serie": "BS05", "Numero": "1"},
             ],
         }

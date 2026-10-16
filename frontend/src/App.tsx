@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   FileDownIcon,
@@ -40,6 +40,15 @@ function Workspace() {
     types: string;
   } | null>(null);
   const [lastNumber, setLastNumber] = useState<string | null>(null);
+  // Filtered rows (all pages) reported up by the table; null = not yet
+  // reported (e.g. right after a search) → fall back to all rows.
+  const [filteredRows, setFilteredRows] = useState<Voucher[] | null>(null);
+  const handleFilteredRowsChange = useCallback((rows: Voucher[]) => {
+    setFilteredRows(rows);
+  }, []);
+  const effectiveRows = filteredRows ?? vouchers.rows;
+  const isFiltered =
+    filteredRows !== null && filteredRows.length !== vouchers.rows.length;
   const columns = useMemo(
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
@@ -94,6 +103,8 @@ function Workspace() {
     }
   };
 
+  const sunatDisabled = !vouchers.rows.length || vouchers.loading || sunat.busy;
+
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
       <div className="flex flex-col gap-6">
@@ -107,6 +118,7 @@ function Workspace() {
                 setLastRange({ start, end, types });
                 setLastNumber(null);
                 sunat.reset();
+                setFilteredRows(null);
                 void vouchers.runRange(start, end, types);
               }}
             />
@@ -117,6 +129,7 @@ function Workspace() {
                 setLastNumber(number);
                 setLastRange(null);
                 sunat.reset();
+                setFilteredRows(null);
                 void vouchers.runNumber(number);
               }}
             />
@@ -154,11 +167,13 @@ function Workspace() {
               <Button
                 type="button"
                 variant="outline"
-                disabled={
-                  !vouchers.rows.length || vouchers.loading || sunat.busy
+                disabled={sunatDisabled || !effectiveRows.length}
+                onClick={() => void sunat.runBatch(effectiveRows, refreshRows)}
+                title={
+                  isFiltered
+                    ? `Valida solo las ${effectiveRows.length} filas filtradas contra SUNAT`
+                    : "Valida los documentos mostrados contra SUNAT en lotes"
                 }
-                onClick={() => void sunat.runBatch(vouchers.rows, refreshRows)}
-                title="Valida los documentos mostrados contra SUNAT en lotes"
               >
                 {sunat.busy ? (
                   <HugeiconsIcon
@@ -169,15 +184,20 @@ function Workspace() {
                     aria-hidden
                   />
                 ) : null}{" "}
-                Validar en SUNAT
+                Validar en SUNAT{isFiltered ? ` (${effectiveRows.length})` : ""}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!vouchers.rows.length}
-                onClick={() => void exportExcel(vouchers.rows)}
+                disabled={!effectiveRows.length}
+                onClick={() => void exportExcel(effectiveRows)}
+                title={
+                  isFiltered
+                    ? `Exporta solo las ${effectiveRows.length} filas filtradas`
+                    : "Exporta los documentos mostrados"
+                }
               >
-                <HugeiconsIcon icon={FileDownIcon} size={16} strokeWidth={2} aria-hidden /> Exportar Excel
+                <HugeiconsIcon icon={FileDownIcon} size={16} strokeWidth={2} aria-hidden /> Exportar Excel{isFiltered ? ` (${effectiveRows.length})` : ""}
               </Button>
               {vouchers.loading ? (
                 <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -198,6 +218,7 @@ function Workspace() {
               data={vouchers.rows}
               columns={columns}
               onRowClick={showDetail}
+              onFilteredRowsChange={handleFilteredRowsChange}
             >
               <DataTable.Toolbar />
               <DataTable.View<Voucher> loading={vouchers.loading} />

@@ -66,12 +66,16 @@ function useTableInstance<T>(): Table<T> {
   return ctx.table as Table<T>;
 }
 
+/** Filtered (all pages) originals are pushed up via onFilteredRowsChange. */
+
 interface RootProps<T> {
   data: T[];
   columns: ColumnDef<T, unknown>[];
   children: ReactNode;
   initialPageSize?: number;
   onRowClick?: (row: T) => void;
+  /** Reports filtered (all pages) originals upward; stable unless filters/data change. */
+  onFilteredRowsChange?: (rows: T[]) => void;
 }
 
 /** Per-column filter configuration read from columnDef.meta.filter. */
@@ -87,6 +91,7 @@ function Root<T>({
   children,
   initialPageSize = 25,
   onRowClick,
+  onFilteredRowsChange,
 }: RootProps<T>) {
   // All interactive table state is controlled here: nothing implicit,
   // nothing shared between searches, nothing that can go stale.
@@ -115,6 +120,16 @@ function Root<T>({
   });
 
   useResetPageOnDataChange(data, setPagination);
+
+  // Push filtered originals up (all pages). getFilteredRowModel() memoizes
+  // on filters/data, so this fires only on real changes — no render loop.
+  const filteredOriginals = table
+    .getFilteredRowModel()
+    .rows.map((row) => row.original);
+  useEffect(() => {
+    onFilteredRowsChange?.(filteredOriginals);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredOriginals, onFilteredRowsChange]);
 
   // The table instance is a stable mutable object (useReactTable stores it in a
   // ref). Passing it straight as the context value would never change reference,

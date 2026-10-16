@@ -706,8 +706,8 @@ def sunat_job_status(
         else:
             continue  # PENDIENTE/PROCESANDO: el worker aún no termina
         key = (
-            str(item.get("Ruc", "")).strip(),
-            str(item.get("Tipo", "")).strip(),
+            str(item.get("RUCEmisor", item.get("Ruc", ""))).strip(),
+            str(item.get("TipoComprobante", item.get("Tipo", ""))).strip(),
             str(item.get("Serie", "")).strip().upper(),
             _norm_numero(item.get("Numero", "")),
         )
