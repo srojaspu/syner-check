@@ -195,6 +195,7 @@ class TripleFlowTests(unittest.TestCase):
                  "TransactionType": "factura",
                  "ReceiptNumber": "F001-123",
                  "FechaEmision": "2026-09-01",
+                 "EstatusIntelisis": "CONCLUIDO",
                  "SerieSUNAT": "001", "TipoDocSUNAT": "01"},
             ]),
         )
@@ -231,11 +232,68 @@ class TripleFlowTests(unittest.TestCase):
                  "TransactionType": "nota_credito",
                  "ReceiptNumber": "N001-00000007",
                  "FechaEmision": "2026-09-01",
+                 "EstatusIntelisis": "CONCLUIDO",
                  "SerieSUNAT": "", "TipoDocSUNAT": "07"},
             ]),
         )
         doc = res["documents"]["NOTA DE CREDITO"][0]
         self.assertTrue(doc["in_intelisis"])
+
+    def test_nc_b_prefix_and_pendiente(self):
+        # Caso real 2026-10-15: las NC de SynerPOS usan prefijo B
+        # (MovID '<suc>-B<correlativo>') y Venta PENDIENTE debe contar
+        # como pendiente, no como ausente ni como completo.
+        res = summarize(
+            self._reader([
+                {"IDSynerPos": "N1", "TipoDocumento": "NOTA DE CREDITO",
+                 "FechaDocumento": "2026-10-15"},
+                {"IDSynerPos": "B1", "TipoDocumento": "BOLETA",
+                 "FechaDocumento": "2026-10-15"},
+            ]),
+            self._gateway({
+                "NOTA DE CREDITO": [
+                    {"oid": "N1", "number": "BS05-00000105",
+                     "date": "2026-10-15T10:00:00"},
+                ],
+                "BOLETA": [
+                    {"oid": "B1", "number": "BS02-00003037",
+                     "date": "2026-10-15T11:00:00"},
+                ],
+            }),
+            start_iso="2026-10-15",
+            end_iso="2026-10-15",
+            tipos=[TipoDocumento.NOTA_DE_CREDITO, TipoDocumento.BOLETA],
+            max_range_days=93,
+            intelisis=self._intelisis([
+                {"IntelisisID": "7", "Mov": "SE-Nota Credito",
+                 "MovID": "105-B00000105", "StoreName": "T",
+                 "TransactionType": "nota_credito",
+                 "ReceiptNumber": "BS05-00000105",
+                 "FechaEmision": "2026-10-15",
+                 "EstatusIntelisis": "CONCLUIDO",
+                 "SerieSUNAT": "", "TipoDocSUNAT": "07"},
+                {"IntelisisID": "8", "Mov": "SE-Boleta",
+                 "MovID": "102-00003037", "StoreName": "T",
+                 "TransactionType": "boleta",
+                 "ReceiptNumber": "BS02-00003037",
+                 "FechaEmision": "2026-10-15",
+                 "EstatusIntelisis": "PENDIENTE",
+                 "SerieSUNAT": "", "TipoDocSUNAT": "03"},
+            ]),
+        )
+        nc = res["documents"]["NOTA DE CREDITO"][0]
+        bo = res["documents"]["BOLETA"][0]
+        self.assertTrue(nc["in_intelisis"])
+        self.assertEqual(nc["intelisis"]["EstatusIntelisis"], "CONCLUIDO")
+        self.assertTrue(bo["in_intelisis"])
+        flow_nc = res["flow"]["per_tipo"]["NOTA DE CREDITO"]
+        flow_bo = res["flow"]["per_tipo"]["BOLETA"]
+        self.assertEqual(flow_nc["full"], 1)
+        self.assertEqual(flow_nc["pending_in_intelisis"], 0)
+        self.assertEqual(flow_bo["full"], 0)
+        self.assertEqual(flow_bo["pending_in_intelisis"], 1)
+        self.assertEqual(flow_bo["missing_in_intelisis"], 0)
+        self.assertEqual(res["flow"]["totals"]["pending_in_intelisis"], 1)
 
     def test_degraded_on_failure(self):
         res = summarize(
@@ -253,6 +311,40 @@ class TripleFlowTests(unittest.TestCase):
         self.assertFalse(res["intelisis_enabled"])
         self.assertEqual(res["intelisis_warning"], "intelisis_unavailable")
         self.assertFalse(res["documents"]["FACTURA"][0]["in_intelisis"])
+
+    def test_cancelado_state(self):
+        res = summarize(
+            self._reader([
+                {"IDSynerPos": "C1", "TipoDocumento": "BOLETA",
+                 "FechaDocumento": "2026-10-15"},
+            ]),
+            self._gateway({
+                "BOLETA": [
+                    {"oid": "C1", "number": "BS20-1",
+                     "date": "2026-10-15T10:00:00"},
+                ],
+            }),
+            start_iso="2026-10-15",
+            end_iso="2026-10-15",
+            tipos=[TipoDocumento.BOLETA],
+            max_range_days=93,
+            intelisis=self._intelisis([
+                {"IntelisisID": "9", "Mov": "SE-Boleta",
+                 "MovID": "144-1", "StoreName": "T",
+                 "TransactionType": "boleta",
+                 "ReceiptNumber": "BS20-1",
+                 "FechaEmision": "2026-10-15",
+                 "EstatusIntelisis": "CANCELADO",
+                 "SerieSUNAT": "", "TipoDocSUNAT": "03"},
+            ]),
+        )
+        doc = res["documents"]["BOLETA"][0]
+        self.assertTrue(doc["in_intelisis"])
+        flow = res["flow"]["per_tipo"]["BOLETA"]
+        self.assertEqual(flow["full"], 0)
+        self.assertEqual(flow["pending_in_intelisis"], 0)
+        self.assertEqual(flow["cancelled_in_intelisis"], 1)
+        self.assertEqual(flow["missing_in_intelisis"], 0)
 
 
 class DetailTests(unittest.TestCase):

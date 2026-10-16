@@ -1,6 +1,21 @@
 import { formatDateTime, formatMoney, toISODate } from "../api/format";
 import type { Voucher } from "../api/types";
 
+function canceladoONConcluido(doc: Voucher): string {
+  const raw = doc.intelisis;
+  const est =
+    typeof raw === "object" && raw !== null
+      ? String(
+          (raw as Record<string, unknown>).EstatusIntelisis ?? "",
+        )
+          .trim()
+          .toUpperCase()
+      : "";
+  if (est === "CONCLUIDO") return "COMPLETO";
+  if (est === "CANCELADO") return "CANCELADO";
+  return "PENDIENTE";
+}
+
 /** Excel export of the current rows (client-side, no backend change). */
 export async function exportExcel(rows: Voucher[]): Promise<void> {
   // Lazy-load xlsx so it lands in its own chunk instead of the initial bundle.
@@ -20,13 +35,19 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
         "En Mov": doc.in_sql ? "SI" : "NO",
         "En Intelisis":
           doc.in_intelisis === undefined ? "" : doc.in_intelisis ? "SI" : "NO",
+        "Estatus Intelisis":
+          typeof doc.intelisis === "object" && doc.intelisis !== null
+            ? String(
+                (doc.intelisis as Record<string, unknown>).EstatusIntelisis ?? "",
+              )
+            : "",
         Flujo:
           doc.in_intelisis === undefined
             ? doc.in_sql
               ? "EN_MOV"
               : "FALTA_MOV"
             : doc.in_sql && doc.in_intelisis
-              ? "COMPLETO"
+              ? canceladoONConcluido(doc)
               : doc.in_sql
                 ? "FALTA_INTELISIS"
                 : "FALTA_MOV",
@@ -45,6 +66,7 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
     { wch: 16 },
     { wch: 8 },
     { wch: 12 },
+    { wch: 14 },
     { wch: 14 },
     { wch: 22 },
   ];

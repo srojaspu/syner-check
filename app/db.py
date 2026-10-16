@@ -119,6 +119,9 @@ def fetch_intelisis_documents(start_date: str, end_date: str) -> list[dict]:
                     "FechaEmision": (
                         _to_iso_date(data.get("FechaEmision"))
                     ),
+                    "EstatusIntelisis": _to_str(
+                        data.get("EstatusIntelisis")
+                    ),
                     "SerieSUNAT": _to_str(data.get("SerieSUNAT")),
                     "TipoDocSUNAT": _to_str(data.get("TipoDocSUNAT")),
                 }

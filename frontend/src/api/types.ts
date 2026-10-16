@@ -95,6 +95,8 @@ export interface FlowPerTipo {
   in_mov: number;
   in_intelisis: number;
   full: number;
+  pending_in_intelisis: number;
+  cancelled_in_intelisis: number;
   missing_in_mov: number;
   missing_in_intelisis: number;
 }

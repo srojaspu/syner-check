@@ -119,11 +119,18 @@ export function voucherColumns(
       header: "Flujo",
       accessorFn: (doc) => {
         // Intelisis se alimenta solo desde Mov vía job, por lo que un doc
-        // en Intelisis implica en Mov: 3 estados bastan (sin "Solo Intelisis").
+        // en Intelisis implica en Mov: sin estado "Solo Intelisis".
+        // Con EstatusIntelisis se distingue concluido / pendiente de
+        // conclusión / cancelado / ausente real.
         if (doc.in_intelisis === undefined || !intelisisEnabled) {
           return doc.in_sql ? "EN_MOV" : "FALTA_MOV";
         }
-        if (doc.in_sql && doc.in_intelisis) return "COMPLETO";
+        if (doc.in_sql && doc.in_intelisis) {
+          const est = intelisisEstatus(doc);
+          if (est === "CONCLUIDO") return "COMPLETO";
+          if (est === "CANCELADO") return "CANCELADO";
+          return "PENDIENTE";
+        }
         if (doc.in_sql) return "FALTA_INTELISIS";
         return "FALTA_MOV";
       },
@@ -133,6 +140,8 @@ export function voucherColumns(
           variant: "select",
           options: [
             { value: "COMPLETO", label: "Completo" },
+            { value: "PENDIENTE", label: "Pendiente en Intelisis" },
+            { value: "CANCELADO", label: "Cancelado en Intelisis" },
             { value: "FALTA_INTELISIS", label: "Falta en Intelisis" },
             { value: "FALTA_MOV", label: "Falta en Mov" },
             { value: "EN_MOV", label: "En Mov (sin Intelisis)" },
@@ -149,7 +158,14 @@ export function voucherColumns(
           );
         }
         if (doc.in_sql && doc.in_intelisis) {
-          return <Badge variant="default">Completo</Badge>;
+          const est = intelisisEstatus(doc);
+          if (est === "CONCLUIDO") {
+            return <Badge variant="default">Completo</Badge>;
+          }
+          if (est === "CANCELADO") {
+            return <Badge variant="outline">Cancelado en Intelisis</Badge>;
+          }
+          return <Badge variant="secondary">Pendiente en Intelisis</Badge>;
         }
         if (doc.in_sql) {
           return <Badge variant="outline">Falta en Intelisis</Badge>;
@@ -158,4 +174,14 @@ export function voucherColumns(
       },
     },
   ];
+}
+
+function intelisisEstatus(doc: Voucher): string {
+  const raw = doc.intelisis;
+  if (typeof raw !== "object" || raw === null) return "";
+  return String(
+    (raw as Record<string, unknown>).EstatusIntelisis ?? "",
+  )
+    .trim()
+    .toUpperCase();
 }

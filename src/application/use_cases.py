@@ -132,7 +132,7 @@ def summarize(
             for r in sql_by_type.get(tipo, [])
         }
         rows = []
-        in_mov = in_int = full = 0
+        in_mov = in_int = full = pending = cancelled = 0
         for doc in docs:
             sql_key = (str(doc.get("oid", "")).strip().upper(), str(doc.get("date", ""))[:10])
             in_sql = sql_key in sql_keys
@@ -144,9 +144,20 @@ def summarize(
             )
             prow = intelisis_by_key.get(flow_k)
             in_intelisis = prow is not None
+            estatus = (
+                str(prow.get("EstatusIntelisis", "")).strip().upper()
+                if prow is not None
+                else ""
+            )
+            concluded = estatus == "CONCLUIDO"
+            is_cancelled = estatus == "CANCELADO"
             in_mov += 1 if in_sql else 0
             in_int += 1 if in_intelisis else 0
-            full += 1 if (in_sql and in_intelisis) else 0
+            full += 1 if (in_sql and concluded) else 0
+            pending += (
+                1 if (in_sql and in_intelisis and not concluded and not is_cancelled) else 0
+            )
+            cancelled += 1 if (in_sql and is_cancelled) else 0
             entry = {**doc, "tipo": tipo, "in_sql": in_sql, "in_intelisis": in_intelisis}
             if prow is not None:
                 entry["intelisis"] = {
@@ -155,6 +166,7 @@ def summarize(
                     "MovID": str(prow.get("MovID", "")),
                     "ReceiptNumber": str(prow.get("ReceiptNumber", "")),
                     "FechaEmision": str(prow.get("FechaEmision", "")),
+                    "EstatusIntelisis": str(prow.get("EstatusIntelisis", "")),
                     "StoreName": str(prow.get("StoreName", "")),
                 }
             rows.append(entry)
@@ -164,6 +176,8 @@ def summarize(
             "in_mov": in_mov,
             "in_intelisis": in_int,
             "full": full,
+            "pending_in_intelisis": pending,
+            "cancelled_in_intelisis": cancelled,
             "missing_in_mov": len(docs) - in_mov,
             "missing_in_intelisis": len(docs) - in_int,
         }
@@ -172,6 +186,12 @@ def summarize(
         "in_mov": sum(v["in_mov"] for v in flow_per_tipo.values()),
         "in_intelisis": sum(v["in_intelisis"] for v in flow_per_tipo.values()),
         "full": sum(v["full"] for v in flow_per_tipo.values()),
+        "pending_in_intelisis": sum(
+            v["pending_in_intelisis"] for v in flow_per_tipo.values()
+        ),
+        "cancelled_in_intelisis": sum(
+            v["cancelled_in_intelisis"] for v in flow_per_tipo.values()
+        ),
     }
     totals["missing_in_mov"] = totals["graphql"] - totals["in_mov"]
     totals["missing_in_intelisis"] = totals["graphql"] - totals["in_intelisis"]

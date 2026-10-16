@@ -184,8 +184,8 @@ def fetch_sql_documents(
 
 # --- Intelisis (Punidas) reader: Venta cabecera, solo origen SynerPOS ---
 #
-# Sintesis de docs/querys/punidas.sql (base sargable + NC correcta) con el
-# aporte diagnostico de docs/querys/bfn.sql (MovTipo como LEFT no excluyente).
+# Sintesis de docs/querys/punidas.sql (base sargable) con el aporte
+# diagnostico de docs/querys/bfn.sql (MovTipo como LEFT no excluyente).
 # Solo Mov SE-* (origen SynerPOS); la llave de comparacion con MovSynerPos es
 # (TransactionType, ReceiptNumber, FechaEmision) porque V.ID (identidad
 # Intelisis) no equals IDSynerPos/oid (secuencias distintas).
@@ -193,6 +193,11 @@ def fetch_sql_documents(
 # queda como fase 2.
 # StoreName usa S.Nombre directo (sin dbo.fn_LimpiaTexto: la cuenta
 # read-only no tiene EXECUTE sobre la funcion, verificado 2026-10-16).
+# ReceiptNumber: F-factura, B-resto (las NC de SynerPOS usan prefijo B en
+# MovSynerPos/GraphQL, y su MovID trae forma '<suc>-B<correlativo>':
+# se recortan los no-digitos iniciales). Sin filtro de Estatus: se trae
+# PENDIENTE/SINAFECTAR tambien y se expone EstatusIntelisis para distinguir
+# "llego pendiente de conclusion" de "no llego" (verificado 2026-10-17).
 
 INTELISIS_MOVS = ("SE-Boleta", "SE-Factura", "SE-Nota Credito")
 
@@ -207,17 +212,17 @@ SELECT
          WHEN V.Mov = 'SE-Nota Credito' THEN 'nota_credito'
          ELSE 'boleta' END,
   ReceiptNumber =
-    CASE WHEN V.Mov = 'SE-Factura' THEN 'F'
-         WHEN V.Mov = 'SE-Nota Credito' THEN 'N'
-         ELSE 'B' END
+    CASE WHEN V.Mov = 'SE-Factura' THEN 'F' ELSE 'B' END
     + COALESCE(S.MapaUbicacion, CAST(S.Sucursal AS VARCHAR(10)))
-    + '-' + CASE
-        WHEN STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '')
-             LIKE '%[^0-9]%'
-        THEN STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '')
-        ELSE RIGHT('00000000' + NULLIF(STUFF(V.MovID, 1,
-             NULLIF(CHARINDEX('-', V.MovID), 0), ''), ''), 8) END,
+    + '-' + RIGHT('00000000' + STUFF(
+        STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), ''),
+        1,
+        PATINDEX('%[0-9]%',
+          STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '') + '0') - 1,
+        ''
+      ), 8),
   V.FechaEmision,
+  EstatusIntelisis = V.Estatus,
   SerieSUNAT = LTRIM(RTRIM(B.SeriePU)),
   TipoDocSUNAT = B.TipoDocumentoPU
 FROM dbo.Venta V WITH (NOLOCK)
@@ -228,7 +233,6 @@ WHERE V.Empresa = 'PU'
   AND V.Mov IN ('SE-Boleta', 'SE-Factura', 'SE-Nota Credito')
   AND V.FechaEmision >= ?
   AND V.FechaEmision < DATEADD(DAY, 1, ?)
-  AND V.Estatus = 'CONCLUIDO'
 """
 
 
@@ -265,6 +269,7 @@ def fetch_intelisis_headers(
                     ),
                     "ReceiptNumber": _to_str(row.get("ReceiptNumber")),
                     "FechaEmision": _to_iso_date(row.get("FechaEmision")),
+                    "EstatusIntelisis": _to_str(row.get("EstatusIntelisis")),
                     "SerieSUNAT": _to_str(row.get("SerieSUNAT")),
                     "TipoDocSUNAT": _to_str(row.get("TipoDocSUNAT")),
                 }

@@ -118,9 +118,16 @@ export function FlowBar({
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          {totals.full} documentos completan el flujo · {lostMov} faltan en Mov ·{" "}
+          {totals.full} documentos completan el flujo
+          {intelisisEnabled && totals.pending_in_intelisis > 0
+            ? ` · ${totals.pending_in_intelisis} pendientes de conclusión en Intelisis`
+            : null}
+          {intelisisEnabled && totals.cancelled_in_intelisis > 0
+            ? ` · ${totals.cancelled_in_intelisis} cancelados en Intelisis`
+            : null}{" "}
+          · {lostMov} faltan en Mov ·{" "}
           {intelisisEnabled
-            ? `${lostIntelisis} faltan en Intelisis`
+            ? `${lostIntelisis} ausentes en Intelisis`
             : intelisisWarning
               ? "Intelisis con fallo de conexión (ver log del servidor)"
               : "Intelisis en modo degradado"}.
