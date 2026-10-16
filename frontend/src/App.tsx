@@ -86,6 +86,7 @@ function Workspace() {
   };
 
   const refreshRows = () => {
+    sunat.reset();
     if (mode === "range" && lastRange) {
       void vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
     } else if (mode === "number" && lastNumber) {
@@ -105,6 +106,7 @@ function Workspace() {
               onSearch={(start, end, types) => {
                 setLastRange({ start, end, types });
                 setLastNumber(null);
+                sunat.reset();
                 void vouchers.runRange(start, end, types);
               }}
             />
@@ -114,6 +116,7 @@ function Workspace() {
               onSearch={(number) => {
                 setLastNumber(number);
                 setLastRange(null);
+                sunat.reset();
                 void vouchers.runNumber(number);
               }}
             />

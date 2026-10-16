@@ -16,9 +16,15 @@ export function useSunat(onAuthFailure: () => void) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const reset = useCallback(() => {
+    setProgress(null);
+    setError(null);
+  }, []);
+
   const runBatch = useCallback(
     async (rows: Voucher[], refresh: () => void) => {
       setBusy(true);
+      setProgress(null);
       setError(null);
       try {
         const data = await submitSunatLote(
@@ -66,5 +72,5 @@ export function useSunat(onAuthFailure: () => void) {
     [onAuthFailure],
   );
 
-  return { busy, progress, error, runBatch };
+  return { busy, progress, error, runBatch, reset };
 }
