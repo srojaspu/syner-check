@@ -72,7 +72,7 @@ describe("FlowBar", () => {
     );
     const sunat = screen.getByRole("button", { name: /SUNAT/ });
     expect(sunat.textContent).toContain("2");
-    expect(screen.getByText("En paralelo · Factus")).toBeTruthy();
+    expect(screen.queryByText("En paralelo · Factus")).toBeNull();
     expect(container.querySelectorAll("button")).toHaveLength(2);
   });
 

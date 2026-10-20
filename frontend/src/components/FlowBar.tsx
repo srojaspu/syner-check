@@ -243,10 +243,7 @@ export function FlowBar({
             SynerPOS submits vouchers to SUNAT through Factus in parallel.
             MovSynerPOS → Intelisis is a separate ERP registration path.
           */}
-          <div className="flex flex-col gap-1 border-t border-border/60 pt-3 lg:w-64 lg:border-t-0 lg:border-l lg:pl-3 lg:pt-0">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              En paralelo · Factus
-            </span>
+          <div className="flex flex-col border-t border-border/60 pt-3 lg:w-64 lg:border-t-0 lg:border-l lg:pl-3 lg:pt-0">
             <Stage
               icon={
                 <HugeiconsIcon
