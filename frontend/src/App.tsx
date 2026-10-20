@@ -87,6 +87,23 @@ function Workspace() {
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
   );
+  const selectFlowState = useCallback(
+    (stage: FlowStageKey, state: string) => {
+      const summary = vouchers.flow?.stages?.[stage];
+      const label =
+        summary?.states.find((item) => item.key === state)?.label ?? state;
+      const rows = vouchers.rows.filter(
+        (row) => row.flow_states?.[stage] === state,
+      );
+      setFlowSelection({ stage, state, label, rows });
+      setFilteredRows(null);
+    },
+    [vouchers.flow, vouchers.rows],
+  );
+  const clearFlowSelection = useCallback(() => {
+    setFlowSelection(null);
+    setFilteredRows(null);
+  }, []);
 
   if (!ready) {
     return (
@@ -127,25 +144,6 @@ function Workspace() {
     setCopied(false);
     void detail.show(row);
   };
-
-  const selectFlowState = useCallback(
-    (stage: FlowStageKey, state: string) => {
-      const summary = vouchers.flow?.stages?.[stage];
-      const label =
-        summary?.states.find((item) => item.key === state)?.label ?? state;
-      const rows = vouchers.rows.filter(
-        (row) => row.flow_states?.[stage] === state,
-      );
-      setFlowSelection({ stage, state, label, rows });
-      setFilteredRows(null);
-    },
-    [vouchers.flow, vouchers.rows],
-  );
-
-  const clearFlowSelection = useCallback(() => {
-    setFlowSelection(null);
-    setFilteredRows(null);
-  }, []);
 
   const refreshRows = () => {
     // Do not reset SUNAT state here: this callback runs at the end of the
