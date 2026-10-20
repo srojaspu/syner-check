@@ -4,7 +4,8 @@ import type {
   SessionUser,
   SummaryResponse,
   SunatJobResponse,
-  SunatSubmitResponse,
+  SunatScope,
+  SunatSubmissionResponse,
   Voucher,
 } from "./types";
 
@@ -23,11 +24,25 @@ export class RequestAbortedError extends Error {
   }
 }
 
+/** Non-2xx response with its HTTP status, so callers can branch on 404. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 const TIMEOUT_MS = 60_000;
 /** GraphQL fallbacks can legitimately take longer than a plain DB read. */
 const LONG_TIMEOUT_MS = 180_000;
 /** One summary poll is cheap, but a terminal poll also writes the detail. */
 const SUNAT_STATUS_TIMEOUT_MS = 60_000;
+/** Queueing is fast now; the long work happens in the server background task. */
+const SUNAT_SUBMIT_TIMEOUT_MS = 30_000;
+const SUNAT_SUBMISSION_TIMEOUT_MS = 30_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -66,7 +81,9 @@ async function api<T>(
     } catch {
       throw new Error("Respuesta inválida del servidor.");
     }
-    if (!response.ok) throw new Error(body.detail ?? "Error de consulta");
+    if (!response.ok) {
+      throw new ApiError(response.status, body.detail ?? "Error de consulta");
+    }
     return body as T;
   } catch (error: unknown) {
     if (isAbortError(error)) {
@@ -133,17 +150,29 @@ export function logout(): void {
 
 export function submitSunatLote(
   documentos: Pick<Voucher, "tipo" | "number" | "date" | "crossTotal">[],
+  alcance: SunatScope = "no_aceptados",
   signal?: AbortSignal,
-): Promise<SunatSubmitResponse> {
+): Promise<SunatSubmissionResponse> {
   return api(
     "/api/sunat/lotes",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ documentos }),
+      body: JSON.stringify({ documentos, alcance }),
       signal,
     },
-    LONG_TIMEOUT_MS,
+    SUNAT_SUBMIT_TIMEOUT_MS,
+  );
+}
+
+export function sunatSubmissionStatus(
+  solicitudId: string,
+  signal?: AbortSignal,
+): Promise<SunatSubmissionResponse> {
+  return api(
+    `/api/sunat/solicitudes/${encodeURIComponent(solicitudId)}`,
+    { signal },
+    SUNAT_SUBMISSION_TIMEOUT_MS,
   );
 }
 

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date
-from typing import Sequence
+from typing import Any, Sequence
 
 from fastapi import HTTPException
 
 from src.application import (
+    SUNAT_SCOPE_NO_ACEPTADOS,
     get_detail,
     reconcile_pending_sunat_jobs,
     search_by_number,
@@ -55,30 +57,29 @@ def _intelisis_reader():
 
 
 def _sunat_pair() -> tuple:
-    """(validator, store, ruc, revalidate_hours) or (None, None, '', 24)."""
+    """(validator, store, ruc) or (None, None, '')."""
     from app import sunat_db as app_sunat
     from syner_check import config as cfg
 
     try:
         if not app_sunat.sunat_available():
-            return None, None, "", 24
+            return None, None, ""
         validator = cfg.get_sunat_validator_config()
         return (
             SunatValidatorAdapter(),
             SunatCacheStoreAdapter(),
             validator["ruc"],
-            int(validator.get("revalidate_hours", 24)),
         )
     except Exception:
         logger.warning("Sunat check failed; continuing without cache")
-        return None, None, "", 24
+        return None, None, ""
 
 
 def summary(
     start_iso: str, end_iso: str, tipo_values: Sequence[str], max_range_days: int
 ) -> dict:
     try:
-        _sunat_validator, sunat_store, sunat_ruc, _hours = _sunat_pair()
+        _sunat_validator, sunat_store, sunat_ruc = _sunat_pair()
         result = summarize(
             SqlReaderAdapter(),
             GraphqlGatewayAdapter(),
@@ -100,7 +101,7 @@ def summary(
 
 def search(number: str, fallback_days: int, today: date) -> dict:
     try:
-        _sunat_validator, sunat_store, sunat_ruc, _hours = _sunat_pair()
+        _sunat_validator, sunat_store, sunat_ruc = _sunat_pair()
         return search_by_number(
             SqlReaderAdapter(),
             GraphqlGatewayAdapter(),
@@ -118,9 +119,14 @@ def search(number: str, fallback_days: int, today: date) -> dict:
         raise HTTPException(502, "No fue posible completar la búsqueda.")
 
 
-def sunat_submit(documentos: list[dict], usuario: str) -> dict:
+def sunat_submit(
+    documentos: list[dict],
+    usuario: str,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
+    alcance: str = SUNAT_SCOPE_NO_ACEPTADOS,
+) -> dict:
     """Explicit SUNAT batch validation (quota-spending, user-triggered)."""
-    validator, store, ruc, hours = _sunat_pair()
+    validator, store, ruc = _sunat_pair()
     if validator is None or store is None or not ruc:
         raise HTTPException(400, "Validación SUNAT no configurada.")
     if not isinstance(documentos, list) or not documentos:
@@ -134,10 +140,11 @@ def sunat_submit(documentos: list[dict], usuario: str) -> dict:
             documentos=documentos,
             usuario=usuario or "",
             ruc=ruc,
-            revalidate_hours=hours,
+            alcance=alcance,
             batch_max=int(
                 cfg.get_sunat_validator_config().get("batch_size", 50)
             ),
+            on_progress=on_progress,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc) if str(exc) else "Solicitud inválida.")
@@ -148,7 +155,7 @@ def sunat_submit(documentos: list[dict], usuario: str) -> dict:
 
 def sunat_status(trabajo_id: int, usuario: str) -> dict:
     try:
-        validator, store, _ruc, _hours = _sunat_pair()
+        validator, store, _ruc = _sunat_pair()
         if validator is None or store is None:
             raise HTTPException(400, "Validación SUNAT no configurada.")
         return sunat_job_status(
@@ -163,7 +170,7 @@ def sunat_status(trabajo_id: int, usuario: str) -> dict:
 
 def sunat_reconcile(usuario: str) -> dict:
     """Reconcile every locally pending job with SUNAT (no new submissions)."""
-    validator, store, _ruc, _hours = _sunat_pair()
+    validator, store, _ruc = _sunat_pair()
     if validator is None or store is None:
         raise HTTPException(400, "Validación SUNAT no configurada.")
     try:
@@ -177,7 +184,7 @@ def sunat_reconcile(usuario: str) -> dict:
 
 def sunat_worker_pair() -> tuple | None:
     """Adapters and settings for the background reconciliation worker."""
-    validator, store, _ruc, _hours = _sunat_pair()
+    validator, store, _ruc = _sunat_pair()
     if validator is None or store is None:
         return None
     from syner_check import config as cfg
@@ -193,7 +200,7 @@ def sunat_single(
     tipo_value: str, number: str, doc_date_iso: str, importe: object, usuario: str
 ) -> dict:
     """Manual single-doc revalidation (forces a fresh SUNAT query)."""
-    validator, store, ruc, _hours = _sunat_pair()
+    validator, store, ruc = _sunat_pair()
     if validator is None or store is None or not ruc:
         raise HTTPException(400, "Validación SUNAT no configurada.")
     try:

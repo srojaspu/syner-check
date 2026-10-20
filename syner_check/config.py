@@ -147,15 +147,15 @@ def get_sunat_validator_config() -> dict:
         raise RuntimeError(
             "Missing or invalid env var: SUNAT_RUC_EMISOR (11 digits)."
         )
-    try:
-        revalidate_hours = int(os.getenv("SUNAT_REVALIDATE_HOURS", "24"))
-    except ValueError:
-        revalidate_hours = 24
     return {
         "url": url,
         "api_key": api_key,
         "ruc": ruc,
-        "revalidate_hours": max(1, revalidate_hours),
+        # Batch registration returns 202 after queueing; upstream can take
+        # ~100 s under load. A longer read timeout avoids losing the job id.
+        "submit_timeout_seconds": _int_env(
+            "SUNAT_SUBMIT_TIMEOUT_SECONDS", 180, 30, 600
+        ),
         # Small chunks bound the damage of one lost HTTP response and let
         # the UI show progress every few documents instead of one 9-minute job.
         "batch_size": _int_env(

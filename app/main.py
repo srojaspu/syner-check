@@ -23,7 +23,16 @@ from .security import (
     RateLimitMiddleware,
     read_json_limited,
 )
-from src.application import reconcile_pending_sunat_jobs
+from src.application import (
+    SUNAT_REQUEST_MAX,
+    SUNAT_SCOPE_NO_ACEPTADOS,
+    SUNAT_SCOPES,
+    reconcile_pending_sunat_jobs,
+)
+from src.application.sunat_submission import (
+    SunatSubmissionRegistry,
+    submission_fingerprint,
+)
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
@@ -51,6 +60,74 @@ from .config import (
 
 configure_logging()
 logger = logging.getLogger("syner_check")
+
+# Ephemeral UI progress for explicit SUNAT submissions. The cache table and the
+# reconcile worker stay authoritative; this only lets the browser poll a long
+# batch after the start request has already returned 202.
+_sunat_submissions = SunatSubmissionRegistry()
+_submission_tasks: set[asyncio.Task] = set()
+
+
+def _submission_error_message(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        return str(exc.detail or "No fue posible registrar el lote SUNAT.")
+    if isinstance(exc, ValueError):
+        return str(exc) or "Solicitud inválida."
+    return "No fue posible registrar el lote SUNAT. Inténtalo de nuevo."
+
+
+def _submission_done(task: asyncio.Task) -> None:
+    _submission_tasks.discard(task)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logger.error("SUNAT submission task crashed", exc_info=error)
+
+
+async def _run_sunat_submission(
+    solicitud_id: str,
+    documentos: list[dict],
+    usuario: str,
+    alcance: str,
+) -> None:
+    started = time.monotonic()
+    short_id = solicitud_id[:8]
+    _sunat_submissions.start(solicitud_id)
+    logger.info(
+        "SUNAT submission %s start docs=%d scope=%s",
+        short_id,
+        len(documentos),
+        alcance,
+    )
+
+    def on_progress(payload: dict) -> None:
+        _sunat_submissions.progress(solicitud_id, payload)
+
+    try:
+        result = await run_blocking(
+            clean_sunat_submit,
+            documentos,
+            usuario,
+            on_progress=on_progress,
+            alcance=alcance,
+        )
+    except Exception as exc:  # noqa: BLE001 - background task must not die silently
+        _sunat_submissions.fail(solicitud_id, _submission_error_message(exc))
+        logger.exception("SUNAT submission %s failed", short_id)
+        return
+
+    _sunat_submissions.complete(solicitud_id, result)
+    logger.info(
+        "SUNAT submission %s done total=%d sent=%d jobs=%d errors=%d "
+        "elapsed_ms=%d",
+        short_id,
+        result.get("total", 0),
+        result.get("enviados", 0),
+        len(result.get("trabajos") or []),
+        len(result.get("errores") or []),
+        int((time.monotonic() - started) * 1000),
+    )
 
 
 def _sunat_worker_task(stop: asyncio.Event) -> asyncio.Task | None:
@@ -101,6 +178,11 @@ async def lifespan(_app: FastAPI):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+        pending_submissions = list(_submission_tasks)
+        for submission in pending_submissions:
+            submission.cancel()
+        if pending_submissions:
+            await asyncio.gather(*pending_submissions, return_exceptions=True)
         shutdown_executor()
 
 
@@ -359,22 +441,78 @@ def _actor_email(request: Request) -> str:
     return ""
 
 
-@app.post("/api/sunat/lotes")
+@app.post("/api/sunat/lotes", status_code=202)
 async def api_sunat_submit(request: Request):
+    """Queue a batch and return immediately; poll ``/api/sunat/solicitudes``.
+
+    The SUNAT client can spend minutes submitting chunks. Keeping that work
+    inside the request made the browser hit its timeout and hid all progress.
+    """
     protected(request)
     body = await read_json_limited(request, MAX_REQUEST_BYTES)
     documentos = body.get("documentos", []) if isinstance(body, dict) else []
     if not isinstance(documentos, list):
         raise HTTPException(400, "El campo 'documentos' debe ser una lista.")
-    try:
-        return await run_blocking(
-            clean_sunat_submit, documentos, _actor_email(request)
+    if not documentos:
+        raise HTTPException(400, "Sin documentos para validar.")
+    if len(documentos) > SUNAT_REQUEST_MAX:
+        raise HTTPException(
+            400,
+            f"Límite por solicitud: {SUNAT_REQUEST_MAX} documentos.",
         )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Sunat submit failed")
-        raise HTTPException(502, "No fue posible registrar el lote SUNAT.") from exc
+    alcance = str(
+        (body.get("alcance") if isinstance(body, dict) else "")
+        or SUNAT_SCOPE_NO_ACEPTADOS
+    ).strip().lower()
+    if alcance not in SUNAT_SCOPES:
+        raise HTTPException(400, "El campo 'alcance' no es válido.")
+
+    usuario = _actor_email(request)
+    submission, reused = _sunat_submissions.create(
+        usuario=usuario,
+        total=len(documentos),
+        fingerprint=submission_fingerprint(documentos, alcance),
+        alcance=alcance,
+    )
+    short_id = submission.id[:8]
+    if reused:
+        logger.info(
+            "SUNAT submission %s reused (active) docs=%d scope=%s",
+            short_id,
+            len(documentos),
+            alcance,
+        )
+    else:
+        submission_task = asyncio.create_task(
+            _run_sunat_submission(submission.id, documentos, usuario, alcance),
+            name=f"sunat-submit-{short_id}",
+        )
+        _submission_tasks.add(submission_task)
+        submission_task.add_done_callback(_submission_done)
+        logger.info(
+            "SUNAT submission %s queued docs=%d",
+            short_id,
+            len(documentos),
+        )
+
+    state = _sunat_submissions.snapshot(submission.id, usuario=usuario)
+    if state is None:
+        raise HTTPException(404, "Solicitud de validación no encontrada.")
+    state["reutilizada"] = reused
+    return state
+
+
+@app.get("/api/sunat/solicitudes/{solicitud_id}")
+async def api_sunat_submission(request: Request, solicitud_id: str):
+    protected(request)
+    state = _sunat_submissions.snapshot(
+        solicitud_id, usuario=_actor_email(request)
+    )
+    if state is None:
+        raise HTTPException(
+            404, "Solicitud de validación no encontrada o expirada."
+        )
+    return state
 
 
 @app.get("/api/sunat/lotes/{trabajo_id}")

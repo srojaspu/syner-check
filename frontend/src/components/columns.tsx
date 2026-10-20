@@ -187,6 +187,7 @@ export function voucherColumns(
             { value: "NO_EXISTE", label: "No existe" },
             { value: "ANULADO", label: "Anulado" },
             { value: "DESCONOCIDO", label: "Desconocido" },
+            { value: "SIN_CONFIRMAR", label: "Sin confirmar" },
             { value: "ERROR", label: "Error" },
             { value: "—", label: "Sin consultar" },
           ],
@@ -204,6 +205,9 @@ export function voucherColumns(
         }
         if (estado === "PENDIENTE") {
           return <Badge variant="secondary">Pendiente</Badge>;
+        }
+        if (estado === "SIN_CONFIRMAR") {
+          return <Badge variant="destructive">Sin confirmar</Badge>;
         }
         return <Badge variant="outline">{estado}</Badge>;
       },

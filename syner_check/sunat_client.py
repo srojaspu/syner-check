@@ -38,9 +38,19 @@ def _error_code(payload: object, http_status: int | None) -> tuple[str, str]:
 class SunatValidatorClient:
     """Thin wrapper over the validator microservice (cache/queue/OAuth inside)."""
 
-    def __init__(self, base_url: str, api_key: str, timeout: float = 60.0):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        timeout: float = 60.0,
+        submit_timeout: float = 180.0,
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = float(timeout)
+        # Registering a chunk can legitimately take >60 s while the validator
+        # enqueues the work. A too-short read timeout creates ambiguous POSTs
+        # whose job id is lost, and resending would duplicate SUNAT work.
+        self.submit_timeout = max(float(submit_timeout), self.timeout)
         self.session = requests.Session()
         # Header only; never log session headers (they hold the key).
         self.session.headers.update({
@@ -49,10 +59,17 @@ class SunatValidatorClient:
             "Accept": "application/json",
         })
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         try:
             response = self.session.post(
-                self.base_url + path, json=payload, timeout=self.timeout
+                self.base_url + path,
+                json=payload,
+                timeout=self.timeout if timeout is None else float(timeout),
             )
         except requests.RequestException as exc:
             raise SunatError(None, "NETWORK_ERROR", type(exc).__name__) from exc
@@ -97,7 +114,11 @@ class SunatValidatorClient:
         if usuario:
             payload["usuario"] = usuario[:100]
         payload["origen"] = (origen or "syner-check")[:100]
-        body = self._post("/api/v1/comprobantes/validar-lote.php", payload)
+        body = self._post(
+            "/api/v1/comprobantes/validar-lote.php",
+            payload,
+            timeout=self.submit_timeout,
+        )
         if "trabajo_id" not in body:
             raise SunatError(202, "MISSING_JOB_ID", "")
         return body

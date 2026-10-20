@@ -75,7 +75,11 @@ class SunatValidatorAdapter:
         marker = (validator["url"], validator["ruc"])
         client = getattr(cls._local, "client", None)
         if client is None or getattr(cls._local, "key", None) != marker:
-            client = SunatValidatorClient(validator["url"], validator["api_key"])
+            client = SunatValidatorClient(
+                validator["url"],
+                validator["api_key"],
+                submit_timeout=validator.get("submit_timeout_seconds", 180),
+            )
             cls._local.client = client
             cls._local.key = marker
         return client

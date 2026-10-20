@@ -124,16 +124,33 @@ export interface SearchResponse {
   sunat_enabled: boolean;
 }
 
-export interface SunatSubmitResponse {
-  trabajos: { trabajo_id: number; cantidad: number; estado?: string }[];
-  enviados: number;
-  omitidos: {
-    cache_terminal: number;
-    en_proceso: number;
-    invalidos: { tipo: string; number: string; reason: string }[];
-  };
-  errores: { cantidad: number; mensaje: string }[];
+export type SunatScope = "no_aceptados" | "todos";
+
+export interface SunatOmitted {
+  aceptados: number;
+  en_proceso: number;
+  sin_confirmar: number;
+  invalidos: { tipo: string; number: string; reason: string }[];
+}
+
+export interface SunatSubmissionResponse {
+  solicitud_id: string;
+  estado: string;
+  fase: string;
+  mensaje: string;
   total: number;
+  alcance: SunatScope;
+  por_enviar: number;
+  chunks_total: number;
+  chunks_done: number;
+  enviados: number;
+  omitidos: SunatOmitted;
+  trabajos: { trabajo_id: number; cantidad: number; estado?: string }[];
+  errores: { cantidad: number; mensaje: string; sin_confirmar?: boolean }[];
+  porcentaje: number;
+  iniciado_en: string;
+  actualizado_en: string;
+  reutilizada?: boolean;
 }
 
 export interface SunatJobResponse {

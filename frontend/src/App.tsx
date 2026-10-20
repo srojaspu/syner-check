@@ -13,13 +13,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { exportExcel } from "./api/excel";
+import { formatMoney } from "./api/format";
 import type { Voucher } from "./api/types";
 import { Account, AppShell, LoginCard, Tabs, TopBar } from "./components/AppShell";
 import { DataTable } from "./components/DataTable";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { FlowBar } from "./components/FlowBar";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
-import { StatsBar } from "./components/StatsBar";
+import { SunatConfirmDialog } from "./components/SunatConfirmDialog";
 import { SunatProgress } from "./components/SunatProgress";
 import { voucherColumns } from "./components/columns";
 import { useDocument } from "./hooks/useDocument";
@@ -35,6 +36,7 @@ function Workspace() {
   const sunat = useSunat(onAuthFailure);
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
+  const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
   const [lastRange, setLastRange] = useState<{
     start: string;
     end: string;
@@ -50,6 +52,21 @@ function Workspace() {
   const effectiveRows = filteredRows ?? vouchers.rows;
   const isFiltered =
     filteredRows !== null && filteredRows.length !== vouchers.rows.length;
+  const resultsTotal = useMemo(
+    () =>
+      effectiveRows.reduce(
+        (sum, row) => sum + (Number(row.crossTotal) || 0),
+        0,
+      ),
+    [effectiveRows],
+  );
+  const resultsCurrency =
+    effectiveRows[0]?.currency?.isoCode ??
+    vouchers.rows[0]?.currency?.isoCode ??
+    "PEN";
+  const resultsSubtitle = isFiltered
+    ? `${effectiveRows.length} de ${vouchers.rows.length} documentos`
+    : vouchers.subtitle;
   const columns = useMemo(
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
@@ -99,13 +116,16 @@ function Workspace() {
     // Do not reset SUNAT state here: this callback runs at the end of the
     // batch and would clear the final progress the user just saw.
     if (mode === "range" && lastRange) {
-      void vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
-    } else if (mode === "number" && lastNumber) {
-      void vouchers.runNumber(lastNumber);
+      return vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
     }
+    if (mode === "number" && lastNumber) {
+      return vouchers.runNumber(lastNumber);
+    }
+    return Promise.resolve();
   };
 
-  const sunatDisabled = !vouchers.rows.length || vouchers.loading || sunat.busy;
+  const sunatDisabled =
+    !vouchers.rows.length || vouchers.loading || sunat.busy || sunat.refreshing;
 
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
@@ -120,6 +140,7 @@ function Workspace() {
                 setLastRange({ start, end, types });
                 setLastNumber(null);
                 sunat.reset();
+                setSunatDialogOpen(false);
                 setFilteredRows(null);
                 void vouchers.runRange(start, end, types);
               }}
@@ -131,6 +152,7 @@ function Workspace() {
                 setLastNumber(number);
                 setLastRange(null);
                 sunat.reset();
+                setSunatDialogOpen(false);
                 setFilteredRows(null);
                 void vouchers.runNumber(number);
               }}
@@ -147,27 +169,30 @@ function Workspace() {
           />
         ) : null}
 
-        {vouchers.searched ? (
-          <StatsBar
-            rows={vouchers.rows}
-            intelisisEnabled={vouchers.intelisisEnabled}
-          />
-        ) : null}
-
         <Card>
           <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div className="flex flex-col gap-1">
-              <CardTitle>Resultados</CardTitle>
-              <CardDescription>
-                {vouchers.error ?? vouchers.subtitle}
-              </CardDescription>
+            <div className="flex min-w-0 flex-col gap-1">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <CardTitle>Resultados</CardTitle>
+                <CardDescription>
+                  {vouchers.error ?? resultsSubtitle}
+                </CardDescription>
+              </div>
+              {vouchers.searched ? (
+                <p className="text-sm text-muted-foreground">
+                  Total mostrado:{" "}
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {formatMoney(resultsTotal, resultsCurrency)}
+                  </span>
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-2 sm:justify-self-end">
               <Button
                 type="button"
                 variant="outline"
                 disabled={sunatDisabled || !effectiveRows.length}
-                onClick={() => void sunat.runBatch(effectiveRows, refreshRows)}
+                onClick={() => setSunatDialogOpen(true)}
                 title={
                   isFiltered
                     ? `Valida solo las ${effectiveRows.length} filas filtradas contra SUNAT`
@@ -207,7 +232,7 @@ function Workspace() {
                     className="animate-spin"
                     aria-hidden
                   />
-                  Consultando…
+                  {sunat.refreshing ? "Actualizando resultados…" : "Consultando…"}
                 </span>
               ) : null}
             </div>
@@ -244,6 +269,15 @@ function Workspace() {
           copied={copied}
           onCopy={() => void copyNumber()}
           onClose={detail.close}
+        />
+
+        <SunatConfirmDialog
+          open={sunatDialogOpen}
+          onOpenChange={setSunatDialogOpen}
+          rows={effectiveRows}
+          onConfirm={(scope) => {
+            void sunat.runBatch(effectiveRows, refreshRows, scope);
+          }}
         />
       </div>
     </AppShell>

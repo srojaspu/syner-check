@@ -203,7 +203,7 @@ def _apply(
     """UPDATE else INSERT one row on an open cursor (no MERGE).
 
     ``[FechaConsulta]`` is stamped server-side on both paths: the SUNAT TTL
-    (``_sunat_fresh``) reads it, so leaving it to a DB default silently
+    (the submit path) reads it, so leaving it to a DB default silently
     disabled revalidation.
 
     State guard: a settled result (SUNAT already answered) must never be

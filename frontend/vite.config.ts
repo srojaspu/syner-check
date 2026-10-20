@@ -33,8 +33,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/auth": "http://127.0.0.1:8000",
+      // Preserve the browser's Host header: the backend's CSRF origin check
+      // compares Origin against Host on writes. With changeOrigin:true the
+      // proxy sends Host=127.0.0.1:8000 while the browser sends
+      // Origin=http://localhost:5173, producing "Origen no permitido."
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
+      "/auth": { target: "http://127.0.0.1:8000", changeOrigin: false },
     },
   },
 });

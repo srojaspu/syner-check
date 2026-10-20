@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from src.application import (
@@ -14,7 +16,11 @@ from src.application import (
     sunat_revalidate,
 )
 from src.application.sunat_worker import run_sunat_reconcile_worker
-from src.application.use_cases import _sunat_doc_payload, _sunat_fresh, _sunat_key
+from src.application.sunat_submission import (
+    SunatSubmissionRegistry,
+    submission_fingerprint,
+)
+from src.application.use_cases import _sunat_doc_payload, _sunat_key
 from src.domain.errors import UpstreamError
 
 
@@ -24,11 +30,14 @@ class FakeValidator:
         self.job = {"trabajo": {"Estado": "COMPLETADO"}, "detalle": []}
         self.summary: dict | None = None
         self.status_error: Exception | None = None
+        self.submit_error: Exception | None = None
         self.detail_calls = 0
         self.summary_calls = 0
         self.single_response: dict = {"ok": True, "resultado": {}}
 
     def submit_batch(self, documentos, usuario="", origen=""):
+        if self.submit_error is not None:
+            raise self.submit_error
         self.submits.append(documentos)
         return {"trabajo_id": 100 + len(self.submits), "cantidad": len(documentos)}
 
@@ -128,6 +137,25 @@ class FakeStore:
         return 0
 
 
+class RacingStore(FakeStore):
+    """Force two submit calls to read an empty cache before either claims."""
+
+    def __init__(self):
+        super().__init__()
+        self.first_fetch = threading.Barrier(2)
+        self._seen: set[int] = set()
+        self._seen_lock = threading.Lock()
+
+    def fetch_many(self, keys):
+        ident = threading.get_ident()
+        with self._seen_lock:
+            first = ident not in self._seen
+            self._seen.add(ident)
+        if first:
+            self.first_fetch.wait(timeout=5)
+        return super().fetch_many(keys)
+
+
 def _row(estado="ACEPTADO", seen=None):
     return {
         "Estado": estado,
@@ -154,7 +182,16 @@ class KeyTests(unittest.TestCase):
             "12345678901", "FACTURA", "F001-123", "2026-10-15", 284.38
         )
         self.assertEqual(payload["tipo"], "01")
+        self.assertEqual(payload["numero"], "123")
         self.assertEqual(payload["importe"], 284.38)
+        with_zeros = _sunat_doc_payload(
+            "12345678901", "BOLETA", "BS05-00000105", "2026-10-15", 10
+        )
+        self.assertEqual(with_zeros["numero"], "00000105")
+        self.assertEqual(
+            _sunat_key("12345678901", "BOLETA", "BS05-00000105"),
+            ("12345678901", "03", "BS05", "105"),
+        )
         with self.assertRaises(ValueError):
             _sunat_doc_payload("123", "FACTURA", "F001-1", "2026-10-15", 10)
         with self.assertRaises(ValueError):
@@ -194,7 +231,7 @@ class SubmitTests(unittest.TestCase):
         )
         self.assertEqual(res["enviados"], 0)
         self.assertEqual(validator.submits, [])
-        self.assertEqual(res["omitidos"]["cache_terminal"], 1)
+        self.assertEqual(res["omitidos"]["aceptados"], 1)
 
     def test_submits_missing_and_records_pending(self):
         validator = FakeValidator()
@@ -218,23 +255,107 @@ class SubmitTests(unittest.TestCase):
         self.assertEqual(store.rows[key]["Estado"], "PENDIENTE")
         self.assertEqual(store.rows[key]["TrabajoID"], 101)
 
-    def test_revalidates_stale_but_not_fresh(self):
-        old = (self.NOW - timedelta(hours=30)).isoformat(timespec="seconds")
+    def test_concurrent_clients_submit_each_document_once(self):
+        store = RacingStore()
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK",
+                "Ruc": "20101031773",
+                "Tipo": "03",
+                "Serie": "BS05",
+                "Numero": "105",
+                "ResultadoEstado": "ACEPTADO",
+            }],
+        }
+
+        def run():
+            return submit_sunat_batch(
+                validator,
+                store,
+                documentos=[self._doc()],
+                usuario="u",
+                ruc="20101031773",
+                now=self.NOW,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [future.result() for future in (
+                pool.submit(run),
+                pool.submit(run),
+            )]
+
+        self.assertEqual(len(validator.submits), 1)
+        self.assertEqual(sum(result["enviados"] for result in results), 1)
+        self.assertEqual(
+            sorted(result["enviados"] for result in results),
+            [0, 1],
+        )
+
+    def test_default_rechecks_non_accepted_even_if_recent(self):
         fresh = (self.NOW - timedelta(hours=1)).isoformat(timespec="seconds")
         store = FakeStore({
-            ("20101031773", "03", "BS05", "105"): _row("NO_EXISTE", old),
-            ("20101031773", "03", "BS05", "106"): _row("NO_EXISTE", fresh),
+            ("20101031773", "03", "BS05", "105"): _row("NO_EXISTE", fresh),
         })
-        docs = [self._doc(), {**self._doc(), "number": "BS05-00000106"}]
+        validator = FakeValidator()
         res = submit_sunat_batch(
-            FakeValidator(), store, documentos=docs,
+            validator, store, documentos=[self._doc()],
             usuario="u", ruc="20101031773", now=self.NOW,
         )
         self.assertEqual(res["enviados"], 1)
+        self.assertEqual(validator.submits[0][0]["forzar_consulta"], False)
 
-    def test_pending_is_never_fresh(self):
-        row = _row("PENDIENTE", self.NOW.isoformat(timespec="seconds"))
-        self.assertFalse(_sunat_fresh(row, 24, self.NOW))
+    def test_all_forces_accepted_and_cache(self):
+        key = ("20101031773", "03", "BS05", "105")
+        store = FakeStore({key: _row("ACEPTADO")})
+        validator = FakeValidator()
+        res = submit_sunat_batch(
+            validator,
+            store,
+            documentos=[self._doc()],
+            usuario="u",
+            ruc="20101031773",
+            now=self.NOW,
+            alcance="todos",
+        )
+        self.assertEqual(res["enviados"], 1)
+        self.assertEqual(res["omitidos"]["aceptados"], 0)
+        self.assertEqual(validator.submits[0][0]["forzar_consulta"], True)
+
+    def test_invalid_scope_is_rejected(self):
+        with self.assertRaises(ValueError):
+            submit_sunat_batch(
+                FakeValidator(),
+                FakeStore(),
+                documentos=[self._doc()],
+                usuario="u",
+                ruc="20101031773",
+                now=self.NOW,
+                alcance="solo_algunos",
+            )
+
+    def test_unconfirmed_submit_is_not_retried(self):
+        store = FakeStore()
+        validator = FakeValidator()
+        validator.submit_error = UpstreamError(
+            "read timeout", code="NETWORK_ERROR", http_status=None
+        )
+        first = submit_sunat_batch(
+            validator, store, documentos=[self._doc()],
+            usuario="u", ruc="20101031773", now=self.NOW,
+        )
+        self.assertEqual(first["enviados"], 0)
+        key = ("20101031773", "03", "BS05", "105")
+        self.assertEqual(store.rows[key]["Estado"], "SIN_CONFIRMAR")
+        self.assertTrue(first["errores"][0]["sin_confirmar"])
+
+        second = submit_sunat_batch(
+            FakeValidator(), store, documentos=[self._doc()],
+            usuario="u", ruc="20101031773", now=self.NOW,
+        )
+        self.assertEqual(second["enviados"], 0)
+        self.assertEqual(second["omitidos"]["sin_confirmar"], 1)
 
     def test_does_not_resubmit_a_job_still_running(self):
         seen = (self.NOW - timedelta(hours=1)).isoformat(timespec="seconds")
@@ -286,7 +407,7 @@ class SubmitTests(unittest.TestCase):
             usuario="u", ruc="20101031773", now=self.NOW,
         )
         self.assertEqual(res["enviados"], 0)
-        self.assertEqual(res["omitidos"]["cache_terminal"], 1)
+        self.assertEqual(res["omitidos"]["aceptados"], 1)
         self.assertEqual(validator.submits, [])
         self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
 
@@ -320,6 +441,151 @@ class SubmitTests(unittest.TestCase):
         )
         self.assertEqual(res["enviados"], 0)
         self.assertEqual(len(res["omitidos"]["invalidos"]), 1)
+
+    def test_reports_chunk_progress(self):
+        docs = [
+            {**self._doc(), "number": f"BS05-{i:08d}"}
+            for i in range(2)
+        ]
+        events: list[dict] = []
+        res = submit_sunat_batch(
+            FakeValidator(),
+            FakeStore(),
+            documentos=docs,
+            usuario="u",
+            ruc="20101031773",
+            now=self.NOW,
+            batch_max=1,
+            on_progress=events.append,
+        )
+        self.assertEqual(res["enviados"], 2)
+        self.assertEqual(events[-1]["fase"], "finalizando")
+        self.assertEqual(events[-1]["por_enviar"], 2)
+        self.assertEqual(events[-1]["chunks_total"], 2)
+        self.assertEqual(events[-1]["chunks_done"], 2)
+        self.assertEqual(events[-1]["enviados"], 2)
+        self.assertEqual(res["por_enviar"], 2)
+
+    def test_progress_callback_failure_does_not_abort(self):
+        def fail(_payload: dict) -> None:
+            raise RuntimeError("ui disconnected")
+
+        res = submit_sunat_batch(
+            FakeValidator(),
+            FakeStore(),
+            documentos=[self._doc()],
+            usuario="u",
+            ruc="20101031773",
+            now=self.NOW,
+            on_progress=fail,
+        )
+        self.assertEqual(res["enviados"], 1)
+
+
+class SubmissionRegistryTests(unittest.TestCase):
+    def test_reuses_an_active_same_batch_and_user(self):
+        registry = SunatSubmissionRegistry()
+        docs = [{"tipo": "BOLETA", "number": "BS05-1", "date": "2026-10-18"}]
+        fingerprint = submission_fingerprint(docs)
+
+        first, reused = registry.create(
+            usuario="u@x.pe", total=1, fingerprint=fingerprint
+        )
+        second, reused_again = registry.create(
+            usuario="u@x.pe", total=1, fingerprint=fingerprint
+        )
+        other, _ = registry.create(
+            usuario="v@x.pe", total=1, fingerprint=fingerprint
+        )
+
+        self.assertFalse(reused)
+        self.assertTrue(reused_again)
+        self.assertEqual(first.id, second.id)
+        self.assertNotEqual(first.id, other.id)
+
+    def test_fingerprint_ignores_order_and_case(self):
+        first = submission_fingerprint([
+            {"tipo": "boleta", "number": "bs05-1", "date": "2026-10-18T10:00:00"},
+            {"tipo": "FACTURA", "number": "F001-2", "date": "2026-10-18"},
+        ])
+        second = submission_fingerprint([
+            {"tipo": "FACTURA", "number": "F001-2", "date": "2026-10-18"},
+            {"tipo": "BOLETA", "number": "BS05-1", "date": "2026-10-18T10:00:00"},
+        ])
+        self.assertEqual(first, second)
+
+    def test_fingerprint_includes_scope(self):
+        docs = [{"tipo": "BOLETA", "number": "BS05-1", "date": "2026-10-18"}]
+        self.assertNotEqual(
+            submission_fingerprint(docs, "no_aceptados"),
+            submission_fingerprint(docs, "todos"),
+        )
+
+    def test_progress_then_complete_is_visible_to_the_polling_endpoint(self):
+        registry = SunatSubmissionRegistry()
+        item, _ = registry.create(
+            usuario="u@x.pe", total=363, fingerprint="fp"
+        )
+        registry.start(item.id)
+        registry.progress(item.id, {
+            "fase": "enviando",
+            "mensaje": "Enviando lote 2 de 4…",
+            "total": 363,
+            "por_enviar": 200,
+            "chunks_total": 4,
+            "chunks_done": 2,
+            "enviados": 100,
+        })
+        live = registry.snapshot(item.id, usuario="u@x.pe")
+        self.assertIsNotNone(live)
+        assert live is not None
+        self.assertEqual(live["estado"], "EN_PROCESO")
+        self.assertEqual(live["chunks_done"], 2)
+        self.assertEqual(live["porcentaje"], 50.0)
+
+        registry.complete(item.id, {
+            "total": 363,
+            "por_enviar": 200,
+            "enviados": 200,
+            "trabajos": [{"trabajo_id": 9, "cantidad": 100}],
+            "errores": [],
+            "omitidos": {
+                "aceptados": 163,
+                "en_proceso": 0,
+                "sin_confirmar": 0,
+                "invalidos": [],
+            },
+        })
+        done = registry.snapshot(item.id, usuario="u@x.pe")
+        self.assertIsNotNone(done)
+        assert done is not None
+        self.assertEqual(done["estado"], "COMPLETADO")
+        self.assertEqual(done["enviados"], 200)
+        self.assertEqual(done["porcentaje"], 100.0)
+        self.assertIsNone(registry.snapshot(item.id, usuario="otro@x.pe"))
+
+    def test_failed_submission_exposes_the_real_error(self):
+        registry = SunatSubmissionRegistry()
+        item, _ = registry.create(
+            usuario="u@x.pe", total=50, fingerprint="fp-error"
+        )
+        registry.complete(item.id, {
+            "total": 50,
+            "enviados": 0,
+            "trabajos": [],
+            "errores": [{"cantidad": 50, "mensaje": "SUNAT no disponible"}],
+            "omitidos": {
+                "aceptados": 0,
+                "en_proceso": 0,
+                "sin_confirmar": 0,
+                "invalidos": [],
+            },
+        })
+        state = registry.snapshot(item.id, usuario="u@x.pe")
+        self.assertIsNotNone(state)
+        assert state is not None
+        self.assertEqual(state["estado"], "ERROR")
+        self.assertEqual(state["mensaje"], "SUNAT no disponible")
 
 
 class JobStatusTests(unittest.TestCase):
