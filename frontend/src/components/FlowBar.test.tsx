@@ -50,11 +50,13 @@ const flow: FlowBreakdown = {
 function renderFlow({
   intelisisEnabled = true,
   sunatEnabled = true,
+  loading = false,
   selectedStage = null,
   selectedState = null,
 }: {
   intelisisEnabled?: boolean;
   sunatEnabled?: boolean;
+  loading?: boolean;
   selectedStage?: FlowStageKey | null;
   selectedState?: string | null;
 } = {}) {
@@ -66,6 +68,7 @@ function renderFlow({
       intelisisEnabled={intelisisEnabled}
       intelisisCount={3}
       sunatEnabled={sunatEnabled}
+      loading={loading}
       selectedStage={selectedStage}
       selectedState={selectedState}
       onSelectState={onSelectState}
@@ -90,6 +93,33 @@ describe("FlowBar", () => {
     expect(sunat.textContent).toContain("2");
     expect(screen.queryByText("En paralelo · Factus")).toBeNull();
     expect(container.querySelectorAll("button")).toHaveLength(2);
+  });
+
+  it("shows skeletons instead of stale counts while loading", () => {
+    const { container } = render(
+      <FlowBar
+        flow={flow}
+        intelisisEnabled
+        intelisisCount={3}
+        sunatEnabled
+        loading
+        onSelectState={() => {}}
+      />,
+    );
+
+    const card = screen.getByLabelText("Flujo de documentos");
+    expect(card.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByText("3 en Punidas")).toBeNull();
+    expect(screen.queryByText("4")).toBeNull();
+    expect(screen.queryByText(/documentos completan el flujo/)).toBeNull();
+    expect(
+      container.querySelectorAll('[data-slot="skeleton"]').length,
+    ).toBeGreaterThan(0);
+
+    const sunat = screen.getByRole("button", {
+      name: /SUNAT/,
+    }) as HTMLButtonElement;
+    expect(sunat.disabled).toBe(true);
   });
 
   it("opens the Intelisis state popover and hides zero-count states", async () => {

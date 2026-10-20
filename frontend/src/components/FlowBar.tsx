@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import type {
   FlowBreakdown,
   FlowStageKey,
@@ -51,6 +52,7 @@ function StageContent({
   tone,
   hint,
   interactive,
+  loading,
 }: {
   icon: ReactNode;
   title: string;
@@ -60,6 +62,7 @@ function StageContent({
   tone: StageTone;
   hint?: string;
   interactive?: boolean;
+  loading?: boolean;
 }) {
   return (
     <>
@@ -75,11 +78,18 @@ function StageContent({
           <span className="block truncate">{subtitle}</span>
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          <span
-            className={`size-2 rounded-full ${stageDot(tone)}`}
-            aria-hidden
-          />
-          {interactive ? (
+          {loading ? (
+            <span
+              className="size-2 animate-pulse rounded-full bg-muted"
+              aria-hidden
+            />
+          ) : (
+            <span
+              className={`size-2 rounded-full ${stageDot(tone)}`}
+              aria-hidden
+            />
+          )}
+          {interactive && !loading ? (
             <HugeiconsIcon
               icon={ChevronRightIcon}
               size={13}
@@ -89,13 +99,23 @@ function StageContent({
           ) : null}
         </span>
       </span>
-      <b className="text-2xl leading-tight tabular-nums">{value}</b>
-      {typeof missing === "number" && missing > 0 ? (
+      {loading ? (
+        <Skeleton className="h-7 w-10" aria-hidden />
+      ) : (
+        <b className="text-2xl leading-tight tabular-nums">{value}</b>
+      )}
+      {loading ? (
+        typeof missing === "number" && missing > 0 ? (
+          <Skeleton className="h-5 w-24 rounded-full" aria-hidden />
+        ) : null
+      ) : typeof missing === "number" && missing > 0 ? (
         <Badge variant="outline" className="w-fit">
           −{missing} en el paso
         </Badge>
       ) : null}
-      {hint ? (
+      {loading ? (
+        hint ? <Skeleton className="h-3 w-40 max-w-full" aria-hidden /> : null
+      ) : hint ? (
         <span className="text-xs leading-snug text-muted-foreground">
           {hint}
         </span>
@@ -247,6 +267,7 @@ function StagePopover({
   onSelect,
   onClear,
   triggerClassName,
+  disabled,
   children,
 }: {
   stage: FlowStageKey;
@@ -259,16 +280,28 @@ function StagePopover({
   onSelect: (state: string) => void;
   onClear?: () => void;
   triggerClassName: string;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover
+      open={open && !disabled}
+      onOpenChange={(next) => {
+        if (!disabled) onOpenChange(next);
+      }}
+    >
       <PopoverTrigger
         render={
           <button
             type="button"
-            className={triggerClassName}
-            aria-label={`${title}: ver estados`}
+            className={cn(
+              triggerClassName,
+              disabled && "cursor-not-allowed opacity-70",
+            )}
+            aria-label={
+              disabled ? `${title}: cargando` : `${title}: ver estados`
+            }
+            disabled={disabled}
           />
         }
       >
@@ -299,6 +332,7 @@ export function FlowBar({
   intelisisCount,
   intelisisWarning,
   sunatEnabled,
+  loading,
   selectedStage,
   selectedState,
   onSelectState,
@@ -309,6 +343,7 @@ export function FlowBar({
   intelisisCount: number;
   intelisisWarning?: string | null;
   sunatEnabled: boolean;
+  loading?: boolean;
   selectedStage?: FlowStageKey | null;
   selectedState?: string | null;
   onSelectState: (stage: FlowStageKey, state: string) => void;
@@ -352,9 +387,13 @@ export function FlowBar({
   };
 
   return (
-    <Card aria-live="polite" aria-label="Flujo de documentos">
+    <Card
+      aria-live="polite"
+      aria-label="Flujo de documentos"
+      aria-busy={loading || undefined}
+    >
       <CardContent className="flex flex-col gap-3">
-        <span className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <b>Flujo</b>
           <span className="text-muted-foreground">
             SynerCOM → MovSynerPos → Intelisis
@@ -371,10 +410,12 @@ export function FlowBar({
                 ? "Intelisis no disponible (revisar conexión)"
                 : "Intelisis no configurado"}
             </Badge>
+          ) : loading ? (
+            <Skeleton className="h-5 w-24 rounded-full" aria-hidden />
           ) : (
             <Badge variant="secondary">{intelisisCount} en Punidas</Badge>
           )}
-        </span>
+        </div>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
           <div className="grid flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-stretch">
@@ -387,6 +428,7 @@ export function FlowBar({
                 subtitle="GraphQL"
                 value={totals.graphql}
                 tone="graphite"
+                loading={loading}
               />
             </div>
             <FlowArrow />
@@ -404,6 +446,7 @@ export function FlowBar({
                 value={totals.in_mov}
                 missing={lostMov}
                 tone={lostMov > 0 ? "warn" : "ok"}
+                loading={loading}
               />
             </div>
             <FlowArrow />
@@ -423,6 +466,7 @@ export function FlowBar({
                 true,
                 selectedStage === "intelisis",
               )}
+              disabled={loading}
             >
               <StageContent
                 icon={
@@ -444,6 +488,7 @@ export function FlowBar({
                       : "ok"
                 }
                 interactive
+                loading={loading}
               />
             </StagePopover>
           </div>
@@ -468,6 +513,7 @@ export function FlowBar({
                 true,
                 selectedStage === "sunat",
               )}
+              disabled={loading}
             >
               <StageContent
                 icon={
@@ -483,30 +529,38 @@ export function FlowBar({
                 hint={sunatHint}
                 tone={sunatTone}
                 interactive
+                loading={loading}
               />
             </StagePopover>
           </div>
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          {totals.full} documentos completan el flujo
-          {intelisisEnabled && totals.pending_in_intelisis > 0
-            ? ` · ${totals.pending_in_intelisis} pendientes de conclusión en Intelisis`
-            : null}
-          {intelisisEnabled && totals.cancelled_in_intelisis > 0
-            ? ` · ${totals.cancelled_in_intelisis} cancelados en Intelisis`
-            : null}{" "}
-          · {lostMov} faltan en Mov ·{" "}
-          {intelisisEnabled
-            ? `${lostIntelisis} ausentes en Intelisis`
-            : intelisisWarning
-              ? "Intelisis con fallo de conexión (ver log del servidor)"
-              : "Intelisis en modo degradado"}
-          .{" "}
-          {sunatEnabled
-            ? `${accepted} aceptados en SUNAT de ${consulted} consultados.`
-            : "SUNAT no está configurado en esta instancia."}
-        </p>
+        {loading ? (
+          <div className="flex flex-col gap-1.5" aria-hidden>
+            <Skeleton className="h-3 w-full max-w-3xl" />
+            <Skeleton className="h-3 w-2/3 max-w-xl" />
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {totals.full} documentos completan el flujo
+            {intelisisEnabled && totals.pending_in_intelisis > 0
+              ? ` · ${totals.pending_in_intelisis} pendientes de conclusión en Intelisis`
+              : null}
+            {intelisisEnabled && totals.cancelled_in_intelisis > 0
+              ? ` · ${totals.cancelled_in_intelisis} cancelados en Intelisis`
+              : null}{" "}
+            · {lostMov} faltan en Mov ·{" "}
+            {intelisisEnabled
+              ? `${lostIntelisis} ausentes en Intelisis`
+              : intelisisWarning
+                ? "Intelisis con fallo de conexión (ver log del servidor)"
+                : "Intelisis en modo degradado"}
+            .{" "}
+            {sunatEnabled
+              ? `${accepted} aceptados en SUNAT de ${consulted} consultados.`
+              : "SUNAT no está configurado en esta instancia."}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

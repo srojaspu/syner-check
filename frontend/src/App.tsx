@@ -208,6 +208,7 @@ function Workspace() {
             intelisisCount={vouchers.intelisisCount}
             intelisisWarning={vouchers.intelisisWarning}
             sunatEnabled={vouchers.sunatEnabled}
+            loading={vouchers.loading}
             selectedStage={flowSelection?.stage}
             selectedState={flowSelection?.state}
             onSelectState={selectFlowState}
