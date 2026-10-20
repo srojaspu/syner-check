@@ -106,12 +106,11 @@ def _intelisis_payload(prow: dict) -> dict:
 # --- Flow stage breakdown -------------------------------------------------
 #
 # The summary exposes both the historical per-type counters and a stage
-# breakdown used by the flow cards/modal. The breakdown is computed here so
+# breakdown used by the flow cards/popover. The breakdown is computed here so
 # the UI never has to re-implement Intelisis/SUNAT state rules.
 
 FLOW_STAGE_INTELISIS = "intelisis"
 FLOW_STAGE_SUNAT = "sunat"
-FLOW_STAGES = (FLOW_STAGE_INTELISIS, FLOW_STAGE_SUNAT)
 
 _INTELISIS_FLOW_STATES: tuple[tuple[str, str], ...] = (
     ("completo", "Completo"),
@@ -163,7 +162,7 @@ def _intelisis_flow_state(entry: dict) -> str:
 
 
 def _sunat_flow_state(entry: dict) -> str:
-    """Collapse cached SUNAT statuses into the buckets shown in the modal."""
+    """Collapse cached SUNAT statuses into the buckets shown in the UI."""
     payload = entry.get("sunat")
     status = (
         str(payload.get("estado", "")).strip().upper()
@@ -187,12 +186,24 @@ def _flow_state_definitions(stage: str) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _attach_flow_states(entries: list[dict]) -> None:
+    """Tag each voucher once so counts and client filters cannot drift."""
+    for entry in entries:
+        entry["flow_states"] = {
+            FLOW_STAGE_INTELISIS: _intelisis_flow_state(entry),
+            FLOW_STAGE_SUNAT: _sunat_flow_state(entry),
+        }
+
+
 def _flow_stage_summary(stage: str, entries: list[dict], *, enabled: bool) -> dict:
     definitions = _flow_state_definitions(stage)
     counts = {key: 0 for key, _label in definitions}
     classify = _flow_classifier(stage)
     for entry in entries:
-        state = classify(entry)
+        tags = entry.get("flow_states")
+        state = tags.get(stage) if isinstance(tags, dict) else None
+        if not state:
+            state = classify(entry)
         counts[state] = counts.get(state, 0) + 1
     consulted = (
         len(entries) - counts.get("sin_consultar", 0)
@@ -208,35 +219,6 @@ def _flow_stage_summary(stage: str, entries: list[dict], *, enabled: bool) -> di
             {"key": key, "label": label, "count": counts[key]}
             for key, label in definitions
         ],
-    }
-
-
-def _flow_document(entry: dict, stage: str, state: str) -> dict:
-    """Small, display-oriented payload for the flow detail modal."""
-    intelisis = entry.get("intelisis")
-    sunat = entry.get("sunat")
-    intelisis = intelisis if isinstance(intelisis, dict) else {}
-    sunat = sunat if isinstance(sunat, dict) else {}
-    currency = entry.get("currency")
-    return {
-        "oid": str(entry.get("oid", "")),
-        "tipo": str(entry.get("tipo", "")),
-        "number": str(entry.get("number", "")),
-        "date": str(entry.get("date", ""))[:10],
-        "contactName": str(entry.get("contactName", "")),
-        "crossTotal": entry.get("crossTotal"),
-        "currency": currency if isinstance(currency, dict) else None,
-        "estado": state,
-        "estado_detalle": (
-            str(intelisis.get("EstatusIntelisis", ""))
-            if stage == FLOW_STAGE_INTELISIS
-            else str(sunat.get("estado", ""))
-        ),
-        "fecha_consulta": (
-            str(sunat.get("fecha_consulta", ""))
-            if stage == FLOW_STAGE_SUNAT
-            else ""
-        ),
     }
 
 
@@ -402,6 +384,7 @@ def summarize(
             entry["sunat"] = None
         sunat_enabled = False
 
+    _attach_flow_states(all_entries)
     stages = {
         FLOW_STAGE_INTELISIS: _flow_stage_summary(
             FLOW_STAGE_INTELISIS, all_entries, enabled=intelisis_enabled
@@ -427,78 +410,6 @@ def summarize(
     if intelisis_warning is not None:
         result["intelisis_warning"] = intelisis_warning
     return result
-
-
-def flow_documents(
-    reader: SqlDocumentReader,
-    gateway: GraphqlGateway,
-    *,
-    stage: str,
-    estado: str,
-    start_iso: str,
-    end_iso: str,
-    tipos: Sequence[TipoDocumento],
-    max_range_days: int,
-    intelisis: IntelisisReader | None = None,
-    sunat_store: SunatCacheStore | None = None,
-    sunat_ruc: str = "",
-) -> dict:
-    """Documents that belong to one flow stage state.
-
-    This is an explicit user query (clicking a state in the flow modal). It
-    re-runs the same source collection as ``summarize`` so the list and the
-    counters always use the same classification rules.
-    """
-    normalized_stage = str(stage or "").strip().lower()
-    if normalized_stage not in FLOW_STAGES:
-        raise ValueError("Etapa de flujo inválida.")
-    definitions = _flow_state_definitions(normalized_stage)
-    labels = {key: label for key, label in definitions}
-    normalized_state = str(estado or "").strip().lower()
-    if normalized_state not in labels:
-        raise ValueError("Estado de flujo inválido.")
-
-    summary = summarize(
-        reader,
-        gateway,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        tipos=tipos,
-        max_range_days=max_range_days,
-        intelisis=intelisis,
-        sunat_store=sunat_store,
-        sunat_ruc=sunat_ruc,
-    )
-    entries = [
-        entry for rows in summary["documents"].values() for entry in rows
-    ]
-    classify = _flow_classifier(normalized_stage)
-    documents = [
-        _flow_document(entry, normalized_stage, normalized_state)
-        for entry in entries
-        if classify(entry) == normalized_state
-    ]
-    documents.sort(
-        key=lambda doc: (str(doc.get("date", "")), str(doc.get("number", ""))),
-        reverse=True,
-    )
-    stage_summary = summary["flow"]["stages"][normalized_stage]
-    logger.info(
-        "Flow documents stage=%s state=%s total=%d",
-        normalized_stage,
-        normalized_state,
-        len(documents),
-    )
-    return {
-        "stage": normalized_stage,
-        "estado": normalized_state,
-        "label": labels[normalized_state],
-        "enabled": stage_summary["enabled"],
-        "total": len(documents),
-        "documents": documents,
-        "states": stage_summary["states"],
-        "range": summary["range"],
-    }
 
 
 def search_by_number(

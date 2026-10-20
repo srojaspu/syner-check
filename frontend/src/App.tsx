@@ -19,7 +19,6 @@ import { Account, AppShell, LoginCard, Tabs, TopBar } from "./components/AppShel
 import { DataTable } from "./components/DataTable";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { FlowBar } from "./components/FlowBar";
-import { FlowStageDialog } from "./components/FlowStageDialog";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
 import { SunatConfirmDialog } from "./components/SunatConfirmDialog";
 import { SunatProgress } from "./components/SunatProgress";
@@ -30,6 +29,13 @@ import { useSunat } from "./hooks/useSunat";
 import { useVouchers, type SearchMode } from "./hooks/useVouchers";
 import { ThemeProvider } from "./theme/ThemeContext";
 
+interface FlowSelection {
+  stage: FlowStageKey;
+  state: string;
+  label: string;
+  rows: Voucher[];
+}
+
 function Workspace() {
   const { user, ready, onAuthFailure } = useSession();
   const vouchers = useVouchers(onAuthFailure);
@@ -38,7 +44,9 @@ function Workspace() {
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
   const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
-  const [stageDetail, setStageDetail] = useState<FlowStageKey | null>(null);
+  const [flowSelection, setFlowSelection] = useState<FlowSelection | null>(
+    null,
+  );
   const [lastRange, setLastRange] = useState<{
     start: string;
     end: string;
@@ -51,9 +59,13 @@ function Workspace() {
   const handleFilteredRowsChange = useCallback((rows: Voucher[]) => {
     setFilteredRows(rows);
   }, []);
-  const effectiveRows = filteredRows ?? vouchers.rows;
-  const isFiltered =
-    filteredRows !== null && filteredRows.length !== vouchers.rows.length;
+  const tableRows = flowSelection?.rows ?? vouchers.rows;
+  const effectiveRows = filteredRows ?? tableRows;
+  const hasTableFilter =
+    filteredRows !== null && filteredRows.length !== tableRows.length;
+  const isFiltered = flowSelection !== null || hasTableFilter;
+  const flowStageTitle =
+    flowSelection?.stage === "intelisis" ? "Intelisis" : "SUNAT";
   const resultsTotal = useMemo(
     () =>
       effectiveRows.reduce(
@@ -66,9 +78,11 @@ function Workspace() {
     effectiveRows[0]?.currency?.isoCode ??
     vouchers.rows[0]?.currency?.isoCode ??
     "PEN";
-  const resultsSubtitle = isFiltered
-    ? `${effectiveRows.length} de ${vouchers.rows.length} documentos`
-    : vouchers.subtitle;
+  const resultsSubtitle = flowSelection
+    ? `${effectiveRows.length} de ${vouchers.rows.length} documentos · ${flowStageTitle} · ${flowSelection.label}`
+    : hasTableFilter
+      ? `${effectiveRows.length} de ${vouchers.rows.length} documentos`
+      : vouchers.subtitle;
   const columns = useMemo(
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
@@ -114,9 +128,31 @@ function Workspace() {
     void detail.show(row);
   };
 
+  const selectFlowState = useCallback(
+    (stage: FlowStageKey, state: string) => {
+      const summary = vouchers.flow?.stages?.[stage];
+      const label =
+        summary?.states.find((item) => item.key === state)?.label ?? state;
+      const rows = vouchers.rows.filter(
+        (row) => row.flow_states?.[stage] === state,
+      );
+      setFlowSelection({ stage, state, label, rows });
+      setFilteredRows(null);
+    },
+    [vouchers.flow, vouchers.rows],
+  );
+
+  const clearFlowSelection = useCallback(() => {
+    setFlowSelection(null);
+    setFilteredRows(null);
+  }, []);
+
   const refreshRows = () => {
     // Do not reset SUNAT state here: this callback runs at the end of the
-    // batch and would clear the final progress the user just saw.
+    // batch and would clear the final progress the user just saw. The flow
+    // filter is cleared because a validated subset can change states.
+    setFlowSelection(null);
+    setFilteredRows(null);
     if (mode === "range" && lastRange) {
       return vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
     }
@@ -127,7 +163,10 @@ function Workspace() {
   };
 
   const sunatDisabled =
-    !vouchers.rows.length || vouchers.loading || sunat.busy || sunat.refreshing;
+    !effectiveRows.length ||
+    vouchers.loading ||
+    sunat.busy ||
+    sunat.refreshing;
 
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
@@ -143,7 +182,7 @@ function Workspace() {
                 setLastNumber(null);
                 sunat.reset();
                 setSunatDialogOpen(false);
-                setStageDetail(null);
+                setFlowSelection(null);
                 setFilteredRows(null);
                 void vouchers.runRange(start, end, types);
               }}
@@ -156,7 +195,7 @@ function Workspace() {
                 setLastRange(null);
                 sunat.reset();
                 setSunatDialogOpen(false);
-                setStageDetail(null);
+                setFlowSelection(null);
                 setFilteredRows(null);
                 void vouchers.runNumber(number);
               }}
@@ -171,7 +210,10 @@ function Workspace() {
             intelisisCount={vouchers.intelisisCount}
             intelisisWarning={vouchers.intelisisWarning}
             sunatEnabled={vouchers.sunatEnabled}
-            onOpenStage={setStageDetail}
+            selectedStage={flowSelection?.stage}
+            selectedState={flowSelection?.state}
+            onSelectState={selectFlowState}
+            onClearSelection={clearFlowSelection}
           />
         ) : null}
 
@@ -244,6 +286,30 @@ function Workspace() {
             </div>
           </CardHeader>
           <CardContent>
+            {flowSelection ? (
+              <div
+                className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm"
+                aria-live="polite"
+              >
+                <span className="min-w-0">
+                  Mostrando{" "}
+                  <b>
+                    {flowStageTitle} · {flowSelection.label}
+                  </b>{" "}
+                  <span className="text-muted-foreground">
+                    ({tableRows.length} de {vouchers.rows.length} documentos)
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFlowSelection}
+                >
+                  Quitar filtro
+                </Button>
+              </div>
+            ) : null}
             {sunat.progress || sunat.notice || sunat.warning || sunat.error ? (
               <div className="mb-4">
                 <SunatProgress
@@ -255,7 +321,12 @@ function Workspace() {
               </div>
             ) : null}
             <DataTable.Root
-              data={vouchers.rows}
+              key={
+                flowSelection
+                  ? `${flowSelection.stage}:${flowSelection.state}`
+                  : "base"
+              }
+              data={tableRows}
               columns={columns}
               onRowClick={showDetail}
               onFilteredRowsChange={handleFilteredRowsChange}
@@ -276,27 +347,6 @@ function Workspace() {
           onCopy={() => void copyNumber()}
           onClose={detail.close}
         />
-
-        {stageDetail ? (
-          <FlowStageDialog
-            open
-            stage={stageDetail}
-            summary={vouchers.flow?.stages?.[stageDetail] ?? null}
-            range={
-              lastRange
-                ? {
-                    start: lastRange.start,
-                    end: lastRange.end,
-                    types: lastRange.types,
-                  }
-                : null
-            }
-            onOpenChange={(open) => {
-              if (!open) setStageDetail(null);
-            }}
-            onAuthFailure={onAuthFailure}
-          />
-        ) : null}
 
         <SunatConfirmDialog
           open={sunatDialogOpen}

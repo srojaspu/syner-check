@@ -47,17 +47,6 @@ class HttpSurfaceTest(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["cache-control"], "no-store")
 
-    def test_flow_detail_requires_session(self) -> None:
-        response = client.get(
-            "/api/flow/sunat/documents",
-            params={
-                "start_date": "2024-01-01",
-                "end_date": "2024-01-02",
-                "estado": "aceptado",
-            },
-        )
-        self.assertEqual(response.status_code, 401)
-
     def test_cross_origin_write_is_rejected(self) -> None:
         response = client.post(
             "/api/sunat/lotes",

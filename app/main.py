@@ -36,7 +36,6 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
-    flow_documents as clean_flow_documents,
     search as clean_search,
     summary as clean_summary,
     sunat_reconcile as clean_sunat_reconcile,
@@ -390,38 +389,6 @@ async def api_summary(
     except Exception as exc:
         logger.exception("Summary failed")
         raise HTTPException(502, "No fue posible consultar los comprobantes.") from exc
-
-
-@app.get("/api/flow/{stage}/documents")
-async def api_flow_documents(
-    request: Request,
-    stage: str,
-    start_date: str,
-    end_date: str,
-    estado: str = Query(..., min_length=1, max_length=40),
-    types: str = "FACTURA,BOLETA,NOTA DE CREDITO",
-):
-    """Documents behind one flow-stage state (explicit on-demand query)."""
-    protected(request)
-    validate_range(start_date, end_date)
-    tipos = parse_types(types)
-    try:
-        return await run_blocking(
-            clean_flow_documents,
-            stage,
-            estado,
-            start_date,
-            end_date,
-            tipos,
-            MAX_RANGE_DAYS,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Flow document detail failed")
-        raise HTTPException(
-            502, "No fue posible consultar el detalle del flujo."
-        ) from exc
 
 
 @app.get("/api/search")

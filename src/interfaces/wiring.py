@@ -11,7 +11,6 @@ from fastapi import HTTPException
 
 from src.application import (
     SUNAT_SCOPE_NO_ACEPTADOS,
-    flow_documents as flow_documents_use_case,
     get_detail,
     reconcile_pending_sunat_jobs,
     search_by_number,
@@ -118,41 +117,6 @@ def search(number: str, fallback_days: int, today: date) -> dict:
     except UpstreamError:
         logger.exception("Number search upstream failure")
         raise HTTPException(502, "No fue posible completar la búsqueda.")
-
-
-def flow_documents(
-    stage: str,
-    estado: str,
-    start_iso: str,
-    end_iso: str,
-    tipo_values: Sequence[str],
-    max_range_days: int,
-) -> dict:
-    """Documents for one flow stage state (explicit user query)."""
-    try:
-        _sunat_validator, sunat_store, sunat_ruc = _sunat_pair()
-        return flow_documents_use_case(
-            SqlReaderAdapter(),
-            GraphqlGatewayAdapter(),
-            stage=stage,
-            estado=estado,
-            start_iso=start_iso,
-            end_iso=end_iso,
-            tipos=_tipos(tipo_values),
-            max_range_days=max_range_days,
-            intelisis=_intelisis_reader(),
-            sunat_store=sunat_store,
-            sunat_ruc=sunat_ruc,
-        )
-    except InvalidRangeError:
-        raise HTTPException(400, "Fechas inválidas.")
-    except ValueError as exc:
-        raise HTTPException(
-            400, str(exc) if str(exc) else "Consulta de flujo inválida."
-        )
-    except UpstreamError:
-        logger.exception("Flow document detail upstream failure")
-        raise HTTPException(502, "No fue posible consultar el detalle del flujo.")
 
 
 def sunat_submit(

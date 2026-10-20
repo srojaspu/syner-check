@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from src.application import flow_documents, get_detail, search_by_number, summarize
+from src.application import get_detail, search_by_number, summarize
 from src.domain.entities import TipoDocumento
 from src.domain.errors import NotFoundError
 
@@ -581,45 +581,37 @@ class FlowStageBreakdownTests(unittest.TestCase):
             },
         )
 
-    def test_flow_documents_filters_and_projects_rows(self):
+    def test_each_document_is_tagged_with_its_flow_states(self):
         args, docs = self._summary()
-        res = flow_documents(
-            self._reader(),
-            self._gateway(docs),
-            stage="sunat",
-            estado="aceptado",
-            **args,
-        )
-        self.assertEqual(res["stage"], "sunat")
-        self.assertEqual(res["estado"], "aceptado")
-        self.assertEqual(res["label"], "Aceptado")
-        self.assertEqual(res["total"], 1)
-        self.assertEqual(res["documents"][0]["number"], "F001-00000001")
-        self.assertEqual(res["documents"][0]["estado_detalle"], "ACEPTADO")
-        self.assertEqual(res["documents"][0]["contactName"], "Uno")
+        res = summarize(self._reader(), self._gateway(docs), **args)
+        rows = [
+            entry
+            for documents in res["documents"].values()
+            for entry in documents
+        ]
 
-        missing = flow_documents(
-            self._reader(),
-            self._gateway(docs),
-            stage="intelisis",
-            estado="ausente",
-            **args,
-        )
+        self.assertEqual(len(rows), 4)
         self.assertEqual(
-            [doc["number"] for doc in missing["documents"]],
-            ["F001-00000004"],
+            {row["number"]: row["flow_states"] for row in rows},
+            {
+                "F001-00000001": {
+                    "intelisis": "completo",
+                    "sunat": "aceptado",
+                },
+                "F001-00000002": {
+                    "intelisis": "pendiente",
+                    "sunat": "no_existe",
+                },
+                "F001-00000003": {
+                    "intelisis": "cancelado",
+                    "sunat": "en_proceso",
+                },
+                "F001-00000004": {
+                    "intelisis": "ausente",
+                    "sunat": "sin_consultar",
+                },
+            },
         )
-
-    def test_flow_documents_rejects_unknown_state(self):
-        args, docs = self._summary()
-        with self.assertRaises(ValueError):
-            flow_documents(
-                self._reader(),
-                self._gateway(docs),
-                stage="sunat",
-                estado="inventado",
-                **args,
-            )
 
 
 class DetailTests(unittest.TestCase):

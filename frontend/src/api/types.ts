@@ -88,6 +88,8 @@ export interface Voucher {
   intelisis?: Record<string, unknown>;
   /** SUNAT cache status (null = aún no consultado). */
   sunat?: { estado?: string; fecha_consulta?: string } | null;
+  /** Backend-assigned flow bucket for each stage (used by the table filter). */
+  flow_states?: Partial<Record<FlowStageKey, string>>;
   /** SQL index row, present only on sql_index search hits. */
   sql?: Record<string, unknown>;
 }
@@ -135,31 +137,6 @@ export interface SummaryResponse {
   sunat_enabled: boolean;
   flow?: FlowBreakdown;
   intelisis_warning?: string | null;
-  range: { start: string; end: string };
-}
-
-/** One document row returned by the flow detail endpoint. */
-export interface FlowDocument {
-  oid: string;
-  tipo: TipoDocumento;
-  number?: string;
-  date?: string;
-  contactName?: string;
-  crossTotal?: number;
-  currency?: Currency | null;
-  estado: string;
-  estado_detalle?: string;
-  fecha_consulta?: string;
-}
-
-export interface FlowDocumentsResponse {
-  stage: FlowStageKey;
-  estado: string;
-  label: string;
-  enabled: boolean;
-  total: number;
-  documents: FlowDocument[];
-  states: FlowStateCount[];
   range: { start: string; end: string };
 }
 

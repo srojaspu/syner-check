@@ -1,7 +1,5 @@
 import type {
   DocumentResponse,
-  FlowDocumentsResponse,
-  FlowStageKey,
   SearchResponse,
   SessionUser,
   SummaryResponse,
@@ -117,24 +115,6 @@ export function getSummary(
 ): Promise<SummaryResponse> {
   const qs = new URLSearchParams(params);
   return api(`/api/summary?${qs}`, { signal }, LONG_TIMEOUT_MS);
-}
-
-export function getFlowDocuments(
-  stage: FlowStageKey,
-  params: {
-    estado: string;
-    start_date: string;
-    end_date: string;
-    types: string;
-  },
-  signal?: AbortSignal,
-): Promise<FlowDocumentsResponse> {
-  const qs = new URLSearchParams(params);
-  return api(
-    `/api/flow/${encodeURIComponent(stage)}/documents?${qs}`,
-    { signal },
-    LONG_TIMEOUT_MS,
-  );
 }
 
 export function searchByNumber(
