@@ -33,6 +33,37 @@ class HttpSurfaceTest(unittest.TestCase):
         self.assertIn("content-security-policy", response.headers)
         self.assertTrue(response.headers["x-request-id"])
 
+    def test_successful_health_probe_logs_at_debug_not_info(self) -> None:
+        """Container probes must not flood INFO logs every 30 seconds."""
+        with self.assertLogs("syner_check", level="DEBUG") as captured:
+            client.get("/health")
+        probes = [
+            record
+            for record in captured.records
+            if record.getMessage().startswith("GET /health ")
+        ]
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0].levelno, logging.DEBUG)
+
+    def test_csp_allows_inline_style_attributes_but_not_style_elements(
+        self,
+    ) -> None:
+        """Portalled Base UI popups set position through the style attribute.
+
+        ``style-src-attr 'unsafe-inline'`` unblocks those dynamic attributes
+        while ``style-src 'self'`` still rejects injected <style> elements.
+        """
+        csp = client.get("/health").headers["content-security-policy"]
+        directives = {
+            part.strip().split(" ", 1)[0]: part.strip()
+            for part in csp.split(";")
+            if part.strip()
+        }
+        self.assertEqual(directives["style-src"], "style-src 'self'")
+        self.assertEqual(
+            directives["style-src-attr"], "style-src-attr 'unsafe-inline'"
+        )
+
     def test_api_me_reports_no_session(self) -> None:
         response = client.get("/api/me")
         self.assertEqual(response.status_code, 200)

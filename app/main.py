@@ -236,8 +236,13 @@ async def security_and_request_middleware(request: Request, call_next):
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
+        # style-src-attr is required: Base UI (Select, Dialog, Sheet, Popover)
+        # positions its portals and sets progress widths through the style
+        # attribute, which style-src alone would block. Keeping style-src
+        # strict still forbids injected <style> elements and external sheets.
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "default-src 'self'; script-src 'self'; "
+            "style-src 'self'; style-src-attr 'unsafe-inline'; "
             "img-src 'self' data: https://*.googleusercontent.com; "
             "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
             "form-action 'self'"
@@ -247,7 +252,13 @@ async def security_and_request_middleware(request: Request, call_next):
         )
         if cache_control:
             response.headers["Cache-Control"] = cache_control
-        logger.info(
+        # Docker/Dockploy probe /health every 30s: a successful probe is not
+        # worth an INFO line, but a failing one must stay visible.
+        healthy_probe = (
+            request.url.path == "/health" and response.status_code < 400
+        )
+        logger.log(
+            logging.DEBUG if healthy_probe else logging.INFO,
             "%s %s status=%s %.0fms",
             request.method,
             request.url.path,
