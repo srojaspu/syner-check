@@ -87,6 +87,69 @@ export interface ColumnFilterConfig {
   options?: { value: string; label: string }[];
 }
 
+/** Lowest viewport width at which a column becomes visible. */
+export type ResponsivePriority =
+  | "always"
+  | "sm"
+  | "md"
+  | "lg"
+  | "xl"
+  | "2xl";
+
+const BREAKPOINTS = ["base", "sm", "md", "lg", "xl", "2xl"] as const;
+type Breakpoint = (typeof BREAKPOINTS)[number];
+
+function breakpointForWidth(width: number): Breakpoint {
+  if (width >= 1536) return "2xl";
+  if (width >= 1280) return "xl";
+  if (width >= 1024) return "lg";
+  if (width >= 768) return "md";
+  if (width >= 640) return "sm";
+  return "base";
+}
+
+function useViewportBreakpoint(): Breakpoint {
+  const [breakpoint, setBreakpoint] = useState<Breakpoint>(() =>
+    typeof window === "undefined"
+      ? "base"
+      : breakpointForWidth(window.innerWidth),
+  );
+
+  useEffect(() => {
+    const update = () => setBreakpoint(breakpointForWidth(window.innerWidth));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  return breakpoint;
+}
+
+function columnVisibilityId<T>(column: ColumnDef<T, unknown>): string {
+  if (column.id) return column.id;
+  if ("accessorKey" in column && typeof column.accessorKey === "string") {
+    return column.accessorKey;
+  }
+  throw new Error("DataTable columns need an id or a string accessorKey");
+}
+
+function columnVisibilityFor<T>(
+  columns: ColumnDef<T, unknown>[],
+  breakpoint: Breakpoint,
+): Record<string, boolean> {
+  const current = BREAKPOINTS.indexOf(breakpoint);
+  return Object.fromEntries(
+    columns.map((column) => {
+      const priority =
+        (column.meta as { priority?: ResponsivePriority } | undefined)
+          ?.priority ?? "always";
+      const required =
+        priority === "always" ? 0 : BREAKPOINTS.indexOf(priority);
+      return [columnVisibilityId(column), current >= required];
+    }),
+  );
+}
+
 function Root<T>({
   data,
   columns,
@@ -104,10 +167,27 @@ function Root<T>({
     pageIndex: 0,
     pageSize: initialPageSize,
   });
+  const breakpoint = useViewportBreakpoint();
+  const columnVisibility = useMemo(
+    () => columnVisibilityFor(columns, breakpoint),
+    [columns, breakpoint],
+  );
+
+  // A filter on a now-hidden column would keep narrowing the results with no
+  // visible control to explain why. Drop those filters when a column hides.
+  useEffect(() => {
+    setColumnFilters((current) => {
+      const next = current.filter(
+        (filter) => columnVisibility[filter.id] !== false,
+      );
+      return next.length === current.length ? current : next;
+    });
+  }, [columnVisibility]);
+
   const table = useReactTable({
     data,
     columns,
-    state: { columnFilters, pagination },
+    state: { columnFilters, pagination, columnVisibility },
     onColumnFiltersChange: setColumnFilters,
     onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
@@ -209,10 +289,18 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
       >
         <SelectTrigger
           size="sm"
-          className="h-8 w-full min-w-28"
+          className="h-8 w-full min-w-0 sm:min-w-28"
           aria-label={label}
         >
-          <SelectValue />
+          <SelectValue>
+            {(current) => {
+              if (!current || current === ALL) return "Todos";
+              return (
+                config.options?.find((option) => option.value === current)
+                  ?.label ?? String(current)
+              );
+            }}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Todos</SelectItem>
@@ -242,7 +330,7 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
 const SKELETON_ROWS = 8;
 
 function SkeletonRows<T>({ table }: { table: Table<T> }) {
-  const colCount = table.getAllLeafColumns().length;
+  const colCount = table.getVisibleLeafColumns().length;
   return (
     <div role="status" aria-busy="true" aria-label="Cargando resultados">
       <UiTable>
@@ -250,7 +338,11 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>
               {group.headers.map((header) => (
-                <TableHead key={header.id} scope="col">
+                <TableHead
+                  key={header.id}
+                  scope="col"
+                  className="px-2 sm:px-3"
+                >
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
@@ -264,7 +356,7 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
           {Array.from({ length: SKELETON_ROWS }).map((_, r) => (
             <TableRow key={r} aria-hidden="true">
               {Array.from({ length: colCount }).map((_, c) => (
-                <TableCell key={c}>
+                <TableCell key={c} className="p-2 sm:p-3">
                   <Skeleton className="h-4 w-full" />
                 </TableCell>
               ))}
@@ -326,6 +418,7 @@ function View<T>({ loading }: { loading?: boolean }) {
               <TableHead
                 key={header.id}
                 scope="col"
+                className="px-2 sm:px-3"
                 aria-sort={
                   header.column.getCanSort()
                     ? sortDirection(header.column)
@@ -367,7 +460,7 @@ function View<T>({ loading }: { loading?: boolean }) {
         ))}
         <TableRow>
           {table.getHeaderGroups()[0]?.headers.map((header) => (
-            <TableHead key={`filter-${header.id}`}>
+            <TableHead key={`filter-${header.id}`} className="px-2 sm:px-3">
               <ColumnFilter column={header.column} />
             </TableHead>
           )) ?? null}
@@ -397,7 +490,7 @@ function View<T>({ loading }: { loading?: boolean }) {
             }
           >
             {row.getVisibleCells().map((cell) => (
-              <TableCell key={cell.id}>
+              <TableCell key={cell.id} className="p-2 sm:p-3">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </TableCell>
             ))}

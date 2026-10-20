@@ -2,12 +2,13 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { TipoDocumento, Voucher } from "../api/types";
-import type { ColumnFilterConfig } from "./DataTable";
+import type { ColumnFilterConfig, ResponsivePriority } from "./DataTable";
 
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData, TValue> {
     filter?: ColumnFilterConfig;
+    priority?: ResponsivePriority;
   }
 }
 
@@ -16,6 +17,26 @@ const TIPO_LABEL: Record<TipoDocumento, string> = {
   BOLETA: "Boleta",
   "NOTA DE CREDITO": "Nota de crédito",
 };
+
+type FlowBadgeVariant = "default" | "secondary" | "outline";
+
+/** Short label on phones; the full status remains available from sm upward. */
+function FlowBadge({
+  variant,
+  short,
+  full,
+}: {
+  variant: FlowBadgeVariant;
+  short: string;
+  full: string;
+}) {
+  return (
+    <Badge variant={variant} title={full} aria-label={full}>
+      <span className="sm:hidden">{short}</span>
+      <span className="hidden sm:inline">{full}</span>
+    </Badge>
+  );
+}
 
 export function voucherColumns(
   opts: { intelisisEnabled?: boolean } = {},
@@ -26,14 +47,19 @@ export function voucherColumns(
       id: "documento",
       header: "Documento",
       accessorFn: (doc) => `${doc.number ?? ""} ${doc.seller ?? ""}`,
-      meta: { filter: { variant: "text", placeholder: "Nº o vendedor…" } },
+      meta: {
+        filter: { variant: "text", placeholder: "Nº o vendedor…" },
+        priority: "always",
+      },
       cell: ({ row }) => {
         const doc = row.original;
         return (
           <span className="flex flex-col">
             <span className="docnum font-medium">{doc.number || "—"}</span>
             {doc.seller ? (
-              <small className="text-muted-foreground">{doc.seller}</small>
+              <small className="hidden text-muted-foreground sm:block">
+                {doc.seller}
+              </small>
             ) : null}
           </span>
         );
@@ -42,7 +68,10 @@ export function voucherColumns(
     {
       accessorKey: "oid",
       header: "OID",
-      meta: { filter: { variant: "text", placeholder: "OID…" } },
+      meta: {
+        filter: { variant: "text", placeholder: "OID…" },
+        priority: "2xl",
+      },
       cell: ({ row }) => (
         <code className="oid font-mono text-xs">
           {row.original.oid || "—"}
@@ -62,6 +91,7 @@ export function voucherColumns(
             { value: "NOTA DE CREDITO", label: "Nota de crédito" },
           ],
         },
+        priority: "lg",
       },
       cell: ({ row }) => (
         <Badge variant="secondary">{TIPO_LABEL[row.original.tipo]}</Badge>
@@ -72,7 +102,10 @@ export function voucherColumns(
       header: "Fecha / hora",
       accessorFn: (doc) =>
         doc.createdDate || String(doc.date ?? "").slice(0, 10),
-      meta: { filter: { variant: "text", placeholder: "AAAA-MM-DD…" } },
+      meta: {
+        filter: { variant: "text", placeholder: "AAAA-MM-DD…" },
+        priority: "md",
+      },
       sortingFn: (a, b) =>
         String(a.original.createdDate ?? a.original.date ?? "").localeCompare(
           String(b.original.createdDate ?? b.original.date ?? ""),
@@ -95,7 +128,10 @@ export function voucherColumns(
       id: "cliente",
       header: "Cliente",
       accessorFn: (doc) => doc.contactName ?? doc.contact?.name ?? "",
-      meta: { filter: { variant: "text", placeholder: "Cliente…" } },
+      meta: {
+        filter: { variant: "text", placeholder: "Cliente…" },
+        priority: "xl",
+      },
       cell: ({ row }) => (
         <span>
           {row.original.contactName || row.original.contact?.name || "—"}
@@ -105,6 +141,7 @@ export function voucherColumns(
     {
       accessorKey: "crossTotal",
       header: "Total",
+      meta: { priority: "lg" },
       cell: ({ row }) => (
         <span className="amount text-right font-medium tabular-nums">
           {formatMoney(
@@ -147,30 +184,65 @@ export function voucherColumns(
             { value: "EN_MOV", label: "En Mov (sin Intelisis)" },
           ],
         },
+        priority: "always",
       },
       cell: ({ row }) => {
         const doc = row.original;
         if (doc.in_intelisis === undefined || !intelisisEnabled) {
-          return (
-            <Badge variant="secondary">
-              {doc.in_sql ? "En Mov" : "Falta en Mov"}
-            </Badge>
+          return doc.in_sql ? (
+            <FlowBadge variant="secondary" short="En Mov" full="En Mov" />
+          ) : (
+            <FlowBadge
+              variant="secondary"
+              short="Falta Mov"
+              full="Falta en Mov"
+            />
           );
         }
         if (doc.in_sql && doc.in_intelisis) {
           const est = intelisisEstatus(doc);
           if (est === "CONCLUIDO") {
-            return <Badge variant="default">Completo</Badge>;
+            return (
+              <FlowBadge
+                variant="default"
+                short="Completo"
+                full="Completo"
+              />
+            );
           }
           if (est === "CANCELADO") {
-            return <Badge variant="outline">Cancelado en Intelisis</Badge>;
+            return (
+              <FlowBadge
+                variant="outline"
+                short="Cancelado"
+                full="Cancelado en Intelisis"
+              />
+            );
           }
-          return <Badge variant="secondary">Pendiente en Intelisis</Badge>;
+          return (
+            <FlowBadge
+              variant="secondary"
+              short="Pendiente"
+              full="Pendiente en Intelisis"
+            />
+          );
         }
         if (doc.in_sql) {
-          return <Badge variant="outline">Falta en Intelisis</Badge>;
+          return (
+            <FlowBadge
+              variant="outline"
+              short="Falta Intelisis"
+              full="Falta en Intelisis"
+            />
+          );
         }
-        return <Badge variant="outline">Falta en Mov</Badge>;
+        return (
+          <FlowBadge
+            variant="outline"
+            short="Falta Mov"
+            full="Falta en Mov"
+          />
+        );
       },
     },
     {
@@ -192,6 +264,7 @@ export function voucherColumns(
             { value: "—", label: "Sin consultar" },
           ],
         },
+        priority: "always",
       },
       cell: ({ row }) => {
         const estado = (

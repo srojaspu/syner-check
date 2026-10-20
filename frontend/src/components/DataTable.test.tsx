@@ -1,13 +1,33 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { act, render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-afterEach(cleanup);
 import type { Voucher } from "../api/types";
 import { voucherColumns } from "./columns";
 import { DataTable } from "./DataTable";
+
+afterEach(() => {
+  cleanup();
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: 1024,
+  });
+});
+
+function setViewport(width: number, notify = true) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: width,
+  });
+  if (notify) {
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+}
 
 function makeRows(count: number): Voucher[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -105,6 +125,70 @@ describe("DataTable interactions", () => {
     await user.keyboard(" ");
     expect(onRowClick).toHaveBeenCalledWith(
       expect.objectContaining({ number: "F001-00000" }),
+    );
+  });
+
+  it("shows only the mandatory columns on mobile", () => {
+    setViewport(390, false);
+    render(<Harness rows={makeRows(3)} />);
+
+    expect(screen.getByText("Documento")).toBeTruthy();
+    expect(screen.getByText("Flujo")).toBeTruthy();
+    expect(screen.getByText("SUNAT")).toBeTruthy();
+
+    expect(screen.queryByText("Fecha / hora")).toBeNull();
+    expect(screen.queryByText("Tipo")).toBeNull();
+    expect(screen.queryByText("Total")).toBeNull();
+    expect(screen.queryByText("Cliente")).toBeNull();
+    expect(screen.queryByText("OID")).toBeNull();
+  });
+
+  it("reveals columns progressively as the viewport grows", () => {
+    setViewport(390, false);
+    render(<Harness rows={makeRows(3)} />);
+
+    setViewport(640);
+    expect(screen.queryByText("Fecha / hora")).toBeNull();
+    expect(screen.queryByText("Total")).toBeNull();
+
+    setViewport(768);
+    expect(screen.getByText("Fecha / hora")).toBeTruthy();
+    expect(screen.queryByText("Total")).toBeNull();
+    expect(screen.queryByText("Tipo")).toBeNull();
+
+    setViewport(1024);
+    expect(screen.getByText("Total")).toBeTruthy();
+    expect(screen.getByText("Tipo")).toBeTruthy();
+    expect(screen.queryByText("Cliente")).toBeNull();
+
+    setViewport(1280);
+    expect(screen.getByText("Cliente")).toBeTruthy();
+    expect(screen.queryByText("OID")).toBeNull();
+
+    setViewport(1536);
+    expect(screen.getByText("OID")).toBeTruthy();
+  });
+
+  it("clears filters for columns hidden by a smaller viewport", async () => {
+    const user = userEvent.setup();
+    setViewport(1024, false);
+    render(<FilterTrackingHarness rows={makeRows(5)} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("filtered-count").textContent).toBe("5"),
+    );
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Filtrar por tipo" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Factura" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("filtered-count").textContent).toBe("3"),
+    );
+
+    setViewport(390);
+    await waitFor(() =>
+      expect(screen.getByTestId("filtered-count").textContent).toBe("5"),
     );
   });
 
