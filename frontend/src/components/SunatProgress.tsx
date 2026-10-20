@@ -111,7 +111,9 @@ export function SunatProgress({
             </Badge>
             {progress.phase === "submission" ? (
               <span className="text-xs font-normal text-muted-foreground">
-                {progress.alcance === "todos" ? "Todos" : "Solo no aceptados"}
+                {progress.alcance === "todos"
+                  ? "Todos · consulta nueva"
+                  : "Solo no aceptados"}
                 {" · "}
                 {submissionLabel(progress)}
               </span>

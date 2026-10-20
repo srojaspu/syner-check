@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from src.application import get_detail, search_by_number, summarize
+from src.application import flow_documents, get_detail, search_by_number, summarize
 from src.domain.entities import TipoDocumento
 from src.domain.errors import NotFoundError
 
@@ -457,6 +457,169 @@ class TripleFlowTests(unittest.TestCase):
         self.assertEqual(flow["pending_in_intelisis"], 0)
         self.assertEqual(flow["cancelled_in_intelisis"], 1)
         self.assertEqual(flow["missing_in_intelisis"], 0)
+
+
+class FlowStageBreakdownTests(unittest.TestCase):
+    RUC = "20123456789"
+
+    def _reader(self):
+        class Reader(FakeReader):
+            def fetch_documents(self, start_iso, end_iso, tipos):
+                return []
+
+        return Reader([])
+
+    def _gateway(self, docs):
+        class Gateway(FakeGateway):
+            def summary(self, start_iso, end_iso, tipos):
+                return docs
+
+        return Gateway({})
+
+    def _intelisis(self, rows):
+        class Intelisis:
+            def fetch_headers(self, start_iso, end_iso):
+                return rows
+
+        return Intelisis()
+
+    def _sunat_store(self, rows):
+        class Store:
+            def fetch_many(self, keys):
+                return {key: rows[key] for key in keys if key in rows}
+
+        return Store()
+
+    def _summary(self):
+        from src.application.use_cases import _sunat_key
+
+        docs = {
+            "FACTURA": [
+                {"oid": "A1", "number": "F001-00000001",
+                 "date": "2026-10-15T10:00:00", "contactName": "Uno",
+                 "crossTotal": 10},
+                {"oid": "A2", "number": "F001-00000002",
+                 "date": "2026-10-15T11:00:00", "contactName": "Dos",
+                 "crossTotal": 20},
+                {"oid": "A3", "number": "F001-00000003",
+                 "date": "2026-10-15T12:00:00", "contactName": "Tres",
+                 "crossTotal": 30},
+                {"oid": "A4", "number": "F001-00000004",
+                 "date": "2026-10-15T13:00:00", "contactName": "Cuatro",
+                 "crossTotal": 40},
+            ]
+        }
+        intelisis = [
+            {"IntelisisID": "1", "Mov": "SE-Factura",
+             "MovID": "X-1", "StoreName": "T",
+             "TransactionType": "factura",
+             "ReceiptNumber": "F001-00000001",
+             "FechaEmision": "2026-10-15",
+             "EstatusIntelisis": "CONCLUIDO"},
+            {"IntelisisID": "2", "Mov": "SE-Factura",
+             "MovID": "X-2", "StoreName": "T",
+             "TransactionType": "factura",
+             "ReceiptNumber": "F001-00000002",
+             "FechaEmision": "2026-10-15",
+             "EstatusIntelisis": "PENDIENTE"},
+            {"IntelisisID": "3", "Mov": "SE-Factura",
+             "MovID": "X-3", "StoreName": "T",
+             "TransactionType": "factura",
+             "ReceiptNumber": "F001-00000003",
+             "FechaEmision": "2026-10-15",
+             "EstatusIntelisis": "CANCELADO"},
+        ]
+        keys = {
+            "F001-00000001": "ACEPTADO",
+            "F001-00000002": "NO_EXISTE",
+            "F001-00000003": "PENDIENTE",
+        }
+        sunat_rows = {
+            _sunat_key(self.RUC, "FACTURA", number): {
+                "Estado": estado,
+                "FechaConsulta": "2026-10-15 14:00:00",
+            }
+            for number, estado in keys.items()
+        }
+        args = dict(
+            start_iso="2026-10-15",
+            end_iso="2026-10-15",
+            tipos=[TipoDocumento.FACTURA],
+            max_range_days=93,
+            intelisis=self._intelisis(intelisis),
+            sunat_store=self._sunat_store(sunat_rows),
+            sunat_ruc=self.RUC,
+        )
+        return args, docs
+
+    def test_stage_counts_match_requested_states(self):
+        args, docs = self._summary()
+        res = summarize(self._reader(), self._gateway(docs), **args)
+
+        intelisis = res["flow"]["stages"]["intelisis"]
+        self.assertEqual(
+            {state["key"]: state["count"] for state in intelisis["states"]},
+            {"completo": 1, "pendiente": 1, "cancelado": 1, "ausente": 1},
+        )
+
+        sunat = res["flow"]["stages"]["sunat"]
+        self.assertTrue(res["sunat_enabled"])
+        self.assertEqual(sunat["total"], 4)
+        self.assertEqual(sunat["consulted"], 3)
+        self.assertEqual(
+            {state["key"]: state["count"] for state in sunat["states"]},
+            {
+                "aceptado": 1,
+                "no_existe": 1,
+                "anulado": 0,
+                "autorizado": 0,
+                "no_autorizado": 0,
+                "error": 0,
+                "en_proceso": 1,
+                "sin_consultar": 1,
+                "desconocido": 0,
+            },
+        )
+
+    def test_flow_documents_filters_and_projects_rows(self):
+        args, docs = self._summary()
+        res = flow_documents(
+            self._reader(),
+            self._gateway(docs),
+            stage="sunat",
+            estado="aceptado",
+            **args,
+        )
+        self.assertEqual(res["stage"], "sunat")
+        self.assertEqual(res["estado"], "aceptado")
+        self.assertEqual(res["label"], "Aceptado")
+        self.assertEqual(res["total"], 1)
+        self.assertEqual(res["documents"][0]["number"], "F001-00000001")
+        self.assertEqual(res["documents"][0]["estado_detalle"], "ACEPTADO")
+        self.assertEqual(res["documents"][0]["contactName"], "Uno")
+
+        missing = flow_documents(
+            self._reader(),
+            self._gateway(docs),
+            stage="intelisis",
+            estado="ausente",
+            **args,
+        )
+        self.assertEqual(
+            [doc["number"] for doc in missing["documents"]],
+            ["F001-00000004"],
+        )
+
+    def test_flow_documents_rejects_unknown_state(self):
+        args, docs = self._summary()
+        with self.assertRaises(ValueError):
+            flow_documents(
+                self._reader(),
+                self._gateway(docs),
+                stage="sunat",
+                estado="inventado",
+                **args,
+            )
 
 
 class DetailTests(unittest.TestCase):

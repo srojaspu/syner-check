@@ -103,6 +103,143 @@ def _intelisis_payload(prow: dict) -> dict:
     }
 
 
+# --- Flow stage breakdown -------------------------------------------------
+#
+# The summary exposes both the historical per-type counters and a stage
+# breakdown used by the flow cards/modal. The breakdown is computed here so
+# the UI never has to re-implement Intelisis/SUNAT state rules.
+
+FLOW_STAGE_INTELISIS = "intelisis"
+FLOW_STAGE_SUNAT = "sunat"
+FLOW_STAGES = (FLOW_STAGE_INTELISIS, FLOW_STAGE_SUNAT)
+
+_INTELISIS_FLOW_STATES: tuple[tuple[str, str], ...] = (
+    ("completo", "Completo"),
+    ("pendiente", "Pendiente"),
+    ("cancelado", "Cancelado"),
+    ("ausente", "No encontrado"),
+)
+
+_SUNAT_FLOW_STATES: tuple[tuple[str, str], ...] = (
+    ("aceptado", "Aceptado"),
+    ("no_existe", "No encontrado"),
+    ("anulado", "Anulado"),
+    ("autorizado", "Autorizado"),
+    ("no_autorizado", "No autorizado"),
+    ("error", "Error"),
+    ("en_proceso", "En proceso"),
+    ("sin_consultar", "Sin consultar"),
+    ("desconocido", "Desconocido"),
+)
+
+_SUNAT_FLOW_BY_STATUS = {
+    "ACEPTADO": "aceptado",
+    "NO_EXISTE": "no_existe",
+    "ANULADO": "anulado",
+    "AUTORIZADO": "autorizado",
+    "NO_AUTORIZADO": "no_autorizado",
+    "ERROR": "error",
+    "PENDIENTE": "en_proceso",
+    "PROCESANDO": "en_proceso",
+    "SIN_CONFIRMAR": "en_proceso",
+}
+
+
+def _intelisis_flow_state(entry: dict) -> str:
+    """Collapse Intelisis/Venta statuses into the four states the UI shows."""
+    if not entry.get("in_intelisis"):
+        return "ausente"
+    payload = entry.get("intelisis")
+    status = (
+        str(payload.get("EstatusIntelisis", "")).strip().upper()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if status == "CONCLUIDO":
+        return "completo"
+    if status == "CANCELADO":
+        return "cancelado"
+    return "pendiente"
+
+
+def _sunat_flow_state(entry: dict) -> str:
+    """Collapse cached SUNAT statuses into the buckets shown in the modal."""
+    payload = entry.get("sunat")
+    status = (
+        str(payload.get("estado", "")).strip().upper()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if not status:
+        return "sin_consultar"
+    return _SUNAT_FLOW_BY_STATUS.get(status, "desconocido")
+
+
+def _flow_classifier(stage: str):
+    return _intelisis_flow_state if stage == FLOW_STAGE_INTELISIS else _sunat_flow_state
+
+
+def _flow_state_definitions(stage: str) -> tuple[tuple[str, str], ...]:
+    return (
+        _INTELISIS_FLOW_STATES
+        if stage == FLOW_STAGE_INTELISIS
+        else _SUNAT_FLOW_STATES
+    )
+
+
+def _flow_stage_summary(stage: str, entries: list[dict], *, enabled: bool) -> dict:
+    definitions = _flow_state_definitions(stage)
+    counts = {key: 0 for key, _label in definitions}
+    classify = _flow_classifier(stage)
+    for entry in entries:
+        state = classify(entry)
+        counts[state] = counts.get(state, 0) + 1
+    consulted = (
+        len(entries) - counts.get("sin_consultar", 0)
+        if stage == FLOW_STAGE_SUNAT
+        else len(entries)
+    )
+    return {
+        "key": stage,
+        "enabled": bool(enabled),
+        "total": len(entries),
+        "consulted": consulted,
+        "states": [
+            {"key": key, "label": label, "count": counts[key]}
+            for key, label in definitions
+        ],
+    }
+
+
+def _flow_document(entry: dict, stage: str, state: str) -> dict:
+    """Small, display-oriented payload for the flow detail modal."""
+    intelisis = entry.get("intelisis")
+    sunat = entry.get("sunat")
+    intelisis = intelisis if isinstance(intelisis, dict) else {}
+    sunat = sunat if isinstance(sunat, dict) else {}
+    currency = entry.get("currency")
+    return {
+        "oid": str(entry.get("oid", "")),
+        "tipo": str(entry.get("tipo", "")),
+        "number": str(entry.get("number", "")),
+        "date": str(entry.get("date", ""))[:10],
+        "contactName": str(entry.get("contactName", "")),
+        "crossTotal": entry.get("crossTotal"),
+        "currency": currency if isinstance(currency, dict) else None,
+        "estado": state,
+        "estado_detalle": (
+            str(intelisis.get("EstatusIntelisis", ""))
+            if stage == FLOW_STAGE_INTELISIS
+            else str(sunat.get("estado", ""))
+        ),
+        "fecha_consulta": (
+            str(sunat.get("fecha_consulta", ""))
+            if stage == FLOW_STAGE_SUNAT
+            else ""
+        ),
+    }
+
+
 def _fetch_intelisis_dates(
     intelisis: IntelisisReader, dates: set[str] | Sequence[str], limit: int = 10
 ) -> tuple[list[dict], str | None]:
@@ -245,31 +382,123 @@ def summarize(
     }
     totals["missing_in_mov"] = totals["graphql"] - totals["in_mov"]
     totals["missing_in_intelisis"] = totals["graphql"] - totals["in_intelisis"]
+    all_entries = [e for rows in out.values() for e in rows]
+
+    # SUNAT cache read only (zero live calls on this path). It must run before
+    # the stage breakdown: each voucher is classified by its cached status.
+    sunat_enabled = False
+    try:
+        if sunat_store is not None and sunat_ruc:
+            sunat_enabled = attach_sunat_status(
+                all_entries,
+                sunat_store,
+                sunat_ruc,
+            )
+        else:
+            for entry in all_entries:
+                entry["sunat"] = None
+    except Exception:
+        for entry in all_entries:
+            entry["sunat"] = None
+        sunat_enabled = False
+
+    stages = {
+        FLOW_STAGE_INTELISIS: _flow_stage_summary(
+            FLOW_STAGE_INTELISIS, all_entries, enabled=intelisis_enabled
+        ),
+        FLOW_STAGE_SUNAT: _flow_stage_summary(
+            FLOW_STAGE_SUNAT, all_entries, enabled=sunat_enabled
+        ),
+    }
     result = {
         "documents": out,
         "sql_count": len(sql),
         "graphql_count": sum(len(v) for v in gql.values()),
         "intelisis_enabled": intelisis_enabled,
         "intelisis_count": len(intelisis_rows) if intelisis_enabled else 0,
-        "flow": {"per_tipo": flow_per_tipo, "totals": totals},
+        "flow": {
+            "per_tipo": flow_per_tipo,
+            "totals": totals,
+            "stages": stages,
+        },
         "range": {"start": start_iso, "end": end_iso},
+        "sunat_enabled": sunat_enabled,
     }
     if intelisis_warning is not None:
         result["intelisis_warning"] = intelisis_warning
-    # SUNAT cache read only (zero live calls on this path).
-    try:
-        if sunat_store is not None and sunat_ruc:
-            attach_sunat_status(
-                [e for rows in out.values() for e in rows],
-                sunat_store,
-                sunat_ruc,
-            )
-            result["sunat_enabled"] = True
-        else:
-            result["sunat_enabled"] = False
-    except Exception:
-        result["sunat_enabled"] = False
     return result
+
+
+def flow_documents(
+    reader: SqlDocumentReader,
+    gateway: GraphqlGateway,
+    *,
+    stage: str,
+    estado: str,
+    start_iso: str,
+    end_iso: str,
+    tipos: Sequence[TipoDocumento],
+    max_range_days: int,
+    intelisis: IntelisisReader | None = None,
+    sunat_store: SunatCacheStore | None = None,
+    sunat_ruc: str = "",
+) -> dict:
+    """Documents that belong to one flow stage state.
+
+    This is an explicit user query (clicking a state in the flow modal). It
+    re-runs the same source collection as ``summarize`` so the list and the
+    counters always use the same classification rules.
+    """
+    normalized_stage = str(stage or "").strip().lower()
+    if normalized_stage not in FLOW_STAGES:
+        raise ValueError("Etapa de flujo inválida.")
+    definitions = _flow_state_definitions(normalized_stage)
+    labels = {key: label for key, label in definitions}
+    normalized_state = str(estado or "").strip().lower()
+    if normalized_state not in labels:
+        raise ValueError("Estado de flujo inválido.")
+
+    summary = summarize(
+        reader,
+        gateway,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        tipos=tipos,
+        max_range_days=max_range_days,
+        intelisis=intelisis,
+        sunat_store=sunat_store,
+        sunat_ruc=sunat_ruc,
+    )
+    entries = [
+        entry for rows in summary["documents"].values() for entry in rows
+    ]
+    classify = _flow_classifier(normalized_stage)
+    documents = [
+        _flow_document(entry, normalized_stage, normalized_state)
+        for entry in entries
+        if classify(entry) == normalized_state
+    ]
+    documents.sort(
+        key=lambda doc: (str(doc.get("date", "")), str(doc.get("number", ""))),
+        reverse=True,
+    )
+    stage_summary = summary["flow"]["stages"][normalized_stage]
+    logger.info(
+        "Flow documents stage=%s state=%s total=%d",
+        normalized_stage,
+        normalized_state,
+        len(documents),
+    )
+    return {
+        "stage": normalized_stage,
+        "estado": normalized_state,
+        "label": labels[normalized_state],
+        "enabled": stage_summary["enabled"],
+        "total": len(documents),
+        "documents": documents,
+        "states": stage_summary["states"],
+        "range": summary["range"],
+    }
 
 
 def search_by_number(
@@ -428,8 +657,9 @@ def search_by_number(
         out["intelisis_warning"] = intelisis_warning
     try:
         if sunat_store is not None and sunat_ruc:
-            attach_sunat_status(results, sunat_store, sunat_ruc)
-            out["sunat_enabled"] = True
+            out["sunat_enabled"] = attach_sunat_status(
+                results, sunat_store, sunat_ruc
+            )
         else:
             out["sunat_enabled"] = False
     except Exception:
@@ -776,6 +1006,7 @@ def _sunat_submit_chunk(
             ],
             usuario=usuario,
             origen="syner-check",
+            forzar_consulta=forzar_consulta,
         )
         trabajo_id = int(body["trabajo_id"])
     except Exception as exc:
@@ -907,10 +1138,11 @@ def submit_sunat_batch(
     chunk_size = max(1, min(int(batch_max), 500))
     started = time.monotonic()
     logger.info(
-        "SUNAT submit start docs=%d chunk_size=%d scope=%s",
+        "SUNAT submit start docs=%d chunk_size=%d scope=%s forzar_consulta=%s",
         len(docs),
         chunk_size,
         scope,
+        forzar_consulta,
     )
     _sunat_emit(
         on_progress,
@@ -1631,15 +1863,17 @@ def attach_sunat_status(
     entries: list[dict],
     store: SunatCacheStore,
     ruc: str,
-) -> None:
+) -> bool:
     """Attach cached {estado, fecha_consulta} to voucher entries in place.
 
     Cache reads only: zero SUNAT calls. Missing rows leave sunat=None.
+    Returns True only when the cache read succeeded; callers use that to
+    avoid presenting a failed read as "nothing consulted".
     """
     if store is None or not (ruc or "").strip():
         for entry in entries:
             entry["sunat"] = None
-        return
+        return False
     keys: list[tuple[str, str, str, str]] = []
     order: list[tuple[str, str, str, str] | None] = []
     for entry in entries:
@@ -1659,7 +1893,7 @@ def attach_sunat_status(
         )
         for entry in entries:
             entry["sunat"] = None
-        return
+        return False
     for entry, key in zip(entries, order):
         row = cached.get(key) if key is not None else None
         if row is None:
@@ -1669,3 +1903,4 @@ def attach_sunat_status(
                 "estado": str(row.get("Estado", "")),
                 "fecha_consulta": str(row.get("FechaConsulta", "")),
             }
+    return True

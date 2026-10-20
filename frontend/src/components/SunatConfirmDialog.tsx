@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,16 +99,24 @@ export function SunatConfirmDialog({
 }: SunatConfirmDialogProps) {
   const radioName = useId();
   const counts = sunatSelectionCounts(rows);
-  const [scope, setScope] = useState<SunatScope>("no_aceptados");
-
-  useEffect(() => {
-    if (!open) return;
-    // With zero pending documents the default option would do nothing, so
-    // preselect "todos" while keeping the recommended option disabled.
-    setScope(counts.pending > 0 ? "no_aceptados" : "todos");
-  }, [open, counts.pending]);
+  // ``null`` means the user has not chosen yet: fall back to the recommended
+  // default. Once chosen, the scope is remembered across openings — an
+  // explicit "Todos" must never silently revert to "Solo no aceptados".
+  const [chosen, setChosen] = useState<SunatScope | null>(null);
+  const defaultScope: SunatScope =
+    counts.pending > 0 ? "no_aceptados" : "todos";
+  // Reopening the dialog after something was validated must not resurrect a
+  // now-impossible "Solo no aceptados" selection.
+  const scope: SunatScope =
+    chosen === "no_aceptados" && counts.pending === 0
+      ? "todos"
+      : chosen ?? defaultScope;
 
   const count = scope === "no_aceptados" ? counts.pending : counts.all;
+  const scopeHint =
+    scope === "todos"
+      ? "Se consultará SUNAT de nuevo para todos los documentos, aunque ya estén aceptados."
+      : "Solo se consultarán los documentos que no estén aceptados.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,7 +147,7 @@ export function SunatConfirmDialog({
               value="no_aceptados"
               checked={scope === "no_aceptados"}
               disabled={counts.pending === 0}
-              onChange={() => setScope("no_aceptados")}
+              onChange={() => setChosen("no_aceptados")}
               className="mt-1 size-4 accent-primary"
             />
             <span className="flex min-w-0 flex-col gap-1">
@@ -168,7 +176,7 @@ export function SunatConfirmDialog({
               name={radioName}
               value="todos"
               checked={scope === "todos"}
-              onChange={() => setScope("todos")}
+              onChange={() => setChosen("todos")}
               className="mt-1 size-4 accent-primary"
             />
             <span className="flex min-w-0 flex-col gap-1">
@@ -194,6 +202,7 @@ export function SunatConfirmDialog({
         </fieldset>
 
         <p className="text-xs text-muted-foreground">
+          {scopeHint}{" "}
           {counts.unconfirmed > 0
             ? `Los envíos sin confirmar (${counts.unconfirmed}) y los lotes en proceso se omiten para no duplicar trabajos en SUNAT.`
             : "Los lotes en proceso se omiten para no duplicar trabajos en SUNAT."}

@@ -85,13 +85,22 @@ class SunatValidatorAdapter:
         return client
 
     def submit_batch(
-        self, documentos: list[dict], usuario: str = "", origen: str = ""
+        self,
+        documentos: list[dict],
+        usuario: str = "",
+        origen: str = "",
+        forzar_consulta: bool = False,
     ) -> dict:
         from src.domain.errors import UpstreamError as _Upstream
         from syner_check.sunat_client import SunatError
 
         try:
-            return self._client_for().submit_batch(documentos, usuario, origen)
+            return self._client_for().submit_batch(
+                documentos,
+                usuario,
+                origen,
+                forzar_consulta=forzar_consulta,
+            )
         except SunatError as exc:
             raise _Upstream(
                 f"SUNAT submit failed: {exc.code}.",

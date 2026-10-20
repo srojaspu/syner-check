@@ -5,7 +5,7 @@ import {
   getSummary,
   searchByNumber,
 } from "../api/client";
-import type { FlowPerTipo, Voucher } from "../api/types";
+import type { FlowBreakdown, Voucher } from "../api/types";
 
 export type SearchMode = "range" | "number";
 
@@ -18,7 +18,8 @@ interface VoucherState {
   intelisisEnabled: boolean;
   intelisisCount: number;
   intelisisWarning: string | null;
-  flow: { per_tipo: Record<string, FlowPerTipo>; totals: FlowPerTipo } | null;
+  sunatEnabled: boolean;
+  flow: FlowBreakdown | null;
 }
 
 const EMPTY: VoucherState = {
@@ -30,6 +31,7 @@ const EMPTY: VoucherState = {
   intelisisEnabled: false,
   intelisisCount: 0,
   intelisisWarning: null,
+  sunatEnabled: false,
   flow: null,
 };
 
@@ -92,6 +94,7 @@ export function useVouchers(onAuthFailure: () => void) {
           intelisisEnabled: Boolean(data.intelisis_enabled),
           intelisisCount: Number(data.intelisis_count ?? 0),
           intelisisWarning: data.intelisis_warning ?? null,
+          sunatEnabled: Boolean(data.sunat_enabled),
           flow: data.flow ?? null,
         });
       } catch (error: unknown) {
@@ -122,6 +125,7 @@ export function useVouchers(onAuthFailure: () => void) {
           intelisisEnabled: Boolean(data.intelisis_enabled),
           intelisisCount: 0,
           intelisisWarning: data.intelisis_warning ?? null,
+          sunatEnabled: Boolean(data.sunat_enabled),
           flow: null,
         });
       } catch (error: unknown) {

@@ -275,7 +275,19 @@ class SunatSubmissionRegistry:
                 if trabajos:
                     item.mensaje = "Lotes enviados. Consultando SUNAT…"
                 elif item.omitidos.get("aceptados"):
-                    item.mensaje = "Todo ya estaba aceptado."
+                    aceptados = int(item.omitidos.get("aceptados") or 0)
+                    if item.alcance == "todos":
+                        item.mensaje = (
+                            f"{aceptados} documento(s) ya estaban ACEPTADOS y "
+                            "no se pudieron reconsultar."
+                        )
+                    else:
+                        # The user asked to validate but the default scope
+                        # skipped accepted vouchers. Say how to force them.
+                        item.mensaje = (
+                            f"{aceptados} documento(s) ya estaban ACEPTADOS. "
+                            "Elige «Todos» para volver a consultarlos en SUNAT."
+                        )
                 else:
                     item.mensaje = "No había documentos nuevos para enviar."
             item.actualizado_en = _now()

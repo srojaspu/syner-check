@@ -14,11 +14,12 @@ import {
 } from "@/components/ui/card";
 import { exportExcel } from "./api/excel";
 import { formatMoney } from "./api/format";
-import type { Voucher } from "./api/types";
+import type { FlowStageKey, Voucher } from "./api/types";
 import { Account, AppShell, LoginCard, Tabs, TopBar } from "./components/AppShell";
 import { DataTable } from "./components/DataTable";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { FlowBar } from "./components/FlowBar";
+import { FlowStageDialog } from "./components/FlowStageDialog";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
 import { SunatConfirmDialog } from "./components/SunatConfirmDialog";
 import { SunatProgress } from "./components/SunatProgress";
@@ -37,6 +38,7 @@ function Workspace() {
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
   const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
+  const [stageDetail, setStageDetail] = useState<FlowStageKey | null>(null);
   const [lastRange, setLastRange] = useState<{
     start: string;
     end: string;
@@ -141,6 +143,7 @@ function Workspace() {
                 setLastNumber(null);
                 sunat.reset();
                 setSunatDialogOpen(false);
+                setStageDetail(null);
                 setFilteredRows(null);
                 void vouchers.runRange(start, end, types);
               }}
@@ -153,6 +156,7 @@ function Workspace() {
                 setLastRange(null);
                 sunat.reset();
                 setSunatDialogOpen(false);
+                setStageDetail(null);
                 setFilteredRows(null);
                 void vouchers.runNumber(number);
               }}
@@ -162,10 +166,12 @@ function Workspace() {
 
         {vouchers.searched && vouchers.flow ? (
           <FlowBar
-            totals={vouchers.flow.totals}
+            flow={vouchers.flow}
             intelisisEnabled={vouchers.intelisisEnabled}
             intelisisCount={vouchers.intelisisCount}
             intelisisWarning={vouchers.intelisisWarning}
+            sunatEnabled={vouchers.sunatEnabled}
+            onOpenStage={setStageDetail}
           />
         ) : null}
 
@@ -270,6 +276,27 @@ function Workspace() {
           onCopy={() => void copyNumber()}
           onClose={detail.close}
         />
+
+        {stageDetail ? (
+          <FlowStageDialog
+            open
+            stage={stageDetail}
+            summary={vouchers.flow?.stages?.[stageDetail] ?? null}
+            range={
+              lastRange
+                ? {
+                    start: lastRange.start,
+                    end: lastRange.end,
+                    types: lastRange.types,
+                  }
+                : null
+            }
+            onOpenChange={(open) => {
+              if (!open) setStageDetail(null);
+            }}
+            onAuthFailure={onAuthFailure}
+          />
+        ) : null}
 
         <SunatConfirmDialog
           open={sunatDialogOpen}

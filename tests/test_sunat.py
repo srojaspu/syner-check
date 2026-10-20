@@ -7,6 +7,7 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from unittest.mock import Mock
 
 from src.application import (
     attach_sunat_status,
@@ -27,6 +28,7 @@ from src.domain.errors import UpstreamError
 class FakeValidator:
     def __init__(self):
         self.submits: list[list[dict]] = []
+        self.forzar_flags: list[bool] = []
         self.job = {"trabajo": {"Estado": "COMPLETADO"}, "detalle": []}
         self.summary: dict | None = None
         self.status_error: Exception | None = None
@@ -35,10 +37,13 @@ class FakeValidator:
         self.summary_calls = 0
         self.single_response: dict = {"ok": True, "resultado": {}}
 
-    def submit_batch(self, documentos, usuario="", origen=""):
+    def submit_batch(
+        self, documentos, usuario="", origen="", forzar_consulta=False
+    ):
         if self.submit_error is not None:
             raise self.submit_error
         self.submits.append(documentos)
+        self.forzar_flags.append(bool(forzar_consulta))
         return {"trabajo_id": 100 + len(self.submits), "cantidad": len(documentos)}
 
     def job_status(self, trabajo_id, detalle=False):
@@ -247,6 +252,7 @@ class SubmitTests(unittest.TestCase):
         self.assertEqual(res["enviados"], 2)
         self.assertEqual(len(validator.submits), 1)
         self.assertEqual(validator.submits[0][0]["forzar_consulta"], False)
+        self.assertEqual(validator.forzar_flags, [False])
         # Claim before submit + stamp the job id: two batched writes, never one
         # connection per document (claims and ids are written transactionally).
         self.assertEqual(store.upsert_many_calls, 2)
@@ -322,6 +328,9 @@ class SubmitTests(unittest.TestCase):
         self.assertEqual(res["enviados"], 1)
         self.assertEqual(res["omitidos"]["aceptados"], 0)
         self.assertEqual(validator.submits[0][0]["forzar_consulta"], True)
+        # The batch-level flag is sent too: the validator documents both
+        # levels, and a fresh query must not depend on one of them.
+        self.assertEqual(validator.forzar_flags, [True])
 
     def test_invalid_scope_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -586,6 +595,75 @@ class SubmissionRegistryTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state["estado"], "ERROR")
         self.assertEqual(state["mensaje"], "SUNAT no disponible")
+
+    def _complete_with_accepted(self, alcance: str) -> dict:
+        registry = SunatSubmissionRegistry()
+        item, _ = registry.create(
+            usuario="u@x.pe",
+            total=2,
+            fingerprint=f"fp-{alcance}",
+            alcance=alcance,
+        )
+        registry.complete(item.id, {
+            "total": 2,
+            "enviados": 0,
+            "trabajos": [],
+            "errores": [],
+            "omitidos": {
+                "aceptados": 2,
+                "en_proceso": 0,
+                "sin_confirmar": 0,
+                "invalidos": [],
+            },
+        })
+        state = registry.snapshot(item.id, usuario="u@x.pe")
+        assert state is not None
+        return state
+
+    def test_accepted_skip_says_how_to_force_a_fresh_query(self):
+        state = self._complete_with_accepted("no_aceptados")
+        self.assertEqual(state["estado"], "COMPLETADO")
+        self.assertIn("ACEPTADOS", state["mensaje"])
+        self.assertIn("Todos", state["mensaje"])
+
+    def test_forced_scope_does_not_suggest_forcing_again(self):
+        state = self._complete_with_accepted("todos")
+        self.assertNotIn("Elige", state["mensaje"])
+
+
+class SunatClientBatchPayloadTests(unittest.TestCase):
+    def _client(self):
+        from syner_check.sunat_client import SunatValidatorClient
+
+        client = SunatValidatorClient("http://validator.local", "test-key")
+        response = Mock()
+        response.status_code = 202
+        response.json.return_value = {"ok": True, "trabajo_id": 9}
+        client.session.post = Mock(return_value=response)
+        return client
+
+    def test_forced_batch_sends_global_and_per_document_flags(self):
+        client = self._client()
+        client.submit_batch(
+            [{"ruc": "20101031773", "forzar_consulta": True}],
+            usuario="u",
+            origen="syner-check",
+            forzar_consulta=True,
+        )
+        payload = client.session.post.call_args.kwargs["json"]
+        self.assertTrue(payload["forzar_consulta"])
+        self.assertTrue(payload["documentos"][0]["forzar_consulta"])
+
+    def test_default_batch_keeps_the_validator_cache(self):
+        client = self._client()
+        client.submit_batch(
+            [{"ruc": "20101031773", "forzar_consulta": False}],
+            usuario="u",
+            origen="syner-check",
+        )
+        payload = client.session.post.call_args.kwargs["json"]
+        self.assertNotIn("forzar_consulta", payload)
+        self.assertFalse(payload["documentos"][0]["forzar_consulta"])
 
 
 class JobStatusTests(unittest.TestCase):

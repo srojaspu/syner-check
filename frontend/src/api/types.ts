@@ -103,6 +103,29 @@ export interface FlowPerTipo {
   missing_in_intelisis: number;
 }
 
+export type FlowStageKey = "intelisis" | "sunat";
+
+export interface FlowStateCount {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface FlowStageSummary {
+  key: FlowStageKey;
+  enabled: boolean;
+  total: number;
+  /** Documents with a known state (SUNAT: excludes "sin consultar"). */
+  consulted: number;
+  states: FlowStateCount[];
+}
+
+export interface FlowBreakdown {
+  per_tipo: Record<string, FlowPerTipo>;
+  totals: FlowPerTipo;
+  stages?: Partial<Record<FlowStageKey, FlowStageSummary>>;
+}
+
 export interface SummaryResponse {
   documents: Record<string, Voucher[]>;
   sql_count: number;
@@ -110,8 +133,33 @@ export interface SummaryResponse {
   intelisis_enabled: boolean;
   intelisis_count: number;
   sunat_enabled: boolean;
-  flow?: { per_tipo: Record<string, FlowPerTipo>; totals: FlowPerTipo };
+  flow?: FlowBreakdown;
   intelisis_warning?: string | null;
+  range: { start: string; end: string };
+}
+
+/** One document row returned by the flow detail endpoint. */
+export interface FlowDocument {
+  oid: string;
+  tipo: TipoDocumento;
+  number?: string;
+  date?: string;
+  contactName?: string;
+  crossTotal?: number;
+  currency?: Currency | null;
+  estado: string;
+  estado_detalle?: string;
+  fecha_consulta?: string;
+}
+
+export interface FlowDocumentsResponse {
+  stage: FlowStageKey;
+  estado: string;
+  label: string;
+  enabled: boolean;
+  total: number;
+  documents: FlowDocument[];
+  states: FlowStateCount[];
   range: { start: string; end: string };
 }
 

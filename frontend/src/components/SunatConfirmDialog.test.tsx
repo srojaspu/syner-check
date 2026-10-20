@@ -147,4 +147,79 @@ describe("SunatConfirmDialog", () => {
     ).toBeTruthy();
     expect(screen.queryByText(/Incluye 0/)).toBeNull();
   });
+
+  it("remembers Todos when the dialog is reopened", () => {
+    const rows = [voucher("ACEPTADO"), voucher("NO_EXISTE")];
+    const onConfirm = vi.fn();
+    const view = (open: boolean) => (
+      <SunatConfirmDialog
+        open={open}
+        onOpenChange={() => {}}
+        rows={rows}
+        onConfirm={onConfirm}
+      />
+    );
+
+    const { rerender } = render(view(true));
+    fireEvent.click(screen.getByRole("radio", { name: /^Todos/ }));
+    rerender(view(false));
+    rerender(view(true));
+
+    const todos = screen.getByRole("radio", {
+      name: /^Todos/,
+    }) as HTMLInputElement;
+    expect(todos.checked).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Consultar 2 documentos" }),
+    );
+    expect(onConfirm).toHaveBeenCalledWith("todos");
+  });
+
+  it("does not revert Todos when the pending count changes", () => {
+    const onConfirm = vi.fn();
+    const view = (rows: Voucher[]) => (
+      <SunatConfirmDialog
+        open
+        onOpenChange={() => {}}
+        rows={rows}
+        onConfirm={onConfirm}
+      />
+    );
+
+    const { rerender } = render(
+      view([voucher("ACEPTADO"), voucher("NO_EXISTE")]),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /^Todos/ }));
+    // A refresh while the dialog is open must not override the user's choice.
+    rerender(view([voucher("ACEPTADO")]));
+
+    const todos = screen.getByRole("radio", {
+      name: /^Todos/,
+    }) as HTMLInputElement;
+    expect(todos.checked).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Consultar 1 documento" }),
+    );
+    expect(onConfirm).toHaveBeenCalledWith("todos");
+  });
+
+  it("states which scope will be consulted", () => {
+    render(
+      <SunatConfirmDialog
+        open
+        onOpenChange={() => {}}
+        rows={[voucher("ACEPTADO"), voucher("NO_EXISTE")]}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Solo se consultarán los documentos que no estén aceptados/),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Todos/ }));
+    expect(
+      screen.getByText(/Se consultará SUNAT de nuevo para todos los documentos/),
+    ).toBeTruthy();
+  });
 });

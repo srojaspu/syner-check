@@ -9,11 +9,15 @@ from .ports import (
 )
 from .sunat_submission import SunatSubmissionRegistry, submission_fingerprint
 from .use_cases import (
+    FLOW_STAGE_INTELISIS,
+    FLOW_STAGE_SUNAT,
+    FLOW_STAGES,
     SUNAT_REQUEST_MAX,
     SUNAT_SCOPE_NO_ACEPTADOS,
     SUNAT_SCOPE_TODOS,
     SUNAT_SCOPES,
     attach_sunat_status,
+    flow_documents,
     get_detail,
     reconcile_pending_sunat_jobs,
     search_by_number,
@@ -24,6 +28,9 @@ from .use_cases import (
 )
 
 __all__ = [
+    "FLOW_STAGE_INTELISIS",
+    "FLOW_STAGE_SUNAT",
+    "FLOW_STAGES",
     "GraphqlGateway",
     "IntelisisReader",
     "SUNAT_REQUEST_MAX",
@@ -35,6 +42,7 @@ __all__ = [
     "SunatSubmissionRegistry",
     "SunatValidator",
     "attach_sunat_status",
+    "flow_documents",
     "get_detail",
     "reconcile_pending_sunat_jobs",
     "search_by_number",

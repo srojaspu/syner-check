@@ -107,10 +107,22 @@ class SunatValidatorClient:
         return body
 
     def submit_batch(
-        self, documentos: list[dict[str, Any]], usuario: str = "", origen: str = ""
+        self,
+        documentos: list[dict[str, Any]],
+        usuario: str = "",
+        origen: str = "",
+        forzar_consulta: bool = False,
     ) -> dict[str, Any]:
-        """Register an async batch job. Single attempt (no idempotency key)."""
+        """Register an async batch job. Single attempt (no idempotency key).
+
+        ``forzar_consulta`` is sent at batch level *and* per document (the
+        validator allows a per-document override). Both are set for a "todos"
+        scope so a fresh SUNAT query can never fall back to the validator
+        cache if one of the two levels is ignored.
+        """
         payload: dict[str, Any] = {"documentos": documentos}
+        if forzar_consulta:
+            payload["forzar_consulta"] = True
         if usuario:
             payload["usuario"] = usuario[:100]
         payload["origen"] = (origen or "syner-check")[:100]

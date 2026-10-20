@@ -32,7 +32,11 @@ class SunatValidator(Protocol):
     """SUNAT Validator microservice (batch submit + job polling)."""
 
     def submit_batch(
-        self, documentos: list[dict], usuario: str = "", origen: str = ""
+        self,
+        documentos: list[dict],
+        usuario: str = "",
+        origen: str = "",
+        forzar_consulta: bool = False,
     ) -> dict:
         ...
 

@@ -220,7 +220,10 @@ function submissionMessages(data: SunatSubmissionResponse): string[] {
   }
   if (data.omitidos.aceptados > 0) {
     messages.push(
-      `${data.omitidos.aceptados} documento(s) ya estaban ACEPTADOS y se omitieron.`,
+      `${data.omitidos.aceptados} documento(s) ya estaban ACEPTADOS y se omitieron.` +
+        (data.alcance === "todos"
+          ? ""
+          : " Usa «Todos» para volver a consultarlos en SUNAT."),
     );
   }
   if (data.omitidos.sin_confirmar > 0) {
