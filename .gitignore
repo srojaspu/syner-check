@@ -11,3 +11,4 @@ app.zip
 frontend/node_modules/
 app/static/frontend/
 opencode.json
+docs/

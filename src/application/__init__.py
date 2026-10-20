@@ -10,6 +10,7 @@ from .ports import (
 from .use_cases import (
     attach_sunat_status,
     get_detail,
+    reconcile_pending_sunat_jobs,
     search_by_number,
     submit_sunat_batch,
     summarize,
@@ -25,6 +26,7 @@ __all__ = [
     "SunatValidator",
     "attach_sunat_status",
     "get_detail",
+    "reconcile_pending_sunat_jobs",
     "search_by_number",
     "submit_sunat_batch",
     "summarize",

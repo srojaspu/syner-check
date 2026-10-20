@@ -31,3 +31,33 @@ def upsert_cache(row: dict) -> None:
     from syner_check import sunat_store as store
 
     store.upsert(row)
+
+
+def upsert_cache_many(rows: Sequence[dict]) -> None:
+    from syner_check import sunat_store as store
+
+    store.upsert_many(rows)
+
+
+def job_progress(trabajo_id: int) -> dict:
+    from syner_check import sunat_store as store
+
+    return store.job_progress(trabajo_id)
+
+
+def pending_jobs(limit: int = 50) -> list[dict]:
+    from syner_check import sunat_store as store
+
+    return store.pending_jobs(limit)
+
+
+def mark_job_missing(trabajo_id: int, message: str) -> int:
+    from syner_check import sunat_store as store
+
+    return store.mark_job_missing(trabajo_id, message)
+
+
+def mark_stale_unsubmitted(older_than_minutes: int, message: str) -> int:
+    from syner_check import sunat_store as store
+
+    return store.mark_stale_unsubmitted(older_than_minutes, message)

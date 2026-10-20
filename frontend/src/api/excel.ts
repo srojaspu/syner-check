@@ -18,8 +18,9 @@ function canceladoONConcluido(doc: Voucher): string {
 
 /** Excel export of the current rows (client-side, no backend change). */
 export async function exportExcel(rows: Voucher[]): Promise<void> {
-  // Lazy-load xlsx so it lands in its own chunk instead of the initial bundle.
-  const XLSX = await import("xlsx");
+  // Lazy-load the write-only mini build: same utils/writeFile API as the full
+  // bundle (~273 kB vs ~985 kB source), and it stays out of the initial chunk.
+  const XLSX = await import("xlsx/dist/xlsx.mini.min.js");
   const sheet = XLSX.utils.json_to_sheet(
     rows.map((doc) => {
       const emitted = formatDateTime(doc.createdDate, doc.date);

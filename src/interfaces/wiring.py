@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from src.application import (
     get_detail,
+    reconcile_pending_sunat_jobs,
     search_by_number,
     submit_sunat_batch,
     summarize,
@@ -124,6 +125,8 @@ def sunat_submit(documentos: list[dict], usuario: str) -> dict:
         raise HTTPException(400, "Validación SUNAT no configurada.")
     if not isinstance(documentos, list) or not documentos:
         raise HTTPException(400, "Sin documentos para validar.")
+    from syner_check import config as cfg
+
     try:
         return submit_sunat_batch(
             validator,
@@ -132,6 +135,9 @@ def sunat_submit(documentos: list[dict], usuario: str) -> dict:
             usuario=usuario or "",
             ruc=ruc,
             revalidate_hours=hours,
+            batch_max=int(
+                cfg.get_sunat_validator_config().get("batch_size", 50)
+            ),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc) if str(exc) else "Solicitud inválida.")
@@ -153,6 +159,34 @@ def sunat_status(trabajo_id: int, usuario: str) -> dict:
     except UpstreamError:
         logger.exception("Sunat status upstream failure")
         raise HTTPException(502, "No fue posible consultar el trabajo SUNAT.")
+
+
+def sunat_reconcile(usuario: str) -> dict:
+    """Reconcile every locally pending job with SUNAT (no new submissions)."""
+    validator, store, _ruc, _hours = _sunat_pair()
+    if validator is None or store is None:
+        raise HTTPException(400, "Validación SUNAT no configurada.")
+    try:
+        return reconcile_pending_sunat_jobs(
+            validator, store, usuario=usuario or ""
+        )
+    except UpstreamError:
+        logger.exception("Sunat reconcile upstream failure")
+        raise HTTPException(502, "No fue posible reconciliar los lotes SUNAT.")
+
+
+def sunat_worker_pair() -> tuple | None:
+    """Adapters and settings for the background reconciliation worker."""
+    validator, store, _ruc, _hours = _sunat_pair()
+    if validator is None or store is None:
+        return None
+    from syner_check import config as cfg
+
+    try:
+        settings = cfg.get_sunat_validator_config()
+    except Exception:
+        return None
+    return validator, store, settings
 
 
 def sunat_single(

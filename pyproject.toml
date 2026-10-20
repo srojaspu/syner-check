@@ -11,12 +11,23 @@ dependencies = [
   "python-dotenv>=1.1,<2",
   "requests>=2.32,<3",
   "pyodbc>=5.3,<6",
-  "httpx>=0.28,<1",
+  # authlib's Starlette integration imports httpx2 (its supported HTTP client);
+  # the old httpx fallback is deprecated upstream.
   "httpx2>=2.13,<3",
 ]
 
 [project.scripts]
 syner-check = "syner_check.main:main"
+
+[dependency-groups]
+# Tooling only: Docker installs the runtime deps with `pip install .`, which
+# ignores this group.
+dev = [
+  "pytest>=8",
+  "ruff>=0.9",
+  # Starlette's TestClient is built on httpx; runtime uses httpx2 (authlib).
+  "httpx>=0.28,<1",
+]
 
 [build-system]
 requires = ["hatchling"]

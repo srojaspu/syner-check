@@ -24,4 +24,20 @@ class NotFoundError(LookupError):
 
 
 class UpstreamError(RuntimeError):
-    """Raised when an infrastructure provider fails."""
+    """Raised when an infrastructure provider fails.
+
+    ``code``/``http_status`` are optional and let callers distinguish a
+    retryable outage (network/5xx) from a definitive answer (e.g. 404 job
+    not found) without importing infrastructure exceptions.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: str | None = None,
+        http_status: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status

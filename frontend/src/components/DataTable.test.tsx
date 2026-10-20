@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen, cleanup } from "@testing-library/react";
+import { useState } from "react";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -29,7 +30,35 @@ function Harness({ rows }: { rows: Voucher[] }) {
   );
 }
 
+/**
+ * Regression: the parent stores `onFilteredRowsChange` in state. Before the
+ * fix, Root mapped a fresh array on every render, so the effect re-fired and
+ * the parent re-rendered forever (this test never finished).
+ */
+function FilterTrackingHarness({ rows }: { rows: Voucher[] }) {
+  const [filtered, setFiltered] = useState<Voucher[] | null>(null);
+  return (
+    <>
+      <span data-testid="filtered-count">{filtered?.length ?? -1}</span>
+      <DataTable.Root
+        data={rows}
+        columns={voucherColumns()}
+        onFilteredRowsChange={setFiltered}
+      >
+        <DataTable.View<Voucher> />
+      </DataTable.Root>
+    </>
+  );
+}
+
 describe("DataTable interactions", () => {
+  it("reports filtered rows once, without a render loop", async () => {
+    render(<FilterTrackingHarness rows={makeRows(5)} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("filtered-count").textContent).toBe("5"),
+    );
+  });
+
   it("advances to the next page", async () => {
     const user = userEvent.setup();
     render(<Harness rows={makeRows(49)} />);

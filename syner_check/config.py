@@ -44,6 +44,15 @@ def _is_truthy(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "y", "on")
 
 
+def _int_env(name: str, default: int, minimum: int, maximum: int | None = None) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    value = max(minimum, value)
+    return min(value, maximum) if maximum is not None else value
+
+
 def get_db_config() -> dict:
     """
     Build the DB configuration from environment variables.
@@ -118,6 +127,9 @@ def get_intelisis_password() -> str:
 
 SUNAT_BATCH_MAX = 500
 SUNAT_REQUEST_DOCS_MAX = 2000
+SUNAT_BATCH_SIZE_DEFAULT = 50
+SUNAT_WORKER_INTERVAL_DEFAULT = 10
+SUNAT_STALE_SUBMIT_MINUTES_DEFAULT = 10
 
 
 def get_sunat_validator_config() -> dict:
@@ -144,6 +156,20 @@ def get_sunat_validator_config() -> dict:
         "api_key": api_key,
         "ruc": ruc,
         "revalidate_hours": max(1, revalidate_hours),
+        # Small chunks bound the damage of one lost HTTP response and let
+        # the UI show progress every few documents instead of one 9-minute job.
+        "batch_size": _int_env(
+            "SUNAT_BATCH_SIZE", SUNAT_BATCH_SIZE_DEFAULT, 1, SUNAT_BATCH_MAX
+        ),
+        "worker_enabled": _is_truthy(
+            os.getenv("SUNAT_WORKER_ENABLED", "true")
+        ),
+        "worker_interval_seconds": _int_env(
+            "SUNAT_WORKER_INTERVAL_SECONDS", SUNAT_WORKER_INTERVAL_DEFAULT, 2, 300
+        ),
+        "stale_submit_minutes": _int_env(
+            "SUNAT_STALE_SUBMIT_MINUTES", SUNAT_STALE_SUBMIT_MINUTES_DEFAULT, 1, 120
+        ),
     }
 
 

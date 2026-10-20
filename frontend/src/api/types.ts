@@ -125,21 +125,29 @@ export interface SearchResponse {
 }
 
 export interface SunatSubmitResponse {
-  trabajos: { trabajo_id: number; cantidad: number }[];
+  trabajos: { trabajo_id: number; cantidad: number; estado?: string }[];
   enviados: number;
   omitidos: {
     cache_terminal: number;
+    en_proceso: number;
     invalidos: { tipo: string; number: string; reason: string }[];
   };
+  errores: { cantidad: number; mensaje: string }[];
   total: number;
 }
 
 export interface SunatJobResponse {
   trabajo_id: number;
   estado: string;
-  total: number | null;
-  procesados: number | null;
+  total: number;
+  procesados: number;
+  exitosos: number;
+  errores: number;
+  pendientes: number;
+  porcentaje: number;
+  mensaje: string;
   resultados: { serie: string; numero: string; estado: string }[];
+  actualizado_en: string;
 }
 
 export interface DocumentResponse {

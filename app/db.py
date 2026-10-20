@@ -9,13 +9,9 @@ from syner_check.db_client import (
     ALLOWED_TIPOS,
     _to_iso_date,
     _to_str,
-    connect,
     quote_table_name,
 )
-
-
-def _connection():
-    return connect(get_db_config(), get_db_password())
+from syner_check.db_pool import pooled_connection
 
 
 def _normalize_row(cols: list[str], row: tuple) -> dict:
@@ -38,14 +34,11 @@ def fetch_documents(
               FROM {table}
               WHERE [FechaDocumento] >= ? AND [FechaDocumento] < DATEADD(DAY,1,?)
               AND [TipoDocumento] IN ({placeholders})"""
-    cn = _connection()
-    try:
-        cur = cn.cursor()
+    with pooled_connection(get_db_config(), get_db_password()) as connection:
+        cur = connection.cursor()
         cur.execute(query, start_date, end_date, *wanted)
         cols = [c[0] for c in cur.description]
         return [_normalize_row(cols, row) for row in cur.fetchall()]
-    finally:
-        cn.close()
 
 
 def fetch_by_number(
@@ -55,6 +48,9 @@ def fetch_by_number(
     end_date: str | None = None,
 ):
     wanted = [t for t in (tipos or ALLOWED_TIPOS) if t in ALLOWED_TIPOS]
+    if not wanted:
+        # Never fall through to `IN ()`: reject-all is a syntax error.
+        wanted = list(ALLOWED_TIPOS)
     cfg = get_db_config()
     table = quote_table_name(cfg["table"])
     placeholders = ", ".join("?" for _ in wanted)
@@ -69,8 +65,7 @@ def fetch_by_number(
     query = f"""SELECT [IDSynerPos],[TipoDocumento],[Sku],[FechaDocumento],[SerieNumero]
               FROM {table} WHERE {' AND '.join(filters)}
               ORDER BY [FechaDocumento] DESC"""
-    cn = _connection()
-    try:
+    with pooled_connection(get_db_config(), get_db_password()) as cn:
         cur = cn.cursor()
         cur.execute(query, *params)
         cols = [c[0] for c in cur.description]
@@ -78,8 +73,6 @@ def fetch_by_number(
         for row in cur.fetchall():
             rows.append(_normalize_row(cols, row))
         return rows
-    finally:
-        cn.close()
 
 
 def intelisis_enabled() -> bool:
@@ -98,8 +91,9 @@ def fetch_intelisis_documents(start_date: str, end_date: str) -> list[dict]:
     if not cfg.is_intelisis_configured():
         raise RuntimeError("Missing required DB env var: INTELISIS_HOST.")
     db_config = cfg.get_intelisis_config()
-    cn = client.connect(db_config, cfg.get_intelisis_password())
-    try:
+    with pooled_connection(
+        db_config, cfg.get_intelisis_password()
+    ) as cn:
         cur = cn.cursor()
         cur.execute(client.INTELISIS_HEADERS_QUERY, start_date, end_date)
         cols = [c[0] for c in cur.description]
@@ -127,5 +121,3 @@ def fetch_intelisis_documents(start_date: str, end_date: str) -> list[dict]:
                 }
             )
         return out
-    finally:
-        cn.close()

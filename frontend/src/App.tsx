@@ -20,6 +20,7 @@ import { DetailDrawer } from "./components/DetailDrawer";
 import { FlowBar } from "./components/FlowBar";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
 import { StatsBar } from "./components/StatsBar";
+import { SunatProgress } from "./components/SunatProgress";
 import { voucherColumns } from "./components/columns";
 import { useDocument } from "./hooks/useDocument";
 import { useSession } from "./hooks/useSession";
@@ -95,7 +96,8 @@ function Workspace() {
   };
 
   const refreshRows = () => {
-    sunat.reset();
+    // Do not reset SUNAT state here: this callback runs at the end of the
+    // batch and would clear the final progress the user just saw.
     if (mode === "range" && lastRange) {
       void vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
     } else if (mode === "number" && lastNumber) {
@@ -157,10 +159,7 @@ function Workspace() {
             <div className="flex flex-col gap-1">
               <CardTitle>Resultados</CardTitle>
               <CardDescription>
-                {sunat.error ??
-                  vouchers.error ??
-                  sunat.progress ??
-                  vouchers.subtitle}
+                {vouchers.error ?? vouchers.subtitle}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 sm:justify-self-end">
@@ -214,6 +213,16 @@ function Workspace() {
             </div>
           </CardHeader>
           <CardContent>
+            {sunat.progress || sunat.notice || sunat.warning || sunat.error ? (
+              <div className="mb-4">
+                <SunatProgress
+                  progress={sunat.progress}
+                  notice={sunat.notice}
+                  warning={sunat.warning}
+                  error={sunat.error}
+                />
+              </div>
+            ) : null}
             <DataTable.Root
               data={vouchers.rows}
               columns={columns}

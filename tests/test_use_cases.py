@@ -71,8 +71,18 @@ class FakeGateway:
 class SearchTests(unittest.TestCase):
     def test_sql_index_caches_and_dedups(self):
         rows = [
-            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
-            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001"},
+            {
+                "IDSynerPos": "A1",
+                "TipoDocumento": "FACTURA",
+                "FechaDocumento": "2026-09-01",
+                "SerieNumero": "F001",
+            },
+            {
+                "IDSynerPos": "A1",
+                "TipoDocumento": "FACTURA",
+                "FechaDocumento": "2026-09-01",
+                "SerieNumero": "F001",
+            },
         ]
         gw = FakeGateway({("FACTURA", "2026-09-01"): [
             {"oid": "A1", "number": "F001"},
@@ -122,7 +132,12 @@ class NumberIntelisisTests(unittest.TestCase):
 
     def test_marks_in_intelisis(self):
         rows = [
-            {"IDSynerPos": "A1", "TipoDocumento": "FACTURA", "FechaDocumento": "2026-09-01", "SerieNumero": "F001-1"},
+            {
+                "IDSynerPos": "A1",
+                "TipoDocumento": "FACTURA",
+                "FechaDocumento": "2026-09-01",
+                "SerieNumero": "F001-1",
+            },
         ]
         gw = FakeGateway({("FACTURA", "2026-09-01"): [
             {"oid": "A1", "number": "F001-1", "date": "2026-09-01T10:00:00"},
@@ -162,6 +177,45 @@ class NumberIntelisisTests(unittest.TestCase):
         self.assertFalse(res["intelisis_enabled"])
         self.assertEqual(res["intelisis_warning"], "intelisis_unavailable")
         self.assertFalse(res["results"][0]["in_intelisis"])
+
+    def test_same_number_across_years_is_not_collapsed(self):
+        """SerieNumero is reused yearly: both documents must be returned."""
+        rows = [
+            {
+                "IDSynerPos": "A2024",
+                "TipoDocumento": "FACTURA",
+                "FechaDocumento": "2024-05-01",
+                "SerieNumero": "F001-1",
+            },
+            {
+                "IDSynerPos": "A2025",
+                "TipoDocumento": "FACTURA",
+                "FechaDocumento": "2025-05-01",
+                "SerieNumero": "F001-1",
+            },
+        ]
+        gw = FakeGateway(
+            {
+                ("FACTURA", "2024-05-01"): [
+                    {"oid": "A2024", "number": "F001-1", "date": "2024-05-01T10:00:00"}
+                ],
+                ("FACTURA", "2025-05-01"): [
+                    {"oid": "A2025", "number": "F001-1", "date": "2025-05-01T10:00:00"}
+                ],
+            }
+        )
+        res = search_by_number(
+            FakeReader(rows),
+            gw,
+            number="F001-1",
+            fallback_days=90,
+            today=date(2026, 9, 20),
+        )
+        self.assertEqual({r["oid"] for r in res["results"]}, {"A2024", "A2025"})
+        self.assertTrue(all(r["in_sql"] for r in res["results"]))
+        self.assertEqual(
+            {r["date"][:10] for r in res["results"]}, {"2024-05-01", "2025-05-01"}
+        )
 
 
 class SummarizeTests(unittest.TestCase):

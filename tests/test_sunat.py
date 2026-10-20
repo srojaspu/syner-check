@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta
 
 from src.application import (
     attach_sunat_status,
+    reconcile_pending_sunat_jobs,
     submit_sunat_batch,
     sunat_job_status,
     sunat_revalidate,
 )
-from src.application.use_cases import _sunat_doc_payload, _sunat_key
+from src.application.sunat_worker import run_sunat_reconcile_worker
+from src.application.use_cases import _sunat_doc_payload, _sunat_fresh, _sunat_key
+from src.domain.errors import UpstreamError
 
 
 class FakeValidator:
     def __init__(self):
         self.submits: list[list[dict]] = []
         self.job = {"trabajo": {"Estado": "COMPLETADO"}, "detalle": []}
+        self.summary: dict | None = None
+        self.status_error: Exception | None = None
+        self.detail_calls = 0
+        self.summary_calls = 0
         self.single_response: dict = {"ok": True, "resultado": {}}
 
     def submit_batch(self, documentos, usuario="", origen=""):
@@ -25,7 +33,13 @@ class FakeValidator:
         return {"trabajo_id": 100 + len(self.submits), "cantidad": len(documentos)}
 
     def job_status(self, trabajo_id, detalle=False):
-        return self.job
+        if self.status_error is not None:
+            raise self.status_error
+        if detalle:
+            self.detail_calls += 1
+            return self.job
+        self.summary_calls += 1
+        return self.summary if self.summary is not None else self.job
 
     def validate_single(self, documento, usuario="", origen=""):
         self.single_doc = documento
@@ -35,13 +49,83 @@ class FakeValidator:
 class FakeStore:
     def __init__(self, rows=None):
         self.rows = dict(rows or {})
+        self.fetch_calls = 0
+        self.upsert_calls = 0
+        self.upsert_many_calls = 0
+        self.mark_missing_calls = 0
+        self.mark_stale_calls = 0
+        self.fetch_error: Exception | None = None
 
     def fetch_many(self, keys):
+        self.fetch_calls += 1
+        if self.fetch_error is not None:
+            raise self.fetch_error
         return {k: dict(self.rows[k]) for k in keys if k in self.rows}
 
     def upsert(self, row):
+        self.upsert_calls += 1
         key = (row["Ruc"], row["Tipo"], row["Serie"], row["Numero"])
         self.rows[key] = dict(row)
+
+    def upsert_many(self, rows):
+        self.upsert_many_calls += 1
+        for row in rows:
+            key = (row["Ruc"], row["Tipo"], row["Serie"], row["Numero"])
+            self.rows[key] = dict(row)
+
+    def _job_rows(self, trabajo_id):
+        return [
+            row
+            for row in self.rows.values()
+            if int(row.get("TrabajoID") or 0) == int(trabajo_id)
+        ]
+
+    def job_progress(self, trabajo_id):
+        rows = self._job_rows(trabajo_id)
+        estados = [str(row.get("Estado", "")).upper() for row in rows]
+        return {
+            "total": len(rows),
+            "pendientes": sum(e in ("PENDIENTE", "PROCESANDO") for e in estados),
+            "errores": sum(e == "ERROR" for e in estados),
+            "exitosos": sum(
+                e in ("ACEPTADO", "ANULADO", "NO_EXISTE", "AUTORIZADO",
+                      "NO_AUTORIZADO")
+                for e in estados
+            ),
+        }
+
+    def pending_jobs(self, limit=50):
+        by_job: dict[int, dict] = {}
+        for row in self.rows.values():
+            job_id = row.get("TrabajoID")
+            if job_id is None:
+                continue
+            estado = str(row.get("Estado", "")).upper()
+            item = by_job.setdefault(
+                int(job_id), {"TrabajoID": int(job_id), "total": 0, "pendientes": 0}
+            )
+            item["total"] += 1
+            if estado in ("PENDIENTE", "PROCESANDO"):
+                item["pendientes"] += 1
+        return [
+            item
+            for item in by_job.values()
+            if item["pendientes"] > 0
+        ][:limit]
+
+    def mark_job_missing(self, trabajo_id, message):
+        self.mark_missing_calls += 1
+        affected = 0
+        for row in self._job_rows(trabajo_id):
+            if str(row.get("Estado", "")).upper() in ("PENDIENTE", "PROCESANDO"):
+                row["Estado"] = "ERROR"
+                row["UltimoError"] = message
+                affected += 1
+        return affected
+
+    def mark_stale_unsubmitted(self, older_than_minutes, message):
+        self.mark_stale_calls += 1
+        return 0
 
 
 def _row(estado="ACEPTADO", seen=None):
@@ -77,6 +161,11 @@ class KeyTests(unittest.TestCase):
             _sunat_doc_payload(
                 "12345678901", "FACTURA", "F001-1", "2026-10-15", "NaN-x"
             )
+        for bad in ("NaN", "inf", "-inf"):
+            with self.assertRaises(ValueError):
+                _sunat_doc_payload(
+                    "12345678901", "FACTURA", "F001-1", "2026-10-15", bad
+                )
 
 
 class SubmitTests(unittest.TestCase):
@@ -121,6 +210,10 @@ class SubmitTests(unittest.TestCase):
         self.assertEqual(res["enviados"], 2)
         self.assertEqual(len(validator.submits), 1)
         self.assertEqual(validator.submits[0][0]["forzar_consulta"], False)
+        # Claim before submit + stamp the job id: two batched writes, never one
+        # connection per document (claims and ids are written transactionally).
+        self.assertEqual(store.upsert_many_calls, 2)
+        self.assertEqual(store.upsert_calls, 0)
         key = ("20101031773", "03", "BS05", "105")
         self.assertEqual(store.rows[key]["Estado"], "PENDIENTE")
         self.assertEqual(store.rows[key]["TrabajoID"], 101)
@@ -139,17 +232,79 @@ class SubmitTests(unittest.TestCase):
         )
         self.assertEqual(res["enviados"], 1)
 
+    def test_pending_is_never_fresh(self):
+        row = _row("PENDIENTE", self.NOW.isoformat(timespec="seconds"))
+        self.assertFalse(_sunat_fresh(row, 24, self.NOW))
+
+    def test_does_not_resubmit_a_job_still_running(self):
+        seen = (self.NOW - timedelta(hours=1)).isoformat(timespec="seconds")
+        key = ("20101031773", "03", "BS05", "105")
+        store = FakeStore({
+            key: {
+                "Estado": "PENDIENTE",
+                "FechaConsulta": seen,
+                "TrabajoID": "77",
+                "Intentos": "1",
+            }
+        })
+        validator = FakeValidator()
+        validator.summary = {
+            "trabajo": {"Estado": "EN_PROCESO", "Total": 1, "Procesados": 0},
+            "detalle": [],
+        }
+        res = submit_sunat_batch(
+            validator, store, documentos=[self._doc()],
+            usuario="u", ruc="20101031773", now=self.NOW,
+        )
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(res["omitidos"]["en_proceso"], 1)
+        self.assertEqual(validator.submits, [])
+        self.assertEqual(store.rows[key]["Estado"], "PENDIENTE")
+
+    def test_completed_job_is_refreshed_and_not_resubmitted(self):
+        seen = (self.NOW - timedelta(hours=1)).isoformat(timespec="seconds")
+        key = ("20101031773", "03", "BS05", "105")
+        store = FakeStore({
+            key: {
+                "Estado": "PENDIENTE",
+                "FechaConsulta": seen,
+                "TrabajoID": "77",
+                "Intentos": "1",
+            }
+        })
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK", "Ruc": "20101031773", "Tipo": "03",
+                "Serie": "BS05", "Numero": "105",
+                "ResultadoEstado": "ACEPTADO",
+            }],
+        }
+        res = submit_sunat_batch(
+            validator, store, documentos=[self._doc()],
+            usuario="u", ruc="20101031773", now=self.NOW,
+        )
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(res["omitidos"]["cache_terminal"], 1)
+        self.assertEqual(validator.submits, [])
+        self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
+
     def test_chunks_and_limit(self):
         docs = [
             {**self._doc(), "number": f"BS05-{i:08d}"} for i in range(501)
         ]
         validator = FakeValidator()
+        store = FakeStore()
         res = submit_sunat_batch(
-            validator, FakeStore(), documentos=docs,
+            validator, store, documentos=docs,
             usuario="u", ruc="20101031773", now=self.NOW,
         )
-        self.assertEqual(len(validator.submits), 2)
+        # Default chunk size is 50: 11 submits for 501 documents.
+        self.assertEqual(len(validator.submits), 11)
         self.assertEqual(res["enviados"], 501)
+        # Two batched cache writes per chunk (claim + job id), not 501.
+        self.assertEqual(store.upsert_many_calls, 22)
         with self.assertRaises(ValueError):
             submit_sunat_batch(
                 FakeValidator(), FakeStore(),
@@ -196,6 +351,25 @@ class JobStatusTests(unittest.TestCase):
         self.assertNotIn(("R", "03", "BS05", "1"), store.rows)
         self.assertEqual(len(res["resultados"]), 3)
 
+    def test_batches_reads_and_writes_per_job(self):
+        # N+1 regression: 3 results must cost ONE cache read + ONE batched
+        # write, not 3 reads and 3 upserts.
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 3, "Procesados": 3},
+            "detalle": [
+                {"Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                 "Numero": f"0000010{i}", "ResultadoEstado": "ACEPTADO"}
+                for i in (5, 6, 7)
+            ],
+        }
+        store = FakeStore()
+        res = sunat_job_status(validator, store, trabajo_id=9, usuario="u")
+        self.assertEqual(len(res["resultados"]), 3)
+        self.assertEqual(store.fetch_calls, 1)
+        self.assertEqual(store.upsert_many_calls, 1)
+        self.assertEqual(store.upsert_calls, 0)
+
     def test_stripped_echo_matches(self):
         # El worker puede devolver el numero sin ceros ("152");
         # la llave normalizada debe coincidir igual.
@@ -214,6 +388,163 @@ class JobStatusTests(unittest.TestCase):
             store.rows[("R", "03", "BS32", "152")]["Estado"], "ACEPTADO"
         )
         self.assertEqual(res["resultados"][0]["estado"], "ACEPTADO")
+
+
+class StoreNormalizationTests(unittest.TestCase):
+    def test_prepare_tolerates_empty_optional_values(self):
+        from syner_check.sunat_store import _prepare
+
+        key, data = _prepare({
+            "Ruc": "R",
+            "Tipo": "03",
+            "Serie": "bs05",
+            "Numero": "105",
+            "Importe": None,
+            "FechaEmision": None,
+            "ConsultaID": "",
+            "TrabajoID": "5",
+            "Intentos": "3",
+        })
+        self.assertEqual(key, ("R", "03", "BS05", "105"))
+        self.assertIsNone(data["Importe"])
+        self.assertIsNone(data["FechaEmision"])
+        self.assertIsNone(data["ConsultaID"])
+        self.assertEqual(data["TrabajoID"], 5)
+        self.assertEqual(data["Intentos"], 3)
+
+
+class JobPollingTests(unittest.TestCase):
+    def _pending_store(self, estado="PENDIENTE", job_id="5"):
+        key = ("R", "03", "BS05", "105")
+        return key, FakeStore({
+            key: {
+                "Estado": estado,
+                "TrabajoID": job_id,
+                "Intentos": "3",
+                "Importe": "12.50",
+                "FechaEmision": "2026-10-15",
+                "UsuarioOrigen": "u@x.pe",
+            }
+        })
+
+    def test_running_job_uses_summary_without_detail(self):
+        key, store = self._pending_store()
+        validator = FakeValidator()
+        validator.summary = {
+            "trabajo": {"Estado": "EN_PROCESO", "Total": 1, "Procesados": 0},
+            "detalle": [{"Estado": "OK"}],
+        }
+        res = sunat_job_status(validator, store, trabajo_id=5, usuario="u")
+        self.assertEqual(validator.summary_calls, 1)
+        self.assertEqual(validator.detail_calls, 0)
+        self.assertEqual(res["estado"], "EN_PROCESO")
+        self.assertEqual(res["pendientes"], 1)
+        self.assertEqual(res["porcentaje"], 0.0)
+
+    def test_terminal_job_fetches_detail_once_and_preserves_data(self):
+        key, store = self._pending_store(estado="PROCESANDO")
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                "Numero": "105", "ResultadoEstado": "ACEPTADO",
+            }],
+        }
+        res = sunat_job_status(validator, store, trabajo_id=5, usuario="sistema")
+        self.assertEqual(validator.summary_calls, 1)
+        self.assertEqual(validator.detail_calls, 1)
+        self.assertEqual(res["porcentaje"], 100.0)
+        self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
+        self.assertEqual(store.rows[key]["Importe"], "12.50")
+        self.assertEqual(store.rows[key]["FechaEmision"], "2026-10-15")
+        # Polling is not another attempt, and the worker is not the origin.
+        self.assertEqual(store.rows[key]["Intentos"], 3)
+        self.assertEqual(store.rows[key]["UltimoError"], "")
+        self.assertEqual(store.rows[key]["UsuarioOrigen"], "u@x.pe")
+
+    def test_previous_read_failure_never_writes_partial_rows(self):
+        _key, store = self._pending_store()
+        store.fetch_error = RuntimeError("db down")
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                "Numero": "105", "ResultadoEstado": "ACEPTADO",
+            }],
+        }
+        with self.assertRaises(RuntimeError):
+            sunat_job_status(validator, store, trabajo_id=5, usuario="u")
+        self.assertEqual(store.upsert_many_calls, 0)
+
+    def test_404_marks_pending_rows_retryable(self):
+        key, store = self._pending_store()
+        validator = FakeValidator()
+        validator.status_error = UpstreamError("missing", http_status=404)
+        res = sunat_job_status(validator, store, trabajo_id=5, usuario="u")
+        self.assertEqual(store.rows[key]["Estado"], "ERROR")
+        self.assertEqual(store.mark_missing_calls, 1)
+        self.assertEqual(res["pendientes"], 0)
+        self.assertEqual(res["errores"], 1)
+
+    def test_terminal_state_is_not_downgraded(self):
+        key, store = self._pending_store(estado="ACEPTADO")
+        store.rows[key]["ConsultaID"] = "9"
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                "Numero": "105", "ResultadoEstado": "ERROR",
+            }],
+        }
+        sunat_job_status(validator, store, trabajo_id=5, usuario="u")
+        self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
+        self.assertEqual(store.rows[key]["ConsultaID"], "9")
+
+
+class ReconcileTests(unittest.TestCase):
+    def test_reconciles_every_pending_job(self):
+        key = ("R", "03", "BS05", "105")
+        store = FakeStore({
+            key: {
+                "Estado": "PENDIENTE",
+                "TrabajoID": "88",
+                "Intentos": "1",
+            }
+        })
+        validator = FakeValidator()
+        validator.job = {
+            "trabajo": {"Estado": "COMPLETADO", "Total": 1, "Procesados": 1},
+            "detalle": [{
+                "Estado": "OK", "Ruc": "R", "Tipo": "03", "Serie": "BS05",
+                "Numero": "105", "ResultadoEstado": "ACEPTADO",
+            }],
+        }
+        res = reconcile_pending_sunat_jobs(validator, store, usuario="u")
+        self.assertEqual(res["jobs"], 1)
+        self.assertEqual(res["reconciliados"], 1)
+        self.assertEqual(res["pendientes"], 0)
+        self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
+        self.assertEqual(store.mark_stale_calls, 1)
+
+
+class WorkerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tick_runs_and_worker_stops(self):
+        stop = asyncio.Event()
+        calls: list[int] = []
+
+        async def tick():
+            calls.append(1)
+            stop.set()
+            return {"reconciliados": 1}
+
+        await asyncio.wait_for(
+            run_sunat_reconcile_worker(tick, interval_seconds=2, stop=stop),
+            timeout=1,
+        )
+        self.assertEqual(calls, [1])
 
 
 class AttachTests(unittest.TestCase):

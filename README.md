@@ -22,7 +22,9 @@ Aplicación web responsive para consulta segura de comprobantes de SynerCOM desd
 - SQL Server usado en modo de consulta; `ApplicationIntent=ReadOnly` configurable.
 - Validación estricta de tipos, fechas, identificadores SQL y límites de búsqueda.
 - No se exponen tokens GraphQL, credenciales SQL ni errores internos al navegador.
-- Headers de seguridad, `Cache-Control: no-store` para API y request IDs para trazabilidad.
+- Headers de seguridad, `Cache-Control` por tipo de recurso (assets inmutables, API `no-store`, HTML revalidado) y request IDs para trazabilidad.
+- Rate limit por usuario/IP, límite de cuerpo, validación de `Origin` en escrituras, pool de conexiones SQL y pool acotado de hilos para trabajo bloqueante.
+- GZip en respuestas de texto y logs JSON con `request_id` en producción.
 - Health check `/health` para Docker/Dockploy.
 - Swagger/ReDoc disponibles solo fuera de `APP_ENV=production`.
 
@@ -57,7 +59,7 @@ DEV_USER_EMAIL=dev@perfumeriasunidas.com.pe
 DEV_USER_NAME=Usuario de desarrollo
 ```
 
-En este modo `/auth/login` crea una sesión local de desarrollo. **No usar este modo en producción.**
+En este modo `/auth/login` crea una sesión local de desarrollo. **No usar este modo en producción:** la aplicación se niega a arrancar si `APP_ENV=production` y `AUTH_MODE=development` a la vez.
 
 La aplicación no confía únicamente en el parámetro `hd`: verifica el email, `email_verified` y el claim `hd` recibido de Google.
 
@@ -91,6 +93,19 @@ DB_APPLICATION_INTENT_READ_ONLY=true
 ```
 
 Si el SQL Server utiliza un certificado interno/autofirmado, `DB_TRUST_SERVER_CERTIFICATE=yes` puede ser necesario, pero es preferible instalar y validar el certificado correctamente.
+
+### Endurecimiento HTTP
+
+- Rate limit por usuario (o IP): 120 req/min general y 10/min para `POST /api/sunat/*`.
+- Cuerpo máximo de 1 MB (`MAX_REQUEST_BYTES`).
+- En POST/PUT/PATCH/DELETE, el `Origin` debe coincidir con el `Host`. Si un proxy reescribe el `Host`, define `ALLOWED_ORIGINS` con la lista separada por comas.
+- Pool de conexiones pyodbc: 4 conexiones inactivas por base, descartadas tras 5 minutos o ante cualquier error.
+- Pool acotado de hilos (`WEB_THREAD_POOL_SIZE`, 8 por defecto) para llamadas a SQL Server/GraphQL; evita saturar la base y conserva el `request_id` en los logs de los hilos.
+- GZip para respuestas mayores a 600 bytes y caché inmutable de un año para los assets con hash de Vite.
+- Logs JSON en producción (`LOG_FORMAT=json`) con `request_id`; en desarrollo el formato es texto.
+- Los límites son por proceso (un worker de uvicorn). Con varios workers/instancias, muévelos a Redis.
+
+Variables opcionales: `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_SUNAT_WRITE_PER_MINUTE`, `MAX_REQUEST_BYTES`, `ALLOWED_ORIGINS`, `WEB_THREAD_POOL_SIZE`, `LOG_FORMAT`.
 
 Para desarrollo local con recargas frecuentes (`--reload`), cada reinicio pide un token nuevo por password grant. Para reutilizar el refresh token entre reinicios:
 

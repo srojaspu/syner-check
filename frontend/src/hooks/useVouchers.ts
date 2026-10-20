@@ -1,5 +1,10 @@
-import { useCallback, useState } from "react";
-import { AuthError, getSummary, searchByNumber } from "../api/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AuthError,
+  RequestAbortedError,
+  getSummary,
+  searchByNumber,
+} from "../api/client";
 import type { FlowPerTipo, Voucher } from "../api/types";
 
 export type SearchMode = "range" | "number";
@@ -31,6 +36,22 @@ const EMPTY: VoucherState = {
 /** Container: owns fetching + rows; presentation lives in components. */
 export function useVouchers(onAuthFailure: () => void) {
   const [state, setState] = useState<VoucherState>(EMPTY);
+  const abortRef = useRef<AbortController | null>(null);
+  const seq = useRef(0);
+
+  // Cancel any in-flight request when the container unmounts.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  /** Supersede the previous request and return the new signal + sequence. */
+  const begin = useCallback(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    seq.current += 1;
+    return { signal: controller.signal, id: seq.current };
+  }, []);
+
+  const isCurrent = useCallback((id: number) => id === seq.current, []);
 
   const fail = useCallback(
     (error: unknown) => {
@@ -49,13 +70,18 @@ export function useVouchers(onAuthFailure: () => void) {
 
   const runRange = useCallback(
     async (start: string, end: string, types: string) => {
+      const { signal, id } = begin();
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const data = await getSummary({
-          start_date: start,
-          end_date: end,
-          types,
-        });
+        const data = await getSummary(
+          {
+            start_date: start,
+            end_date: end,
+            types,
+          },
+          signal,
+        );
+        if (!isCurrent(id)) return;
         const rows = Object.values(data.documents).flat();
         setState({
           rows,
@@ -69,17 +95,20 @@ export function useVouchers(onAuthFailure: () => void) {
           flow: data.flow ?? null,
         });
       } catch (error: unknown) {
+        if (error instanceof RequestAbortedError || !isCurrent(id)) return;
         fail(error);
       }
     },
-    [fail],
+    [begin, fail, isCurrent],
   );
 
   const runNumber = useCallback(
     async (number: string) => {
+      const { signal, id } = begin();
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const data = await searchByNumber(number);
+        const data = await searchByNumber(number, signal);
+        if (!isCurrent(id)) return;
         const subtitle =
           data.source === "sql_index"
             ? `${data.results.length} coincidencia(s) en el índice local`
@@ -96,10 +125,11 @@ export function useVouchers(onAuthFailure: () => void) {
           flow: null,
         });
       } catch (error: unknown) {
+        if (error instanceof RequestAbortedError || !isCurrent(id)) return;
         fail(error);
       }
     },
-    [fail],
+    [begin, fail, isCurrent],
   );
 
   return { ...state, runRange, runNumber };

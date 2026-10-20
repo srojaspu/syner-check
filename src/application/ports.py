@@ -46,14 +46,37 @@ class SunatValidator(Protocol):
 
 
 class SunatCacheStore(Protocol):
-    """Persistent SUNAT validation cache (dbo.SunatValidacion)."""
+    """Persistent SUNAT validation cache (dbo.SunatValidacion).
+
+    Keys are the SUNAT identity (Ruc, Tipo, Serie, Numero) — always 4-tuples.
+    """
 
     def fetch_many(
         self, keys: Sequence[tuple[str, str, str, str]]
-    ) -> dict[tuple[str, str, str], dict]:
+    ) -> dict[tuple[str, str, str, str], dict]:
         ...
 
     def upsert(self, row: dict) -> None:
+        ...
+
+    def upsert_many(self, rows: Sequence[dict]) -> None:
+        """Write several rows over one connection/transaction."""
+        ...
+
+    def job_progress(self, trabajo_id: int) -> dict:
+        """Durable counts for one validator job (local cache)."""
+        ...
+
+    def pending_jobs(self, limit: int = 50) -> list[dict]:
+        """Jobs that still have PENDIENTE/PROCESANDO rows."""
+        ...
+
+    def mark_job_missing(self, trabajo_id: int, message: str) -> int:
+        """Mark pending rows of a job SUNAT no longer knows as ERROR."""
+        ...
+
+    def mark_stale_unsubmitted(self, older_than_minutes: int, message: str) -> int:
+        """Mark pending rows whose submit never got a TrabajoID as ERROR."""
         ...
 
 

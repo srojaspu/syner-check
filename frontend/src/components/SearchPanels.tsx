@@ -60,6 +60,7 @@ export function RangePanel({
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
+    if (disabled) return;
     if (!range?.from || !range?.to) {
       setError("Selecciona el rango completo (inicio y fin).");
       return;
@@ -118,6 +119,7 @@ export function NumberPanel({
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
+    if (disabled) return;
     if (!number.trim()) {
       setError("Ingresa un número.");
       return;
@@ -135,6 +137,7 @@ export function NumberPanel({
             id="numero-comprobante"
             value={number}
             onChange={(event) => setNumber(event.target.value)}
+            disabled={disabled}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
             }}

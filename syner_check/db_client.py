@@ -143,6 +143,7 @@ def fetch_sql_documents(
     with values normalized to str, except FechaDocumento as ISO date string.
     """
     from .config import get_db_config, get_db_password
+    from .db_pool import pooled_connection
 
     wanted = [t for t in (tipos or ALLOWED_TIPOS) if t in ALLOWED_TIPOS]
     if not wanted:
@@ -158,8 +159,7 @@ def fetch_sql_documents(
         "AND [FechaDocumento] < DATEADD(DAY, 1, ?) "
         f"AND [TipoDocumento] IN ({placeholders})"
     )
-    connection = connect(db_config, password)
-    try:
+    with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
         cursor.execute(query, start_date, end_date, *wanted)
         columns_out = [col[0] for col in cursor.description]
@@ -178,8 +178,6 @@ def fetch_sql_documents(
                 }
             )
         return rows
-    finally:
-        connection.close()
 
 
 # --- Intelisis (Punidas) reader: Venta cabecera, solo origen SynerPOS ---
@@ -247,11 +245,11 @@ def fetch_intelisis_headers(
     FechaEmision normalized to ISO date string.
     """
     from .config import get_intelisis_config, get_intelisis_password
+    from .db_pool import pooled_connection
 
     db_config = get_intelisis_config()
     password = get_intelisis_password()
-    connection = connect(db_config, password)
-    try:
+    with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
         cursor.execute(INTELISIS_HEADERS_QUERY, start_date, end_date)
         columns_out = [col[0] for col in cursor.description]
@@ -275,5 +273,3 @@ def fetch_intelisis_headers(
                 }
             )
         return rows
-    finally:
-        connection.close()

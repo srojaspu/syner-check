@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Sequence
 
 from src.domain.errors import UpstreamError
@@ -56,31 +57,28 @@ class IntelisisReaderAdapter:
 
 
 class SunatValidatorAdapter:
-    """Adapts syner_check.sunat_client to the SunatValidator port."""
+    """Adapts syner_check.sunat_client to the SunatValidator port.
 
-    _client = None
-    _key = None
+    ``requests.Session`` is not thread-safe, so each worker thread gets its
+    own client. The web pool and the SUNAT reconciliation worker can then poll
+    different jobs concurrently without sharing a session.
+    """
 
-    _lock = None
+    _local = threading.local()
 
     @classmethod
     def _client_for(cls):
-        import threading
-
         from syner_check import config as cfg
         from syner_check.sunat_client import SunatValidatorClient
 
-        if cls._lock is None:
-            cls._lock = threading.Lock()
         validator = cfg.get_sunat_validator_config()
         marker = (validator["url"], validator["ruc"])
-        with cls._lock:
-            if cls._client is None or cls._key != marker:
-                cls._client = SunatValidatorClient(
-                    validator["url"], validator["api_key"]
-                )
-                cls._key = marker
-            return cls._client
+        client = getattr(cls._local, "client", None)
+        if client is None or getattr(cls._local, "key", None) != marker:
+            client = SunatValidatorClient(validator["url"], validator["api_key"])
+            cls._local.client = client
+            cls._local.key = marker
+        return client
 
     def submit_batch(
         self, documentos: list[dict], usuario: str = "", origen: str = ""
@@ -91,7 +89,11 @@ class SunatValidatorAdapter:
         try:
             return self._client_for().submit_batch(documentos, usuario, origen)
         except SunatError as exc:
-            raise _Upstream(f"SUNAT submit failed: {exc.code}.") from exc
+            raise _Upstream(
+                f"SUNAT submit failed: {exc.code}.",
+                code=exc.code,
+                http_status=exc.http_status,
+            ) from exc
         except _Upstream:
             raise
         except Exception as exc:
@@ -104,7 +106,11 @@ class SunatValidatorAdapter:
         try:
             return self._client_for().job_status(trabajo_id, detalle)
         except SunatError as exc:
-            raise _Upstream(f"SUNAT status failed: {exc.code}.") from exc
+            raise _Upstream(
+                f"SUNAT status failed: {exc.code}.",
+                code=exc.code,
+                http_status=exc.http_status,
+            ) from exc
         except _Upstream:
             raise
         except Exception as exc:
@@ -119,7 +125,11 @@ class SunatValidatorAdapter:
         try:
             return self._client_for().validate_single(documento, usuario, origen)
         except SunatError as exc:
-            raise _Upstream(f"SUNAT validate failed: {exc.code}.") from exc
+            raise _Upstream(
+                f"SUNAT validate failed: {exc.code}.",
+                code=exc.code,
+                http_status=exc.http_status,
+            ) from exc
         except _Upstream:
             raise
         except Exception as exc:
@@ -131,7 +141,7 @@ class SunatCacheStoreAdapter:
 
     def fetch_many(
         self, keys: Sequence[tuple[str, str, str, str]]
-    ) -> dict[tuple[str, str, str], dict]:
+    ) -> dict[tuple[str, str, str, str], dict]:
         from app import sunat_db as sunat
 
         try:
@@ -151,6 +161,66 @@ class SunatCacheStoreAdapter:
         except Exception as exc:
             raise UpstreamError(
                 f"SUNAT cache write failed: {type(exc).__name__}."
+            ) from exc
+
+    def upsert_many(self, rows: Sequence[dict]) -> None:
+        from app import sunat_db as sunat
+
+        try:
+            sunat.upsert_cache_many(list(rows))
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"SUNAT cache write failed: {type(exc).__name__}."
+            ) from exc
+
+    def job_progress(self, trabajo_id: int) -> dict:
+        from app import sunat_db as sunat
+
+        try:
+            return sunat.job_progress(int(trabajo_id))
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"SUNAT job progress failed: {type(exc).__name__}."
+            ) from exc
+
+    def pending_jobs(self, limit: int = 50) -> list[dict]:
+        from app import sunat_db as sunat
+
+        try:
+            return sunat.pending_jobs(int(limit))
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"SUNAT pending jobs failed: {type(exc).__name__}."
+            ) from exc
+
+    def mark_job_missing(self, trabajo_id: int, message: str) -> int:
+        from app import sunat_db as sunat
+
+        try:
+            return sunat.mark_job_missing(int(trabajo_id), message)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"SUNAT job cleanup failed: {type(exc).__name__}."
+            ) from exc
+
+    def mark_stale_unsubmitted(self, older_than_minutes: int, message: str) -> int:
+        from app import sunat_db as sunat
+
+        try:
+            return sunat.mark_stale_unsubmitted(int(older_than_minutes), message)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"SUNAT stale cleanup failed: {type(exc).__name__}."
             ) from exc
 
 

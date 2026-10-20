@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import math
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from hmac import compare_digest
 from typing import Any, Sequence
 
 from src.domain.entities import FechaRango, TipoDocumento
-from src.domain.errors import InvalidRangeError, NotFoundError
+from src.domain.errors import InvalidRangeError, NotFoundError, UpstreamError
 
 from .ports import (
     GraphqlGateway,
@@ -289,6 +291,10 @@ def search_by_number(
     is given, each hit is also matched against Venta headers for its own
     date (1-day fetches, capped), so number search reports `in_intelisis`
     with the same (tipo, number, fecha) key as the range summary.
+
+    `SerieNumero` is reused across years, so the same number can return
+    several documents; all of them are kept (each with its own date) instead
+    of collapsing to the latest one.
     """
     cleaned = (number or "").strip()
     if not cleaned:
@@ -466,7 +472,15 @@ _SUNAT_TIPO_CODES = {
     "NOTA DE CREDITO": "07",
 }
 
-_SUNAT_TERMINAL = ("ACEPTADO", "ANULADO")
+_SUNAT_FINAL = ("ACEPTADO", "ANULADO")
+_SUNAT_SETTLED = (
+    "ACEPTADO",
+    "ANULADO",
+    "NO_EXISTE",
+    "AUTORIZADO",
+    "NO_AUTORIZADO",
+)
+_SUNAT_JOB_TERMINAL = ("COMPLETADO", "COMPLETADO_ERROR", "CANCELADO", "ERROR")
 
 _SUNAT_KNOWN = (
     "ACEPTADO",
@@ -525,7 +539,7 @@ def _sunat_doc_payload(
         amount = round(float(importe), 2)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Importe no válido para SUNAT: {importe!r}.") from exc
-    if amount < 0:
+    if not math.isfinite(amount) or amount < 0:
         raise ValueError(f"Importe no válido para SUNAT: {importe!r}.")
     _, code, serie, numero = key
     return {
@@ -538,17 +552,136 @@ def _sunat_doc_payload(
     }
 
 
+def _sunat_estado(row: dict | None) -> str:
+    return str((row or {}).get("Estado", "")).strip().upper()
+
+
+def _sunat_job_id(row: dict | None) -> int | None:
+    try:
+        value = int((row or {}).get("TrabajoID") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value or None
+
+
+def _sunat_job_terminal(estado: object) -> bool:
+    return str(estado or "").strip().upper() in _SUNAT_JOB_TERMINAL
+
+
 def _sunat_fresh(row: dict, revalidate_hours: int, now: datetime) -> bool:
-    """True when a cached row is still fresh (no revalidation needed)."""
-    estado = str(row.get("Estado", "")).strip().upper()
-    if estado in _SUNAT_TERMINAL:
+    """True only for a settled result that does not need another SUNAT call.
+
+    PENDIENTE/PROCESANDO/ERROR/DESCONOCIDO are *never* fresh. This is the
+    critical difference: the submit path stamps FechaConsulta when it creates
+    the PENDIENTE row, and the old implementation interpreted that as a fresh
+    cache hit, so a retry skipped every document still waiting in SUNAT.
+    """
+    estado = _sunat_estado(row)
+    if estado in _SUNAT_FINAL:
         return True
+    if estado not in _SUNAT_SETTLED:
+        return False
     raw = str(row.get("FechaConsulta", ""))
     try:
         seen = datetime.fromisoformat(raw[:19])
     except ValueError:
         return False
     return (now - seen) < timedelta(hours=revalidate_hours)
+
+
+def _sunat_row_age(row: dict, now: datetime) -> timedelta | None:
+    """Age since the last local write, or None when the store did not tell us."""
+    raw = str(row.get("FechaActualizacion", "") or row.get("FechaConsulta", ""))
+    try:
+        seen = datetime.fromisoformat(raw[:19])
+    except ValueError:
+        return None
+    return now - seen
+
+
+def _sunat_pending_rows(
+    chunk: list[tuple[dict[str, Any], tuple[str, str, str, str]]],
+    cached: dict[tuple[str, str, str, str], dict],
+    usuario: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for payload, key in chunk:
+        previous = cached.get(key, {})
+        rows.append(
+            {
+                "Ruc": key[0],
+                "Tipo": key[1],
+                "Serie": key[2],
+                "Numero": key[3],
+                "Estado": "PENDIENTE",
+                "Importe": payload["importe"],
+                "FechaEmision": payload["fecha_emision"],
+                "TrabajoID": None,
+                "Intentos": int(previous.get("Intentos") or 0) + 1,
+                "CorrelationID": previous.get("CorrelationID") or None,
+                "UsuarioOrigen": (usuario or "")[:100],
+            }
+        )
+    return rows
+
+
+def _sunat_reconcile_cached_jobs(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    keys: list[tuple[str, str, str, str]],
+    cached: dict[tuple[str, str, str, str], dict],
+    usuario: str,
+) -> set[int]:
+    """Reconcile existing jobs before deciding what to submit.
+
+    Returns the set of job ids whose documents are still running. Those keys
+    must NOT be resubmitted: the validator has no idempotency key, and the
+    old code created duplicate work when a retry happened while a job was
+    still queued/running.
+    """
+    job_ids = sorted(
+        {
+            job_id
+            for key in keys
+            if _sunat_estado(cached.get(key)) in ("PENDIENTE", "PROCESANDO")
+            for job_id in [_sunat_job_id(cached.get(key))]
+            if job_id is not None
+        }
+    )
+    running: set[int] = set()
+    for job_id in job_ids:
+        try:
+            result = sunat_job_status(
+                validator, store, trabajo_id=job_id, usuario=usuario
+            )
+        except UpstreamError as exc:
+            if getattr(exc, "http_status", None) == 404:
+                try:
+                    store.mark_job_missing(
+                        job_id,
+                        "Trabajo SUNAT no encontrado; se puede reintentar.",
+                    )
+                except Exception as store_exc:  # noqa: BLE001
+                    logger.warning(
+                        "SUNAT job %s cleanup failed: %s",
+                        job_id,
+                        type(store_exc).__name__,
+                    )
+                continue
+            # Validator outage: never duplicate a job we cannot inspect.
+            running.add(job_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SUNAT job %s reconciliation failed: %s",
+                job_id,
+                type(exc).__name__,
+            )
+            running.add(job_id)
+        else:
+            if not _sunat_job_terminal(result.get("estado")):
+                running.add(job_id)
+    return running
 
 
 def submit_sunat_batch(
@@ -560,14 +693,20 @@ def submit_sunat_batch(
     ruc: str,
     revalidate_hours: int = 24,
     now: datetime | None = None,
-    batch_max: int = 500,
+    batch_max: int = 50,
     request_max: int = 2000,
 ) -> dict:
     """Validate vouchers against SUNAT via async batch jobs (explicit only).
 
-    Skips terminally cached docs; records PENDIENTE rows at submit time.
-    Returns {trabajos, enviados, omitidos, total}. Never raises for SUNAT
-    4xx per-doc issues: those land in omitidos/invalidos.
+    Design:
+    - First reconcile jobs already tracked in the cache. A retry while a job
+      is queued/running must not create duplicates.
+    - PENDIENTE/ERROR/DESCONOCIDO are never treated as fresh.
+    - Each chunk is claimed in the local cache *before* the HTTP call, then
+      stamped with its TrabajoID. A submit failure leaves an honest ERROR,
+      never a forever-PENDIENTE row.
+    - Chunks are small (default 50) so progress is persisted often and one
+      lost response cannot hide a 458-document batch.
     """
     current = now if isinstance(now, datetime) else datetime.now()
     docs = list(documentos or [])
@@ -575,6 +714,7 @@ def submit_sunat_batch(
         raise ValueError(f"Límite por solicitud: {request_max} documentos.")
     if not (ruc or "").strip() or not ruc.strip().isdigit():
         raise ValueError("RUC emisor inválido.")
+    chunk_size = max(1, min(int(batch_max), 500))
 
     payloads: list[dict[str, Any]] = []
     keys: list[tuple[str, str, str, str]] = []
@@ -609,54 +749,149 @@ def submit_sunat_batch(
         )
 
     cached = store.fetch_many(keys)
-    def _is_fresh(key: tuple[str, str, str, str]) -> bool:
-        return key in cached and _sunat_fresh(cached[key], revalidate_hours, current)
+    # Any tracked job may finish during reconciliation. Refresh the snapshot
+    # afterwards, not only when a job is still running; otherwise the local
+    # PENDIENTE copy would look like work to submit again.
+    tracked = any(
+        _sunat_estado(cached.get(key)) in ("PENDIENTE", "PROCESANDO")
+        and _sunat_job_id(cached.get(key)) is not None
+        for key in keys
+    )
+    running = _sunat_reconcile_cached_jobs(
+        validator,
+        store,
+        keys=keys,
+        cached=cached,
+        usuario=usuario,
+    )
+    if tracked:
+        cached = store.fetch_many(keys)
 
-    fresh = sum(1 for k in keys if _is_fresh(k))
-    pendientes = [
-        (payload, key)
-        for payload, key in zip(payloads, keys)
-        if not _is_fresh(key)
-    ]
+    fresh = 0
+    en_proceso = 0
+    pendientes: list[tuple[dict[str, Any], tuple[str, str, str, str]]] = []
+    for payload, key in zip(payloads, keys):
+        row = cached.get(key)
+        estado = _sunat_estado(row)
+        if row is not None and _sunat_fresh(row, revalidate_hours, current):
+            fresh += 1
+            continue
+        job_id = _sunat_job_id(row)
+        if estado in ("PENDIENTE", "PROCESANDO") and job_id is not None:
+            if job_id in running:
+                en_proceso += 1
+                continue
+        if estado in ("PENDIENTE", "PROCESANDO") and job_id is None:
+            age = _sunat_row_age(row, current) if row else None
+            # A very recent row without TrabajoID means another submit may
+            # still be in flight. Do not create a second job.
+            if age is not None and age < timedelta(minutes=2):
+                en_proceso += 1
+                continue
+        pendientes.append((payload, key))
 
     trabajos: list[dict[str, Any]] = []
+    errores: list[dict[str, Any]] = []
     enviados = 0
-    for pos in range(0, len(pendientes), batch_max):
-        chunk = pendientes[pos : pos + batch_max]
-        body = validator.submit_batch(
-            [
-                {**payload, "forzar_consulta": False}
-                for payload, _ in chunk
-            ],
-            usuario=usuario,
-            origen="syner-check",
-        )
-        trabajo_id = int(body["trabajo_id"])
-        for payload, key in chunk:
+    for pos in range(0, len(pendientes), chunk_size):
+        chunk = pendientes[pos : pos + chunk_size]
+        claim_rows = _sunat_pending_rows(chunk, cached, usuario)
+        try:
+            # Claim first: if this write fails we must not spend a SUNAT call
+            # whose result we could never reconcile locally.
+            store.upsert_many(claim_rows)
+        except Exception as exc:
+            raise UpstreamError(
+                "No se pudo registrar el estado local del lote SUNAT."
+            ) from exc
+
+        try:
+            body = validator.submit_batch(
+                [
+                    {**payload, "forzar_consulta": False}
+                    for payload, _ in chunk
+                ],
+                usuario=usuario,
+                origen="syner-check",
+            )
+            trabajo_id = int(body["trabajo_id"])
+        except Exception as exc:
+            error_rows = [
+                {
+                    **row,
+                    "Estado": "ERROR",
+                    "UltimoError": (
+                        "No se pudo registrar el lote en SUNAT; reintentar."
+                    ),
+                    "TrabajoID": None,
+                }
+                for row in claim_rows
+            ]
             try:
-                store.upsert(
-                    {
-                        "Ruc": key[0],
-                        "Tipo": key[1],
-                        "Serie": key[2],
-                        "Numero": key[3],
-                        "Estado": "PENDIENTE",
-                        "Importe": payload["importe"],
-                        "FechaEmision": payload["fecha_emision"],
-                        "TrabajoID": trabajo_id,
-                        "Intentos": int(cached.get(key, {}).get("Intentos") or 0) + 1,
-                        "UsuarioOrigen": (usuario or "")[:100],
-                    }
+                store.upsert_many(error_rows)
+            except Exception as store_exc:  # noqa: BLE001
+                logger.exception(
+                    "SUNAT submit failed and error state could not be saved: %s",
+                    type(store_exc).__name__,
                 )
-            except Exception as exc:
+            errores.append(
+                {
+                    "cantidad": len(chunk),
+                    "mensaje": (
+                        "No se pudo registrar el lote en SUNAT; "
+                        "los documentos quedaron marcados para reintentar."
+                    ),
+                }
+            )
+            logger.warning(
+                "SUNAT submit chunk failed: %s", type(exc).__name__
+            )
+            break
+
+        job_rows = [
+            {
+                **row,
+                "TrabajoID": trabajo_id,
+                "CorrelationID": (
+                    str(body.get("correlation_id") or "")[:100]
+                    or row.get("CorrelationID")
+                ),
+            }
+            for row in claim_rows
+        ]
+        saved = False
+        for attempt in range(3):
+            try:
+                store.upsert_many(job_rows)
+                saved = True
+                break
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "Sunat cache upsert failed for %s: %s",
-                    key[2:],
+                    "SUNAT job %s id save attempt %d failed: %s",
+                    trabajo_id,
+                    attempt + 1,
                     type(exc).__name__,
                 )
+                if attempt < 2:
+                    time.sleep(0.2)
+        if not saved:
+            errores.append(
+                {
+                    "cantidad": len(chunk),
+                    "mensaje": (
+                        f"El lote SUNAT {trabajo_id} fue creado, pero no se "
+                        "pudo guardar su ID local. Espera unos minutos antes "
+                        "de reintentar para no duplicar la validación."
+                    ),
+                }
+            )
         enviados += len(chunk)
         trabajos.append(
-            {"trabajo_id": trabajo_id, "cantidad": len(chunk)}
+            {
+                "trabajo_id": trabajo_id,
+                "cantidad": len(chunk),
+                "estado": "EN_COLA",
+            }
         )
 
     return {
@@ -664,8 +899,10 @@ def submit_sunat_batch(
         "enviados": enviados,
         "omitidos": {
             "cache_terminal": fresh,
+            "en_proceso": en_proceso,
             "invalidos": invalidos,
         },
+        "errores": errores,
         "total": len(docs),
     }
 
@@ -675,66 +912,114 @@ def _sunat_map_estado(raw: object) -> str:
     return token if token in _SUNAT_KNOWN else "DESCONOCIDO"
 
 
-def sunat_job_status(
-    validator: SunatValidator,
+def _sunat_error_text(item: dict) -> str:
+    """Real per-document error only; SUNAT says 'Operation Success!' on OK."""
+    tipo = str(item.get("ErrorTipo") or "").strip()
+    mensaje = str(item.get("Mensaje") or "").strip()
+    if str(item.get("Estado", "")).strip().upper() == "ERROR":
+        return (mensaje or tipo or "ERROR")[:500]
+    if not tipo and mensaje.lower() in ("", "operation success!", "operation success"):
+        return ""
+    if not tipo and not mensaje:
+        return ""
+    return f"{tipo or 'ERROR'}: {mensaje}".strip(": ")[:500]
+
+
+def _sunat_value(item: dict, prev: dict, key: str):
+    """Prefer a non-empty value from SUNAT, else keep the local one."""
+    value = item.get(key)
+    if value is None or value == "":
+        return prev.get(key)
+    return value
+
+
+def _sunat_job_progress(store: SunatCacheStore, trabajo_id: int) -> dict:
+    try:
+        return store.job_progress(int(trabajo_id)) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Sunat job progress read failed: %s", type(exc).__name__)
+        return {}
+
+
+def _sunat_local_complete(local: dict) -> bool:
+    """True when the cache already holds a terminal answer for every row."""
+    return int(local.get("total") or 0) > 0 and int(local.get("pendientes") or 0) == 0
+
+
+def _persist_sunat_job_detail(
     store: SunatCacheStore,
+    body: dict,
     *,
     trabajo_id: int,
-    usuario: str = "",
-) -> dict:
-    """Poll one batch job, persist per-doc results, return slim progress."""
-    body = validator.job_status(int(trabajo_id), detalle=True)
+    usuario: str,
+) -> list[dict[str, str]]:
+    """Persist terminal per-document results from one detail payload.
+
+    The previous version rebuilt each row from scratch, which overwrote
+    Importe/FechaEmision with NULL and incremented Intentos on every poll.
+    Here we merge with the previous row and only advance the state when the
+    new state is at least as authoritative.
+    """
     trabajo = body.get("trabajo", {}) if isinstance(body, dict) else {}
     detalle = body.get("detalle", []) if isinstance(body, dict) else []
-    resultados: list[dict[str, str]] = []
+    parsed: list[tuple[tuple[str, str, str, str], str, dict]] = []
     for item in detalle if isinstance(detalle, list) else []:
         if not isinstance(item, dict):
             continue
         item_estado = str(item.get("Estado", "")).strip().upper()
         if item_estado == "OK":
             estado = _sunat_map_estado(item.get("ResultadoEstado"))
-            ultimo_error = (
-                f"{item.get('ErrorTipo')}: {item.get('Mensaje')}"
-                if item.get("ErrorTipo") or item.get("Mensaje")
-                else ""
-            )
         elif item_estado == "ERROR":
             estado = "ERROR"
-            ultimo_error = str(
-                item.get("Mensaje") or item.get("ErrorTipo") or "ERROR"
-            )[:500]
         else:
-            continue  # PENDIENTE/PROCESANDO: el worker aún no termina
+            continue  # PENDIENTE/PROCESANDO: the worker has not finished
         key = (
             str(item.get("RUCEmisor", item.get("Ruc", ""))).strip(),
             str(item.get("TipoComprobante", item.get("Tipo", ""))).strip(),
             str(item.get("Serie", "")).strip().upper(),
             _norm_numero(item.get("Numero", "")),
         )
-        if not all(key):
+        if all(key):
+            parsed.append((key, estado, item))
+
+    keys = [key for key, _estado, _item in parsed]
+    # Read is strict: if we cannot load the previous row we must not write a
+    # partial row (that is exactly how Importe/FechaEmision were lost before).
+    previous = store.fetch_many(keys) if keys else {}
+    rows: list[dict[str, Any]] = []
+    resultados: list[dict[str, str]] = []
+    for key, estado, item in parsed:
+        prev = previous.get(key, {})
+        prev_estado = _sunat_estado(prev)
+        # A late poll must never downgrade a settled result.
+        if prev_estado in _SUNAT_FINAL:
             continue
-        try:
-            previous = store.fetch_many([key]).get(key, {})
-            store.upsert(
-                {
-                    "Ruc": key[0],
-                    "Tipo": key[1],
-                    "Serie": key[2],
-                    "Numero": key[3],
-                    "Estado": estado,
-                    "CodigoSunat": str(item.get("CodigoSunat", "")),
-                    "ConsultaID": item.get("ConsultaID"),
-                    "CorrelationID": str(item.get("CorrelationID", "")),
-                    "TrabajoID": int(trabajo_id),
-                    "Intentos": int(previous.get("Intentos") or 0) + 1,
-                    "UltimoError": ultimo_error,
-                    "UsuarioOrigen": (usuario or "")[:100],
-                }
-            )
-        except Exception as exc:
-            logger.warning(
-                "Sunat cache upsert failed for %s: %s", key, type(exc).__name__
-            )
+        if prev_estado in _SUNAT_SETTLED and estado not in _SUNAT_SETTLED:
+            continue
+        rows.append(
+            {
+                "Ruc": key[0],
+                "Tipo": key[1],
+                "Serie": key[2],
+                "Numero": key[3],
+                "Estado": estado,
+                "CodigoSunat": _sunat_value(item, prev, "CodigoSunat"),
+                "RucEstado": _sunat_value(item, prev, "RucEstado"),
+                "RucCondicion": _sunat_value(item, prev, "RucCondicion"),
+                "Observaciones": _sunat_value(item, prev, "Observaciones"),
+                "Importe": _sunat_value(item, prev, "Importe"),
+                "FechaEmision": _sunat_value(item, prev, "FechaEmision"),
+                "ConsultaID": _sunat_value(item, prev, "ConsultaID"),
+                "CorrelationID": _sunat_value(item, prev, "CorrelationID"),
+                "TrabajoID": int(trabajo_id),
+                # One submit = one attempt. Polling is not another attempt.
+                "Intentos": int(prev.get("Intentos") or 1),
+                "UltimoError": _sunat_error_text(item),
+                # Keep the original submitter for audit; a poll (or the
+                # background worker) is not the origin of the validation.
+                "UsuarioOrigen": (prev.get("UsuarioOrigen") or usuario or "")[:100],
+            }
+        )
         resultados.append(
             {
                 "serie": key[2],
@@ -742,14 +1027,220 @@ def sunat_job_status(
                 "estado": estado,
             }
         )
-    estado_job = str(trabajo.get("Estado", "")) if isinstance(trabajo, dict) else ""
+    if rows:
+        # A DB failure must surface: silently swallowing it left the cache
+        # PENDIENTE while the API reported success.
+        store.upsert_many(rows)
+    if _sunat_job_terminal(trabajo.get("Estado")):
+        try:
+            store.mark_job_missing(
+                int(trabajo_id),
+                "SUNAT no devolvió resultado para este comprobante.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SUNAT job %s missing-row cleanup failed: %s",
+                trabajo_id,
+                type(exc).__name__,
+            )
+    return resultados
+
+
+def sunat_job_status(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    trabajo_id: int,
+    usuario: str = "",
+    persist: bool = True,
+    now: datetime | None = None,
+) -> dict:
+    """Poll one batch job. Summary while running; detail only when terminal.
+
+    Polling the full detail on every tick was expensive for 458 documents and
+    caused 30 s frontend timeouts. The summary endpoint is enough for the
+    progress bar; the detail is fetched once, after the job is terminal, and
+    persisted in one transaction.
+    """
+    job_id = int(trabajo_id)
+    local = _sunat_job_progress(store, job_id)
+    summary: dict = {}
+    try:
+        summary = validator.job_status(job_id, detalle=False)
+    except UpstreamError as exc:
+        if getattr(exc, "http_status", None) == 404:
+            if int(local.get("pendientes") or 0) > 0:
+                try:
+                    store.mark_job_missing(
+                        job_id,
+                        "Trabajo SUNAT no encontrado; reintentar.",
+                    )
+                except Exception as store_exc:  # noqa: BLE001
+                    logger.warning(
+                        "SUNAT job %s cleanup failed: %s",
+                        job_id,
+                        type(store_exc).__name__,
+                    )
+                local = _sunat_job_progress(store, job_id)
+        elif _sunat_local_complete(local):
+            summary = {}  # validator down but local results are complete
+        else:
+            raise
+
+    trabajo = summary.get("trabajo", {}) if isinstance(summary, dict) else {}
+    estado = str(trabajo.get("Estado", "")).strip().upper()
+    if not estado and _sunat_local_complete(local):
+        estado = "COMPLETADO"
+    terminal = _sunat_job_terminal(estado)
+
+    resultados: list[dict[str, str]] = []
+    if persist and terminal and not _sunat_local_complete(local):
+        detail = validator.job_status(job_id, detalle=True)
+        detail_trabajo = (
+            detail.get("trabajo", {}) if isinstance(detail, dict) else {}
+        )
+        if isinstance(detail_trabajo, dict) and detail_trabajo:
+            trabajo = detail_trabajo
+            estado = str(trabajo.get("Estado", estado)).strip().upper() or estado
+        resultados = _persist_sunat_job_detail(
+            store, detail, trabajo_id=job_id, usuario=usuario
+        )
+        local = _sunat_job_progress(store, job_id)
+
+    total = max(
+        int(trabajo.get("Total") or 0) if isinstance(trabajo, dict) else 0,
+        int(local.get("total") or 0),
+    )
+    exitosos = int(local.get("exitosos") or 0)
+    errores = int(local.get("errores") or 0)
+    local_pending = int(local.get("pendientes") or 0)
+    # Every local row that is no longer PENDIENTE/PROCESANDO already has an
+    # answer, including DESCONOCIDO (which is neither success nor error).
+    settled = max(total - local_pending, 0) if local else exitosos + errores
+    procesados = max(
+        int(trabajo.get("Procesados") or 0) if isinstance(trabajo, dict) else 0,
+        settled,
+    )
+    if total:
+        procesados = min(procesados, total)
+    pendientes = local_pending if local else max(total - procesados, 0)
+    porcentaje = (
+        round(min(100.0, max(0.0, (procesados / total) * 100)), 1)
+        if total
+        else 0.0
+    )
+    if terminal:
+        if estado == "CANCELADO":
+            mensaje = "Validación cancelada."
+        elif estado in ("ERROR", "COMPLETADO_ERROR") or errores:
+            mensaje = "Validación completada con errores."
+        else:
+            mensaje = "Validación completada."
+    elif estado in ("EN_COLA", "PENDIENTE"):
+        mensaje = "Lote en cola de SUNAT."
+    elif estado:
+        mensaje = "Consultando SUNAT…"
+    else:
+        mensaje = "Esperando estado de SUNAT…"
     return {
-        "trabajo_id": int(trabajo_id),
-        "estado": estado_job,
-        "total": trabajo.get("Total") if isinstance(trabajo, dict) else None,
-        "procesados": trabajo.get("Procesados") if isinstance(trabajo, dict) else None,
+        "trabajo_id": job_id,
+        "estado": estado,
+        "total": total,
+        "procesados": procesados,
+        "exitosos": exitosos,
+        "errores": errores,
+        "pendientes": pendientes,
+        "porcentaje": porcentaje,
+        "mensaje": mensaje,
         "resultados": resultados,
+        "actualizado_en": (
+            now if isinstance(now, datetime) else datetime.now()
+        ).isoformat(timespec="seconds"),
     }
+
+
+def reconcile_pending_sunat_jobs(
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    usuario: str = "",
+    max_jobs: int = 50,
+    stale_minutes: int = 10,
+    now: datetime | None = None,
+) -> dict:
+    """Close the loop for jobs whose client stopped polling.
+
+    This is the server-side safety net: the validator finishes a batch even
+    when the browser is closed, so every pending TrabajoID is reconciled here
+    and the local cache is updated without a user request.
+    """
+    current = now if isinstance(now, datetime) else datetime.now()
+    stale = 0
+    try:
+        stale = int(
+            store.mark_stale_unsubmitted(
+                stale_minutes,
+                "Envío no confirmado; reintentar.",
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SUNAT stale submit cleanup failed: %s", type(exc).__name__)
+    try:
+        jobs = store.pending_jobs(max(1, int(max_jobs)))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SUNAT pending jobs read failed: %s", type(exc).__name__)
+        jobs = []
+    resumen = {
+        "jobs": len(jobs),
+        "reconciliados": 0,
+        "pendientes": 0,
+        "errores": stale,
+    }
+    for job in jobs:
+        try:
+            job_id = int(job.get("TrabajoID"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            result = sunat_job_status(
+                validator,
+                store,
+                trabajo_id=job_id,
+                usuario=usuario,
+                now=current,
+            )
+        except UpstreamError as exc:
+            if getattr(exc, "http_status", None) == 404:
+                try:
+                    resumen["errores"] += int(
+                        store.mark_job_missing(
+                            job_id,
+                            "Trabajo SUNAT no encontrado; reintentar.",
+                        )
+                    )
+                except Exception as store_exc:  # noqa: BLE001
+                    logger.warning(
+                        "SUNAT job %s cleanup failed: %s",
+                        job_id,
+                        type(store_exc).__name__,
+                    )
+            else:
+                logger.warning(
+                    "SUNAT job %s reconcile failed: %s",
+                    job_id,
+                    type(exc).__name__,
+                )
+            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SUNAT job %s reconcile failed: %s",
+                job_id,
+                type(exc).__name__,
+            )
+            continue
+        resumen["reconciliados"] += 1
+        resumen["pendientes"] += int(result.get("pendientes") or 0)
+    return resumen
 
 
 def sunat_revalidate(

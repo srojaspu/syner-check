@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -19,6 +20,7 @@ import {
   flexRender,
   type ColumnDef,
   type Column,
+  type Header,
   type Table,
 } from "@tanstack/react-table";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -121,14 +123,18 @@ function Root<T>({
 
   useResetPageOnDataChange(data, setPagination);
 
-  // Push filtered originals up (all pages). getFilteredRowModel() memoizes
-  // on filters/data, so this fires only on real changes — no render loop.
-  const filteredOriginals = table
-    .getFilteredRowModel()
-    .rows.map((row) => row.original);
+  // Push filtered originals up (all pages). getFilteredRowModel() memoizes on
+  // filters/data, so `filteredRows` keeps a stable identity between renders.
+  // Mapping inside useMemo is required: a fresh array on every render made the
+  // effect fire every render, and a parent that stores the callback result in
+  // state re-rendered us forever (render loop).
+  const filteredRows = table.getFilteredRowModel().rows;
+  const filteredOriginals = useMemo(
+    () => filteredRows.map((row) => row.original),
+    [filteredRows],
+  );
   useEffect(() => {
     onFilteredRowsChange?.(filteredOriginals);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredOriginals, onFilteredRowsChange]);
 
   // The table instance is a stable mutable object (useReactTable stores it in a
@@ -236,7 +242,8 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
 const SKELETON_ROWS = 8;
 
 function SkeletonRows<T>({ table }: { table: Table<T> }) {
-  const colCount = table.getAllLeafColumns().length;
+  const action = hasRowAction(table);
+  const colCount = table.getAllLeafColumns().length + (action ? 1 : 0);
   return (
     <div role="status" aria-busy="true" aria-label="Cargando resultados">
       <UiTable>
@@ -244,13 +251,18 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>
               {group.headers.map((header) => (
-                <TableHead key={header.id}>
+                <TableHead key={header.id} scope="col">
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
                   )}
                 </TableHead>
               ))}
+              {action ? (
+                <TableHead scope="col" className="w-12">
+                  <span className="sr-only">Acciones</span>
+                </TableHead>
+              ) : null}
             </TableRow>
           ))}
         </TableHeader>
@@ -274,6 +286,18 @@ function sortDirection<T>(column: Column<T>): "ascending" | "descending" | "none
   if (column.getIsSorted() === "asc") return "ascending";
   if (column.getIsSorted() === "desc") return "descending";
   return "none";
+}
+
+function headerLabel<T>(header: Header<T, unknown>): string {
+  const value = header.column.columnDef.header;
+  return typeof value === "string" ? value : header.column.id;
+}
+
+function hasRowAction<T>(table: Table<T>): boolean {
+  return Boolean(
+    (table.options.meta as { onRowClick?: (row: T) => void } | undefined)
+      ?.onRowClick,
+  );
 }
 
 function View<T>({ loading }: { loading?: boolean }) {
@@ -300,36 +324,31 @@ function View<T>({ loading }: { loading?: boolean }) {
   const onRowClick = (table.options.meta as { onRowClick?: (row: T) => void })
     ?.onRowClick;
   return (
-    <UiTable>
+    <UiTable aria-label="Comprobantes">
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id}>
             {group.headers.map((header) => (
               <TableHead
                 key={header.id}
-                onClick={
-                  header.column.getCanSort()
-                    ? header.column.getToggleSortingHandler()
-                    : undefined
-                }
+                scope="col"
                 aria-sort={
                   header.column.getCanSort()
                     ? sortDirection(header.column)
                     : undefined
                 }
-                className={
-                  header.column.getCanSort()
-                    ? "cursor-pointer select-none"
-                    : undefined
-                }
-                title={header.column.getCanSort() ? "Ordenar" : undefined}
               >
-                <span className="inline-flex items-center gap-1">
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                  {header.column.getCanSort() ? (
+                {header.column.getCanSort() ? (
+                  <button
+                    type="button"
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="inline-flex items-center gap-1 rounded-sm text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    aria-label={`Ordenar por ${headerLabel(header)}`}
+                  >
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
                     <span aria-hidden>
                       {header.column.getIsSorted() === "asc" ? (
                         <HugeiconsIcon icon={ArrowUp01Icon} size={13} strokeWidth={2} />
@@ -339,10 +358,22 @@ function View<T>({ loading }: { loading?: boolean }) {
                         <HugeiconsIcon icon={UnfoldMoreIcon} size={13} strokeWidth={2} />
                       )}
                     </span>
-                  ) : null}
-                </span>
+                  </button>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
+                  </span>
+                )}
               </TableHead>
             ))}
+            {onRowClick ? (
+              <TableHead scope="col" className="w-12">
+                <span className="sr-only">Acciones</span>
+              </TableHead>
+            ) : null}
           </TableRow>
         ))}
         <TableRow>
@@ -351,6 +382,7 @@ function View<T>({ loading }: { loading?: boolean }) {
               <ColumnFilter column={header.column} />
             </TableHead>
           )) ?? null}
+          {onRowClick ? <TableHead className="w-12" /> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -365,6 +397,26 @@ function View<T>({ loading }: { loading?: boolean }) {
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </TableCell>
             ))}
+            {onRowClick ? (
+              <TableCell className="w-12 text-right">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label="Ver detalle del comprobante"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRowClick(row.original);
+                  }}
+                >
+                  <HugeiconsIcon
+                    icon={ChevronRightIcon}
+                    size={16}
+                    strokeWidth={2}
+                  />
+                </Button>
+              </TableCell>
+            ) : null}
           </TableRow>
         ))}
       </TableBody>
@@ -397,7 +449,11 @@ function Pagination({ loading }: { loading?: boolean }) {
   const to = Math.min(from + table.getRowModel().rows.length - 1, total);
   return (
     <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
-      <span className="text-sm text-muted-foreground">
+      <span
+        className="text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         Mostrando {from}–{to} de {total}
       </span>
       <div className="flex items-center gap-2">
