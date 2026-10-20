@@ -169,6 +169,25 @@ describe("DataTable interactions", () => {
     expect(screen.getByText("OID")).toBeTruthy();
   });
 
+  it("lets Cliente absorb the remaining width while other columns size to content", () => {
+    setViewport(1280, false);
+    const longName =
+      "EMPRESA DE TELECOMUNICACIONES MULTIMEDIA ALFA SOCIEDAD ANONIMA CERRADA";
+    const [row] = makeRows(1);
+    render(<Harness rows={[{ ...row, contactName: longName }]} />);
+
+    const name = screen.getByTitle(longName);
+    expect(name.textContent).toBe(longName);
+    expect(name.className).toContain("w-full");
+    expect(name.className).toContain("[contain:inline-size]");
+    expect(name.className).toContain("truncate");
+
+    const clienteHeader = screen.getByText("Cliente").closest("th");
+    const tipoHeader = screen.getByText("Tipo").closest("th");
+    expect(clienteHeader?.className).toContain("w-full");
+    expect(tipoHeader?.className).toContain("w-[1%]");
+  });
+
   it("clears filters for columns hidden by a smaller viewport", async () => {
     const user = userEvent.setup();
     setViewport(1024, false);

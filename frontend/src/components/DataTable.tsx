@@ -96,6 +96,24 @@ export type ResponsivePriority =
   | "xl"
   | "2xl";
 
+/**
+ * How a column participates in the table's auto layout. Content columns shrink
+ * to their contents; the grow column absorbs the remaining width.
+ */
+export type ColumnWidth = "content" | "grow";
+
+const COLUMN_WIDTH_CLASS: Record<ColumnWidth, string> = {
+  content: "w-[1%]",
+  grow: "w-full",
+};
+
+function columnWidthClass<T>(column: Column<T>): string {
+  const width =
+    (column.columnDef.meta as { width?: ColumnWidth } | undefined)?.width ??
+    "content";
+  return COLUMN_WIDTH_CLASS[width];
+}
+
 const BREAKPOINTS = ["base", "sm", "md", "lg", "xl", "2xl"] as const;
 type Breakpoint = (typeof BREAKPOINTS)[number];
 
@@ -330,7 +348,6 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
 const SKELETON_ROWS = 8;
 
 function SkeletonRows<T>({ table }: { table: Table<T> }) {
-  const colCount = table.getVisibleLeafColumns().length;
   return (
     <div role="status" aria-busy="true" aria-label="Cargando resultados">
       <UiTable>
@@ -341,7 +358,7 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
                 <TableHead
                   key={header.id}
                   scope="col"
-                  className="px-2 sm:px-3"
+                  className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
                 >
                   {flexRender(
                     header.column.columnDef.header,
@@ -355,8 +372,11 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
         <TableBody>
           {Array.from({ length: SKELETON_ROWS }).map((_, r) => (
             <TableRow key={r} aria-hidden="true">
-              {Array.from({ length: colCount }).map((_, c) => (
-                <TableCell key={c} className="p-2 sm:p-3">
+              {table.getVisibleLeafColumns().map((column) => (
+                <TableCell
+                  key={column.id}
+                  className={`p-2 sm:p-3 ${columnWidthClass(column)}`}
+                >
                   <Skeleton className="h-4 w-full" />
                 </TableCell>
               ))}
@@ -418,7 +438,7 @@ function View<T>({ loading }: { loading?: boolean }) {
               <TableHead
                 key={header.id}
                 scope="col"
-                className="px-2 sm:px-3"
+                className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
                 aria-sort={
                   header.column.getCanSort()
                     ? sortDirection(header.column)
@@ -460,7 +480,10 @@ function View<T>({ loading }: { loading?: boolean }) {
         ))}
         <TableRow>
           {table.getHeaderGroups()[0]?.headers.map((header) => (
-            <TableHead key={`filter-${header.id}`} className="px-2 sm:px-3">
+            <TableHead
+              key={`filter-${header.id}`}
+              className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
+            >
               <ColumnFilter column={header.column} />
             </TableHead>
           )) ?? null}
@@ -490,7 +513,10 @@ function View<T>({ loading }: { loading?: boolean }) {
             }
           >
             {row.getVisibleCells().map((cell) => (
-              <TableCell key={cell.id} className="p-2 sm:p-3">
+              <TableCell
+                key={cell.id}
+                className={`p-2 sm:p-3 ${columnWidthClass(cell.column)}`}
+              >
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </TableCell>
             ))}

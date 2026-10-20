@@ -2,13 +2,18 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { TipoDocumento, Voucher } from "../api/types";
-import type { ColumnFilterConfig, ResponsivePriority } from "./DataTable";
+import type {
+  ColumnFilterConfig,
+  ColumnWidth,
+  ResponsivePriority,
+} from "./DataTable";
 
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData, TValue> {
     filter?: ColumnFilterConfig;
     priority?: ResponsivePriority;
+    width?: ColumnWidth;
   }
 }
 
@@ -131,12 +136,19 @@ export function voucherColumns(
       meta: {
         filter: { variant: "text", placeholder: "Cliente…" },
         priority: "xl",
+        width: "grow",
       },
-      cell: ({ row }) => (
-        <span>
-          {row.original.contactName || row.original.contact?.name || "—"}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const name = row.original.contactName || row.original.contact?.name;
+        return (
+          <span
+            className="block w-full truncate [contain:inline-size]"
+            title={name ?? undefined}
+          >
+            {name || "—"}
+          </span>
+        );
+      },
     },
     {
       accessorKey: "crossTotal",
