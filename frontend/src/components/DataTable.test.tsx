@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(cleanup);
 import type { Voucher } from "../api/types";
@@ -76,6 +76,36 @@ describe("DataTable interactions", () => {
     );
     expect(screen.getByText("F001-00030")).toBeTruthy();
     expect(screen.queryByText("F001-00000")).toBeNull();
+  });
+
+  it("opens a row with the keyboard", async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    render(
+      <DataTable.Root
+        data={makeRows(3)}
+        columns={voucherColumns()}
+        onRowClick={onRowClick}
+      >
+        <DataTable.View<Voucher> />
+      </DataTable.Root>,
+    );
+
+    const row = screen.getByRole("row", {
+      name: "Ver detalle del comprobante F001-00000",
+    });
+    row.focus();
+
+    await user.keyboard("{Enter}");
+    expect(onRowClick).toHaveBeenCalledWith(
+      expect.objectContaining({ number: "F001-00000" }),
+    );
+
+    onRowClick.mockClear();
+    await user.keyboard(" ");
+    expect(onRowClick).toHaveBeenCalledWith(
+      expect.objectContaining({ number: "F001-00000" }),
+    );
   });
 
   it("sorts by column header", async () => {

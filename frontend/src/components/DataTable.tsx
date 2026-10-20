@@ -242,8 +242,7 @@ function ColumnFilter<T>({ column }: { column: Column<T> }) {
 const SKELETON_ROWS = 8;
 
 function SkeletonRows<T>({ table }: { table: Table<T> }) {
-  const action = hasRowAction(table);
-  const colCount = table.getAllLeafColumns().length + (action ? 1 : 0);
+  const colCount = table.getAllLeafColumns().length;
   return (
     <div role="status" aria-busy="true" aria-label="Cargando resultados">
       <UiTable>
@@ -258,11 +257,6 @@ function SkeletonRows<T>({ table }: { table: Table<T> }) {
                   )}
                 </TableHead>
               ))}
-              {action ? (
-                <TableHead scope="col" className="w-12">
-                  <span className="sr-only">Acciones</span>
-                </TableHead>
-              ) : null}
             </TableRow>
           ))}
         </TableHeader>
@@ -293,11 +287,11 @@ function headerLabel<T>(header: Header<T, unknown>): string {
   return typeof value === "string" ? value : header.column.id;
 }
 
-function hasRowAction<T>(table: Table<T>): boolean {
-  return Boolean(
-    (table.options.meta as { onRowClick?: (row: T) => void } | undefined)
-      ?.onRowClick,
-  );
+function rowActionLabel<T>(row: T): string {
+  const number = (row as { number?: string }).number;
+  return number
+    ? `Ver detalle del comprobante ${number}`
+    : "Ver detalle del comprobante";
 }
 
 function View<T>({ loading }: { loading?: boolean }) {
@@ -369,11 +363,6 @@ function View<T>({ loading }: { loading?: boolean }) {
                 )}
               </TableHead>
             ))}
-            {onRowClick ? (
-              <TableHead scope="col" className="w-12">
-                <span className="sr-only">Acciones</span>
-              </TableHead>
-            ) : null}
           </TableRow>
         ))}
         <TableRow>
@@ -382,7 +371,6 @@ function View<T>({ loading }: { loading?: boolean }) {
               <ColumnFilter column={header.column} />
             </TableHead>
           )) ?? null}
-          {onRowClick ? <TableHead className="w-12" /> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -390,33 +378,29 @@ function View<T>({ loading }: { loading?: boolean }) {
           <TableRow
             key={row.id}
             onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-            className={onRowClick ? "cursor-pointer" : undefined}
+            onKeyDown={
+              onRowClick
+                ? (event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onRowClick(row.original);
+                  }
+                : undefined
+            }
+            tabIndex={onRowClick ? 0 : undefined}
+            aria-label={onRowClick ? rowActionLabel(row.original) : undefined}
+            className={
+              onRowClick
+                ? "cursor-pointer outline-none focus-visible:bg-muted/60"
+                : undefined
+            }
           >
             {row.getVisibleCells().map((cell) => (
               <TableCell key={cell.id}>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </TableCell>
             ))}
-            {onRowClick ? (
-              <TableCell className="w-12 text-right">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label="Ver detalle del comprobante"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRowClick(row.original);
-                  }}
-                >
-                  <HugeiconsIcon
-                    icon={ChevronRightIcon}
-                    size={16}
-                    strokeWidth={2}
-                  />
-                </Button>
-              </TableCell>
-            ) : null}
           </TableRow>
         ))}
       </TableBody>
