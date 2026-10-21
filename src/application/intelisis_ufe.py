@@ -31,6 +31,42 @@ from src.domain.errors import NotFoundError
 MAX_DIAS = 31
 # Tope de ventas por periodo (mismo tope que el PHP).
 MAX_VENTAS = 20_000
+# Tope de filas que vuelve el listado. El filtro va al servidor: con 31 dias
+# el universo llega a ~18.000 documentos y un payload de 39 campos por fila
+# pesaba 17 MB (inutilizable en el navegador). El listado devuelve solo lo
+# que la tabla necesita y, si aun asi es mucho, se recorta avisando.
+MAX_FILAS_LISTADO = 5_000
+
+# Campos que la tabla usa. El resto vive en el detalle (GET por id_venta).
+CAMPOS_LISTA: tuple[str, ...] = (
+    "id_venta",
+    "tipo",
+    "comprobante",
+    "documento",
+    "documento_estimado",
+    "mov",
+    "mov_id",
+    "fecha_emision",
+    "sucursal",
+    "sucursal_nombre",
+    "cliente",
+    "total",
+    "estatus_erp",
+    "referencia",
+    "estado_generacion",
+    "generador",
+    "incidencias",
+    "resultado",
+    "detalle_incidencia",
+    "en_espera",
+    "exento_generador",
+    "fuera_de_bitacora",
+    "etapa",
+    "intentos",
+    "ultimo_intento",
+    "estado_sunat",
+    "sunat",
+)
 
 
 class RangoInvalidoError(ValueError):
@@ -172,6 +208,8 @@ def _aplica_filtros(
     estados: Sequence[str] = (),
     incidencia: str = "",
     tipo: str = "",
+    generador: str = "",
+    sunat: str = "",
     sucursal: int | None = None,
     q: str = "",
 ) -> bool:
@@ -188,20 +226,55 @@ def _aplica_filtros(
             return False
     if tipo and _texto(fila.get("tipo")).upper() != tipo.upper():
         return False
+    if generador and _texto(fila.get("generador")).upper() != generador.upper():
+        return False
+    if sunat and _texto(fila.get("estado_sunat")).upper() != sunat.upper():
+        return False
     if sucursal is not None and int(fila.get("sucursal") or 0) != int(sucursal):
         return False
     if q:
         aguja = q.strip().lower()
         campos = (
+            _texto(fila.get("comprobante")),
             _texto(fila.get("documento")),
             _texto(fila.get("cliente")),
             _texto(fila.get("mov_id")),
+            _texto(fila.get("mov")),
+            _texto(fila.get("sucursal_nombre")),
             _texto(fila.get("cliente_codigo")),
             str(fila.get("id_venta") or ""),
         )
         if not any(aguja in campo.lower() for campo in campos):
             return False
     return True
+
+
+def _por_dia(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cobertura por dia: emitidos, sin traza y con incidencia.
+
+    Es el equivalente del bloque "cobertura" de la pestana FE del PHP (alli
+    era la carga del portal; aca, la cobertura del generador).
+    """
+    dias: dict[str, dict[str, Any]] = {}
+    for fila in filas:
+        dia = _texto(fila.get("fecha_emision"))
+        if not dia:
+            continue
+        item = dias.setdefault(
+            dia,
+            {
+                "dia": dia,
+                "documentos": 0,
+                "sin_traza": 0,
+                "con_incidencia": 0,
+            },
+        )
+        item["documentos"] += 1
+        if fila["estado_generacion"] == dominio.ESTADO_SIN_REGISTRO:
+            item["sin_traza"] += 1
+        if fila["resultado"] != dominio.RESULTADO_CONFORME:
+            item["con_incidencia"] += 1
+    return [dias[dia] for dia in sorted(dias, reverse=True)]
 
 
 def _adjuntar_sunat(
@@ -301,13 +374,16 @@ def listar_ufe(
     estados: Sequence[str] = (),
     incidencia: str = "",
     tipo: str = "",
+    generador: str = "",
+    sunat: str = "",
     sucursal: int | None = None,
     q: str = "",
 ) -> dict[str, Any]:
     """Lista los comprobantes del universo UFE del periodo, con su estado.
 
-    Los KPIs se calculan sobre el periodo completo (como en el PHP) y los
-    filtros acotan las filas de la tabla.
+    Los KPIs y la cobertura por dia se calculan sobre el periodo completo
+    (como en el PHP); los filtros acotan las filas de la tabla y se aplican
+    en el servidor, que es lo que hace usable un periodo de 31 dias.
     """
     inicio, fin = validar_rango(start_iso, end_iso)
     momento = now or datetime.now()
@@ -352,6 +428,7 @@ def listar_ufe(
                 fila["resultado"] = dominio.RESULTADO_REVISAR
 
     kpis = _kpis(filas)
+    kpis["por_dia"] = _por_dia(filas)
 
     filtradas = [
         fila
@@ -362,10 +439,17 @@ def listar_ufe(
             estados=estados,
             incidencia=incidencia,
             tipo=tipo,
+            generador=generador,
+            sunat=sunat,
             sucursal=sucursal,
             q=q,
         )
     ]
+
+    # El navegador no puede con 18.000 filas: se recorta y se avisa.
+    truncado = len(filtradas) > MAX_FILAS_LISTADO
+    if truncado:
+        filtradas = filtradas[:MAX_FILAS_LISTADO]
 
     return {
         "desde": inicio.isoformat(),
@@ -374,7 +458,12 @@ def listar_ufe(
         "intelisis_enabled": True,
         "kpis": kpis,
         "filtrados": len(filtradas),
-        "rows": filtradas,
+        "truncado": truncado,
+        "max_filas": MAX_FILAS_LISTADO,
+        "rows": [
+            {campo: fila.get(campo) for campo in CAMPOS_LISTA}
+            for fila in filtradas
+        ],
     }
 
 

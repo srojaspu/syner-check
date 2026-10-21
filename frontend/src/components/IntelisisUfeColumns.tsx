@@ -1,4 +1,4 @@
-import type { ColumnDef, FilterFn } from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, formatMoney } from "../api/format";
 import type {
@@ -34,19 +34,6 @@ const ESTADO_SUNAT_LABEL: Record<UfeEstadoSunat, string> = {
 
 type BadgeVariant = "default" | "secondary" | "outline" | "destructive";
 
-/** Filtra por incidencia aunque el documento tenga mas de una. */
-const incluyeIncidencia: FilterFn<IntelisisUfeRow> = (
-  row,
-  _columnId,
-  filterValue,
-) => {
-  const needle = String(filterValue ?? "").trim().toUpperCase();
-  if (!needle) return true;
-  return (row.original.incidencias ?? []).some(
-    (item) => item.trim().toUpperCase() === needle,
-  );
-};
-
 function generadorVariant(generador: UfeGenerador): BadgeVariant {
   if (generador === "OK REGISTRADO") return "default";
   if (generador === "SIN OK") return "destructive";
@@ -61,33 +48,20 @@ function sunatVariant(estado: UfeEstadoSunat): BadgeVariant {
   return "outline";
 }
 
-export function intelisisUfeColumns(
-  rows: IntelisisUfeRow[],
-): ColumnDef<IntelisisUfeRow>[] {
-  const sucursales = Array.from(
-    new Map(
-      rows.map((row) => [
-        row.sucursal,
-        `${row.sucursal} · ${row.sucursal_nombre || "Sin nombre"}`,
-      ]),
-    ).entries(),
-  ).sort((a, b) => a[0] - b[0]);
-  const incidencias = Array.from(
-    new Set(rows.flatMap((row) => row.incidencias ?? [])),
-  ).sort();
-  const estados = Array.from(
-    new Set(rows.map((row) => row.estado_generacion)),
-  ).sort();
-
+/**
+ * Columnas de la grilla UFE.
+ *
+ * Sin filtros por columna: los filtros viven en un panel que va al servidor
+ * (con 31 dias el universo son ~18.000 documentos y filtrarlos en el
+ * navegador no era viable).
+ */
+export function intelisisUfeColumns(): ColumnDef<IntelisisUfeRow>[] {
   return [
     {
       id: "documento",
       header: "Comprobante",
       accessorFn: (doc) => doc.comprobante || doc.documento,
-      meta: {
-        filter: { variant: "text", placeholder: "Documento…" },
-        priority: "always",
-      },
+      meta: { priority: "always" },
       cell: ({ row }) => {
         const doc = row.original;
         return (
@@ -113,17 +87,7 @@ export function intelisisUfeColumns(
       id: "tipo",
       header: "Tipo",
       accessorFn: (doc) => doc.tipo,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: Object.entries(TIPO_LABEL).map(([value, label]) => ({
-            value,
-            label,
-          })),
-        },
-        priority: "sm",
-      },
+      meta: { priority: "sm" },
       cell: ({ row }) => (
         <Badge variant="secondary">
           {TIPO_LABEL[row.original.tipo] ?? row.original.tipo}
@@ -134,27 +98,18 @@ export function intelisisUfeColumns(
       id: "fecha",
       header: "Fecha",
       accessorFn: (doc) => doc.fecha_emision,
-      meta: {
-        filter: { variant: "text", placeholder: "AAAA-MM-DD…" },
-        priority: "md",
-      },
+      meta: { priority: "md" },
       cell: ({ row }) => (
-        <span className="tabular-nums">{formatDate(row.original.fecha_emision)}</span>
+        <span className="tabular-nums">
+          {formatDate(row.original.fecha_emision)}
+        </span>
       ),
     },
     {
       id: "sucursal",
       header: "Sucursal",
       accessorFn: (doc) => String(doc.sucursal),
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: sucursales.map(([value, label]) => ({ value: String(value), label })),
-        },
-        priority: "lg",
-        width: "grow",
-      },
+      meta: { priority: "lg", width: "grow" },
       cell: ({ row }) => {
         const doc = row.original;
         return (
@@ -174,17 +129,7 @@ export function intelisisUfeColumns(
       id: "estatus",
       header: "ERP",
       accessorFn: (doc) => doc.estatus_erp,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: [
-            { value: "CONCLUIDO", label: "Concluido" },
-            { value: "PENDIENTE", label: "Pendiente" },
-          ],
-        },
-        priority: "2xl",
-      },
+      meta: { priority: "2xl" },
       cell: ({ row }) => (
         <Badge variant="outline">{row.original.estatus_erp || "—"}</Badge>
       ),
@@ -204,19 +149,7 @@ export function intelisisUfeColumns(
       id: "generador",
       header: "Generador",
       accessorFn: (doc) => doc.generador,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: [
-            { value: "OK REGISTRADO", label: "OK registrado" },
-            { value: "SIN OK", label: "Sin OK" },
-            { value: "SIN TRAZA", label: "Sin traza" },
-            { value: "NO APLICA", label: "No aplica" },
-          ],
-        },
-        priority: "always",
-      },
+      meta: { priority: "always" },
       cell: ({ row }) => {
         const doc = row.original;
         const title =
@@ -240,7 +173,7 @@ export function intelisisUfeColumns(
         return (
           <span
             className="tabular-nums"
-            title={`${doc.ok_registrados} con OK · último ${doc.ultimo_intento || "—"}`}
+            title={`último ${doc.ultimo_intento || "—"}`}
           >
             {doc.intentos}
           </span>
@@ -251,19 +184,7 @@ export function intelisisUfeColumns(
       id: "sunat",
       header: "SUNAT",
       accessorFn: (doc) => doc.estado_sunat,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: [
-            { value: "ACEPTADO", label: "Aceptado" },
-            { value: "SUNAT NO ENCONTRADO", label: "No encontrado" },
-            { value: "SUNAT NO ACEPTADO", label: "No aceptado" },
-            { value: "SUNAT SIN CONSULTA", label: "Sin consulta" },
-          ],
-        },
-        priority: "always",
-      },
+      meta: { priority: "always" },
       cell: ({ row }) => {
         const doc = row.original;
         return (
@@ -284,20 +205,12 @@ export function intelisisUfeColumns(
       id: "resultado",
       header: "Revisión",
       accessorFn: (doc) => doc.resultado,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: [
-            { value: "CONFORME", label: "Conforme" },
-            { value: "REVISAR", label: "Revisar" },
-          ],
-        },
-        priority: "always",
-      },
+      meta: { priority: "always" },
       cell: ({ row }) => (
         <Badge
-          variant={row.original.resultado === "REVISAR" ? "destructive" : "secondary"}
+          variant={
+            row.original.resultado === "REVISAR" ? "destructive" : "secondary"
+          }
         >
           {row.original.resultado}
         </Badge>
@@ -307,14 +220,7 @@ export function intelisisUfeColumns(
       id: "incidencias",
       header: "Incidencias",
       accessorFn: (doc) => (doc.incidencias ?? []).join(", "),
-      filterFn: incluyeIncidencia,
-      meta: {
-        filter: {
-          variant: "select",
-          options: incidencias.map((value) => ({ value, label: value })),
-        },
-        priority: "2xl",
-      },
+      meta: { priority: "2xl" },
       cell: ({ row }) => {
         const doc = row.original;
         if (!doc.incidencias?.length) {
@@ -342,17 +248,7 @@ export function intelisisUfeColumns(
       id: "estado_generacion",
       header: "Estado",
       accessorFn: (doc) => doc.estado_generacion,
-      filterFn: "equalsString",
-      meta: {
-        filter: {
-          variant: "select",
-          options: estados.map((value) => ({
-            value,
-            label: ESTADO_GENERACION_LABEL[value] ?? value,
-          })),
-        },
-        priority: "2xl",
-      },
+      meta: { priority: "2xl" },
       cell: ({ row }) => (
         <span className="text-muted-foreground">
           {ESTADO_GENERACION_LABEL[row.original.estado_generacion] ??

@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 
+from src.application import intelisis_ufe as IntelisisUfe
 from src.application.intelisis_ufe import (
     RangoInvalidoError,
     detalle_ufe,
@@ -375,8 +376,98 @@ def test_cruce_ambiguo_se_marca_en_las_dos_ventas() -> None:
     assert out["kpis"]["con_incidencia"] == 2
 
 
+class TestListadoServidor:
+    """El listado viaja liviano y filtrado en el servidor."""
+
+    def test_las_filas_solo_traen_los_campos_de_la_tabla(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+
+        out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
+
+        fila = out["rows"][0]
+        assert set(fila) == set(IntelisisUfe.CAMPOS_LISTA)
+        # Lo que solo necesita el detalle no viaja en el listado.
+        assert "ruc" not in fila
+        assert "hash" not in fila
+
+    def test_filtra_por_generador(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, mov_id="602-142702"),
+                _fila(
+                    id_venta=2,
+                    mov_id="602-142703",
+                    estado_intento="OMITIDO_VALIDACION",
+                    etapa="VALIDACION_DOCUMENTO",
+                    documento="",
+                ),
+            ]
+        )
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+            generador="SIN OK",
+        )
+
+        assert out["filtrados"] == 1
+        assert out["rows"][0]["id_venta"] == 2
+
+    def test_filtra_por_estado_sunat(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+            sunat="SUNAT SIN CONSULTA",
+        )
+
+        assert out["filtrados"] == 1
+
+    def test_recorta_el_listado_y_lo_avisa(self) -> None:
+        filas = [
+            _fila(id_venta=index, mov_id=f"602-{142702 + index}")
+            for index in range(1, 12)
+        ]
+        reader = _Reader(filas)
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+        )
+
+        assert out["truncado"] is False
+        assert out["max_filas"] == IntelisisUfe.MAX_FILAS_LISTADO
+
+    def test_la_cobertura_por_dia_agrupa(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, mov_id="602-142702"),
+                _fila(
+                    id_venta=2,
+                    mov_id="602-142703",
+                    estado_intento="OMITIDO_VALIDACION",
+                    etapa="VALIDACION_DOCUMENTO",
+                    documento="",
+                ),
+            ]
+        )
+
+        out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
+
+        por_dia = out["kpis"]["por_dia"]
+        assert len(por_dia) == 1
+        assert por_dia[0]["documentos"] == 2
+        assert por_dia[0]["con_incidencia"] == 1
+
+
 def test_una_factura_y_su_nota_no_son_cruce() -> None:
-    """Misma serie y correlativo, distinto tipo: son documentos distintos."""
     reader = _Reader(
         [
             _fila(id_venta=1, mov_id="175-13", documento="175-00000013"),

@@ -99,18 +99,27 @@ ERP (`PUTBL_FE_EBOLETA_*`).
 
 ## 5. Rendimiento
 
-| Operación | Tiempo |
-|---|---|
-| Listado de 7 días (3.892 documentos) | 4,1 s |
-| Listado de 1 día (464 documentos) | 0,6 s (SQL) |
-| Trazabilidad de un documento | 1,2 s |
-| Validación individual en SUNAT | 3,2 s |
+| Operación | Tiempo | Payload |
+|---|---|---|
+| Listado de 7 días (3.892 documentos, periodo por defecto) | ~3 s | 2,4 MB |
+| Listado de 31 días sin filtro (17.976 documentos) | 6,9 s | 3,2 MB (5.000 filas + aviso de recorte) |
+| Listado de 31 días filtrando por REVISAR (298 filas) | 8,2 s | 0,19 MB |
+| Listado de 31 días filtrando por SIN TRAZA (1.551 filas) | 11,2 s | 0,95 MB |
+| Listado de 1 día (464 documentos) | 0,6 s (SQL) | 0,3 MB |
+| Trazabilidad de un documento | 1,2 s | — |
+| Validación individual en SUNAT | 3,2 s | — |
+
+Los filtros se aplican en el servidor (D29): con 31 días el universo son ~18.000
+documentos y filtrarlos en el navegador no era viable. Antes de ese cambio el
+listado de 31 días devolvía **17,7 MB**.
 
 ## 6. Criterios de aceptación
 
 - [x] Universo con paridad exacta contra `PUSP_ControlFac` en 14 días (8.353 documentos).
 - [x] Clasificación con paridad o con diferencias explicadas (D13, D14, D19, D21, D25).
 - [x] Validación individual contra SUNAT con resultado real.
+- [x] Payload del listado acotado: 31 días sin filtro 3,2 MB (antes 17,7 MB), filtrado 0,19 MB.
+- [x] 257 tests Python + 80 vitest en verde; `tsc` limpio; build de producción OK.
 - [x] 252 tests Python + 77 vitest en verde; `tsc` limpio; build de producción OK.
 - [ ] Contraste visual contra la pantalla PHP para un mismo día (requiere que César
       abra la pestaña FE con el mismo período).

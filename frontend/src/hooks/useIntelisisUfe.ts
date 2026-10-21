@@ -8,6 +8,7 @@ import {
 } from "../api/client";
 import type {
   IntelisisUfeDetalle,
+  IntelisisUfeFiltros,
   IntelisisUfeKpis,
   IntelisisUfeRow,
 } from "../api/types";
@@ -21,6 +22,9 @@ interface UfeState {
   intelisisEnabled: boolean;
   desde: string;
   hasta: string;
+  /** El listado se recorto por el tope de filas del servidor. */
+  truncado: boolean;
+  maxFilas: number;
 }
 
 const EMPTY: UfeState = {
@@ -32,6 +36,8 @@ const EMPTY: UfeState = {
   intelisisEnabled: false,
   desde: "",
   hasta: "",
+  truncado: false,
+  maxFilas: 0,
 };
 
 interface DetalleState {
@@ -80,7 +86,11 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
   const isCurrent = useCallback((id: number) => id === seq.current, []);
 
   const run = useCallback(
-    async (desde: string, hasta: string) => {
+    async (
+      desde: string,
+      hasta: string,
+      filtros: IntelisisUfeFiltros = {},
+    ) => {
       const { signal, id } = begin();
       setState((prev) => ({
         ...prev,
@@ -90,7 +100,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
         hasta,
       }));
       try {
-        const data = await getIntelisisUfe({ desde, hasta }, signal);
+        const data = await getIntelisisUfe({ desde, hasta, ...filtros }, signal);
         if (!isCurrent(id)) return;
         setState({
           rows: data.rows ?? [],
@@ -101,6 +111,8 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
           intelisisEnabled: Boolean(data.intelisis_enabled),
           desde: data.desde ?? desde,
           hasta: data.hasta ?? hasta,
+          truncado: Boolean(data.truncado),
+          maxFilas: Number(data.max_filas ?? 0),
         });
       } catch (error: unknown) {
         if (error instanceof RequestAbortedError || !isCurrent(id)) return;

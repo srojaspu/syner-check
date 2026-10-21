@@ -279,6 +279,8 @@ def intelisis_ufe_list(
     estados: Sequence[str] = (),
     incidencia: str = "",
     tipo: str = "",
+    generador: str = "",
+    sunat: str = "",
     sucursal: int | None = None,
     q: str = "",
 ) -> dict:
@@ -303,8 +305,11 @@ def intelisis_ufe_list(
                 "por_generador": [],
                 "por_incidencia": [],
                 "por_sucursal": [],
+                "por_dia": [],
             },
             "filtrados": 0,
+            "truncado": False,
+            "max_filas": 0,
             "rows": [],
         }
     _validator, sunat_store, sunat_ruc = _sunat_pair()
@@ -319,6 +324,8 @@ def intelisis_ufe_list(
             estados=estados,
             incidencia=incidencia,
             tipo=tipo,
+            generador=generador,
+            sunat=sunat,
             sucursal=sucursal,
             q=q,
         )

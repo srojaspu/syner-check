@@ -453,6 +453,13 @@ UFE_ESTADOS = {
     "fuera_de_bitacora",
 }
 UFE_TIPOS = {"BO", "FA", "NC", "ND"}
+UFE_GENERADORES = {"OK REGISTRADO", "SIN OK", "SIN TRAZA", "NO APLICA"}
+UFE_SUNAT = {
+    "ACEPTADO",
+    "SUNAT NO ENCONTRADO",
+    "SUNAT NO ACEPTADO",
+    "SUNAT SIN CONSULTA",
+}
 
 
 @app.get("/api/intelisis/ufe")
@@ -464,13 +471,16 @@ async def api_intelisis_ufe(
     estado: str = Query("", max_length=200),
     incidencia: str = Query("", max_length=60),
     tipo: str = Query("", max_length=4),
+    generador: str = Query("", max_length=20),
+    sunat: str = Query("", max_length=30),
     sucursal: int | None = Query(None),
     q: str = Query("", max_length=80),
 ):
     """Comprobantes de origen Intelisis y su estado de generacion (UFE).
 
     Solo lectura: la consulta porta el universo de ``dbo.PUSP_ControlFac`` y
-    no ejecuta ningun procedimiento almacenado.
+    no ejecuta ningun procedimiento almacenado. Los filtros se aplican en el
+    servidor: con 31 dias el universo llega a ~18.000 documentos.
     """
     protected(request)
     estados = [item.strip() for item in estado.split(",") if item.strip()]
@@ -481,6 +491,10 @@ async def api_intelisis_ufe(
         raise HTTPException(400, "Resultado invalido.")
     if tipo and tipo.upper() not in UFE_TIPOS:
         raise HTTPException(400, "Tipo de documento invalido.")
+    if generador and generador.upper() not in UFE_GENERADORES:
+        raise HTTPException(400, "Generador invalido.")
+    if sunat and sunat.upper() not in UFE_SUNAT:
+        raise HTTPException(400, "Estado SUNAT invalido.")
     try:
         return await run_blocking(
             clean_intelisis_ufe_list,
@@ -490,6 +504,8 @@ async def api_intelisis_ufe(
             estados=estados,
             incidencia=incidencia,
             tipo=tipo.upper(),
+            generador=generador.upper(),
+            sunat=sunat.upper(),
             sucursal=sucursal,
             q=q,
         )

@@ -60,12 +60,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const TableContext = createContext<{ table: Table<unknown> } | null>(null);
+const TableContext = createContext<{
+  table: Table<unknown>;
+  showFilters: boolean;
+} | null>(null);
 
 function useTableInstance<T>(): Table<T> {
   const ctx = useContext(TableContext);
   if (!ctx) throw new Error("DataTable compound must be used inside Root");
   return ctx.table as Table<T>;
+}
+
+function useShowFilters(): boolean {
+  const ctx = useContext(TableContext);
+  if (!ctx) throw new Error("DataTable compound must be used inside Root");
+  return ctx.showFilters;
 }
 
 /** Filtered (all pages) originals are pushed up via onFilteredRowsChange. */
@@ -78,6 +87,11 @@ interface RootProps<T> {
   onRowClick?: (row: T) => void;
   /** Reports filtered (all pages) originals upward; stable unless filters/data change. */
   onFilteredRowsChange?: (rows: T[]) => void;
+  /**
+   * False when the filters live outside the table (server-side panel): the
+   * per-column filter row is not rendered at all.
+   */
+  showFilters?: boolean;
 }
 
 /** Per-column filter configuration read from columnDef.meta.filter. */
@@ -175,6 +189,7 @@ function Root<T>({
   initialPageSize = 25,
   onRowClick,
   onFilteredRowsChange,
+  showFilters = true,
 }: RootProps<T>) {
   // All interactive table state is controlled here: nothing implicit,
   // nothing shared between searches, nothing that can go stale.
@@ -242,7 +257,7 @@ function Root<T>({
   // every render makes the context value change identity, which re-renders the
   // consumers while they still read the same underlying table.
   return (
-    <TableContext.Provider value={{ table: table as Table<unknown> }}>
+    <TableContext.Provider value={{ table: table as Table<unknown>, showFilters }}>
       <div className="w-full">{children}</div>
     </TableContext.Provider>
   );
@@ -408,6 +423,7 @@ function rowActionLabel<T>(row: T): string {
 
 function View<T>({ loading }: { loading?: boolean }) {
   const table = useTableInstance<T>();
+  const showFilters = useShowFilters();
   if (loading) {
     return <SkeletonRows table={table} />;
   }
@@ -478,16 +494,18 @@ function View<T>({ loading }: { loading?: boolean }) {
             ))}
           </TableRow>
         ))}
-        <TableRow>
-          {table.getHeaderGroups()[0]?.headers.map((header) => (
-            <TableHead
-              key={`filter-${header.id}`}
-              className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
-            >
-              <ColumnFilter column={header.column} />
-            </TableHead>
-          )) ?? null}
-        </TableRow>
+        {showFilters ? (
+          <TableRow>
+            {table.getHeaderGroups()[0]?.headers.map((header) => (
+              <TableHead
+                key={`filter-${header.id}`}
+                className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
+              >
+                <ColumnFilter column={header.column} />
+              </TableHead>
+            )) ?? null}
+          </TableRow>
+        ) : null}
       </TableHeader>
       <TableBody>
         {rows.map((row) => (

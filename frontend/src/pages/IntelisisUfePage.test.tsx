@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     intelisisEnabled: true,
     desde: "2026-10-15",
     hasta: "2026-10-21",
+    truncado: false,
+    maxFilas: 5000,
     run: vi.fn(),
     detalle: null as unknown,
     detalleLoading: false,
@@ -105,7 +107,11 @@ function kpis(overrides: Record<string, unknown> = {}) {
     sin_cobertura_sunat: 2,
     por_generador: [{ key: "OK REGISTRADO", count: 1 }],
     por_incidencia: [{ key: "SIN TRAZA", count: 1 }],
-    por_sucursal: [],
+    por_sucursal: [{ sucursal: 602, nombre: "Tienda Central", ventas: 2, incidencias: 1 }],
+    por_dia: [
+      { dia: "2026-10-21", documentos: 2, sin_traza: 1, con_incidencia: 1 },
+      { dia: "2026-10-20", documentos: 5, sin_traza: 0, con_incidencia: 0 },
+    ],
     ...overrides,
   };
 }
@@ -126,6 +132,9 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.validando = null;
     mocks.ufe.aviso = null;
     mocks.ufe.errorValidacion = null;
+    mocks.ufe.truncado = false;
+    mocks.ufe.maxFilas = 5000;
+    mocks.ufe.run.mockReset();
     mocks.ufe.abrirDetalle.mockReset();
     mocks.ufe.validar.mockReset();
   });
@@ -247,5 +256,34 @@ describe("IntelisisUfePage", () => {
     expect(
       screen.getByText("No fue posible consultar los comprobantes."),
     ).toBeTruthy();
+  });
+
+  it("filtra en el servidor al pulsar un KPI", () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Con incidencia/ }));
+
+    const llamadas = mocks.ufe.run.mock.calls;
+    const ultima = llamadas[llamadas.length - 1];
+    expect(ultima?.[2]).toEqual({ resultado: "REVISAR" });
+  });
+
+  it("avisa cuando el listado viene recortado", () => {
+    mocks.ufe.truncado = true;
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(screen.getByText("Listado recortado")).toBeTruthy();
+  });
+
+  it("ofrece la cobertura por dia", () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Ver cobertura/ }),
+    );
+
+    expect(screen.getByText("Cobertura por dia")).toBeTruthy();
+    expect(screen.getAllByText("21/10/2026").length).toBeGreaterThan(0);
   });
 });

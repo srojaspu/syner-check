@@ -319,6 +319,14 @@ export interface IntelisisUfeSucursal {
   incidencias: number;
 }
 
+/** Cobertura del generador por dia (el equivalente al bloque "cobertura" del PHP). */
+export interface IntelisisUfeDia {
+  dia: string;
+  documentos: number;
+  sin_traza: number;
+  con_incidencia: number;
+}
+
 export interface IntelisisUfeKpis {
   total: number;
   conformes: number;
@@ -330,6 +338,19 @@ export interface IntelisisUfeKpis {
   por_generador: { key: string; count: number }[];
   por_incidencia: { key: string; count: number }[];
   por_sucursal: IntelisisUfeSucursal[];
+  por_dia?: IntelisisUfeDia[];
+}
+
+/** Filtros del listado: se aplican en el servidor. */
+export interface IntelisisUfeFiltros {
+  resultado?: string;
+  estado?: string;
+  incidencia?: string;
+  tipo?: string;
+  generador?: string;
+  sunat?: string;
+  sucursal?: number;
+  q?: string;
 }
 
 export interface IntelisisUfeResponse {
@@ -339,6 +360,9 @@ export interface IntelisisUfeResponse {
   intelisis_enabled: boolean;
   kpis: IntelisisUfeKpis;
   filtrados: number;
+  /** True cuando el listado se recorto por el tope de filas. */
+  truncado?: boolean;
+  max_filas?: number;
   rows: IntelisisUfeRow[];
 }
 
