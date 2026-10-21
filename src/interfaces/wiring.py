@@ -22,6 +22,7 @@ from src.application import (
 )
 from src.application.intelisis_ufe import (
     RangoInvalidoError,
+    buscar_ufe,
     detalle_ufe,
     listar_ufe,
     validar_ufe,
@@ -337,6 +338,31 @@ def intelisis_ufe_list(
         logger.exception("Intelisis UFE read failure")
         raise HTTPException(
             502, "No fue posible consultar los comprobantes de Intelisis."
+        )
+
+
+def intelisis_ufe_buscar(
+    documento: str, correlation_id: str = ""
+) -> dict:
+    """Busca un comprobante UFE por su numero oficial."""
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        raise HTTPException(503, "Intelisis no disponible.")
+    _validator, sunat_store, sunat_ruc = _sunat_pair()
+    try:
+        return buscar_ufe(
+            reader,
+            documento=documento,
+            sunat_store=sunat_store,
+            sunat_ruc=sunat_ruc,
+            correlation_id=correlation_id,
+        )
+    except RangoInvalidoError as exc:
+        raise HTTPException(400, str(exc) or "Numero de comprobante invalido.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE search failure")
+        raise HTTPException(
+            502, "No fue posible buscar el comprobante."
         )
 
 

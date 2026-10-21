@@ -7,6 +7,7 @@ from datetime import datetime
 import pytest
 
 from src.application import intelisis_ufe as IntelisisUfe
+from src.application.intelisis_ufe_filas import CAMPOS_LISTA, MAX_FILAS_LISTADO
 from src.application.intelisis_ufe import (
     RangoInvalidoError,
     detalle_ufe,
@@ -385,7 +386,7 @@ class TestListadoServidor:
         out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
 
         fila = out["rows"][0]
-        assert set(fila) == set(IntelisisUfe.CAMPOS_LISTA)
+        assert set(fila) == set(CAMPOS_LISTA)
         # Lo que solo necesita el detalle no viaja en el listado.
         assert "ruc" not in fila
         assert "hash" not in fila
@@ -443,7 +444,7 @@ class TestListadoServidor:
         )
 
         assert out["truncado"] is False
-        assert out["max_filas"] == IntelisisUfe.MAX_FILAS_LISTADO
+        assert out["max_filas"] == MAX_FILAS_LISTADO
 
     def test_la_cobertura_por_dia_agrupa(self) -> None:
         reader = _Reader(
@@ -569,3 +570,4 @@ class TestValidar:
                 sunat_ruc="",
                 now=AHORA,
             )
+

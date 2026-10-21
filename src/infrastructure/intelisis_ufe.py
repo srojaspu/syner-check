@@ -49,3 +49,15 @@ class IntelisisUfeReaderAdapter:
             raise UpstreamError(
                 f"Intelisis UFE read failed: {type(exc).__name__}."
             ) from exc
+
+    def buscar_por_correlativo(self, correlativo: str) -> list[dict[str, Any]]:
+        from app import intelisis_db
+
+        try:
+            return intelisis_db.fetch_ufe_documento(correlativo)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"Intelisis UFE read failed: {type(exc).__name__}."
+            ) from exc

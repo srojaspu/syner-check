@@ -382,6 +382,44 @@ def identidades_duplicadas(identidades: Sequence[str]) -> set[str]:
     return {clave for clave, total in conteo.items() if total > 1}
 
 
+def parse_documento_buscado(texto: Any) -> tuple[str, str] | None:
+    """Divide el numero buscado en (serie, correlativo).
+
+    Acepta el numero oficial con prefijo de tipo (``B710-00004539``) y
+    tambien sin el (``710-00004539``). El correlativo conserva los ceros
+    con que se imprimio.
+    """
+    limpio = _normaliza(texto).upper().replace(" ", "")
+    if "-" not in limpio:
+        return None
+    serie, _, correlativo = limpio.rpartition("-")
+    serie = serie.strip()
+    correlativo = correlativo.strip()
+    if not serie or not correlativo or not correlativo.isdigit():
+        return None
+    if len(serie) > 20 or len(correlativo) > 20:
+        return None
+    return serie, correlativo
+
+
+def coincide_documento(
+    buscado: tuple[str, str], calculado: tuple[str, str]
+) -> bool:
+    """True si el numero buscado corresponde al calculado.
+
+    El correlativo tiene que coincidir y la serie puede venir sin el
+    prefijo de tipo (``710`` en vez de ``B710``): es como lo escribe la
+    gente.
+    """
+    serie_buscada, correlativo_buscado = buscado
+    serie_calculada, correlativo_calculado = calculado
+    if correlativo_buscado.lstrip("0") != correlativo_calculado.lstrip("0"):
+        return False
+    return serie_buscada == serie_calculada or serie_calculada.endswith(
+        serie_buscada
+    )
+
+
 def combine_incidencias(
     generacion: list[str], sunat: list[str]
 ) -> tuple[list[str], str]:

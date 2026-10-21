@@ -63,6 +63,7 @@ import {
 const TableContext = createContext<{
   table: Table<unknown>;
   showFilters: boolean;
+  renderFilter?: (column: Column<unknown>) => ReactNode;
 } | null>(null);
 
 function useTableInstance<T>(): Table<T> {
@@ -75,6 +76,16 @@ function useShowFilters(): boolean {
   const ctx = useContext(TableContext);
   if (!ctx) throw new Error("DataTable compound must be used inside Root");
   return ctx.showFilters;
+}
+
+function useRenderFilter():
+  | ((column: Column<never>) => ReactNode)
+  | undefined {
+  const ctx = useContext(TableContext);
+  if (!ctx) throw new Error("DataTable compound must be used inside Root");
+  return ctx.renderFilter as
+    | ((column: Column<never>) => ReactNode)
+    | undefined;
 }
 
 /** Filtered (all pages) originals are pushed up via onFilteredRowsChange. */
@@ -92,6 +103,12 @@ interface RootProps<T> {
    * per-column filter row is not rendered at all.
    */
   showFilters?: boolean;
+  /**
+   * Dibuja el control de filtro de una columna. Cuando se pasa, la fila de
+   * filtros usa estos controles en vez de los internos: sirve para filtros
+   * que viven en el servidor (la fila sigue siendo la de la tabla).
+   */
+  renderFilter?: (column: Column<T>) => ReactNode;
 }
 
 /** Per-column filter configuration read from columnDef.meta.filter. */
@@ -190,6 +207,7 @@ function Root<T>({
   onRowClick,
   onFilteredRowsChange,
   showFilters = true,
+  renderFilter,
 }: RootProps<T>) {
   // All interactive table state is controlled here: nothing implicit,
   // nothing shared between searches, nothing that can go stale.
@@ -257,7 +275,15 @@ function Root<T>({
   // every render makes the context value change identity, which re-renders the
   // consumers while they still read the same underlying table.
   return (
-    <TableContext.Provider value={{ table: table as Table<unknown>, showFilters }}>
+    <TableContext.Provider
+      value={{
+        table: table as Table<unknown>,
+        showFilters,
+        renderFilter: renderFilter as
+          | ((column: Column<unknown>) => ReactNode)
+          | undefined,
+      }}
+    >
       <div className="w-full">{children}</div>
     </TableContext.Provider>
   );
@@ -424,6 +450,7 @@ function rowActionLabel<T>(row: T): string {
 function View<T>({ loading }: { loading?: boolean }) {
   const table = useTableInstance<T>();
   const showFilters = useShowFilters();
+  const renderFilter = useRenderFilter();
   if (loading) {
     return <SkeletonRows table={table} />;
   }
@@ -501,7 +528,11 @@ function View<T>({ loading }: { loading?: boolean }) {
                 key={`filter-${header.id}`}
                 className={`px-2 sm:px-3 ${columnWidthClass(header.column)}`}
               >
-                <ColumnFilter column={header.column} />
+                {renderFilter ? (
+                  renderFilter(header.column as unknown as Column<never>)
+                ) : (
+                  <ColumnFilter column={header.column} />
+                )}
               </TableHead>
             )) ?? null}
           </TableRow>

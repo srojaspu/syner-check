@@ -15,7 +15,7 @@ import pytest
 from app import intelisis_db
 from src.domain.errors import UpstreamError
 from src.infrastructure.intelisis_ufe import IntelisisUfeReaderAdapter
-from syner_check import db_client
+from syner_check import db_client, intelisis_ufe_client
 
 _COLUMNAS = [
     ("IDVenta",),
@@ -130,7 +130,7 @@ def _install(monkeypatch, rows: list[tuple]) -> _Connection:
 def test_query_usa_el_universo_por_datos(monkeypatch) -> None:
     connection = _install(monkeypatch, [])
 
-    assert db_client.fetch_intelisis_ufe_rows("2026-10-01", "2026-10-21") == []
+    assert intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-01", "2026-10-21") == []
 
     sql = connection.cursor_obj.statements[-1]
     assert "X.Clave IN ('VTAS.F', 'VTAS.FC', 'VTAS.B', 'VTAS.FB'" in sql
@@ -144,7 +144,7 @@ def test_query_usa_el_universo_por_datos(monkeypatch) -> None:
 def test_query_parametriza_las_fechas(monkeypatch) -> None:
     connection = _install(monkeypatch, [])
 
-    db_client.fetch_intelisis_ufe_rows("2026-10-01", "2026-10-21")
+    intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-01", "2026-10-21")
 
     assert connection.cursor_obj.params[-1] == ("2026-10-01", "2026-10-21")
 
@@ -152,7 +152,7 @@ def test_query_parametriza_las_fechas(monkeypatch) -> None:
 def test_normaliza_la_fila(monkeypatch) -> None:
     _install(monkeypatch, [_fila()])
 
-    rows = db_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")
+    rows = intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")
 
     row = rows[0]
     assert row["IDVenta"] == 7466462
@@ -174,7 +174,7 @@ def test_sin_bitacora_deja_los_contadores_en_cero(monkeypatch) -> None:
                FechaInicio=None, Intentos=None, OkRegistrados=None)],
     )
 
-    row = db_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")[0]
+    row = intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")[0]
 
     assert row["LogID"] is None
     assert row["Documento"] == ""
@@ -206,7 +206,7 @@ def test_el_adaptador_no_pierde_la_fila(monkeypatch) -> None:
 def test_lectura_de_un_comprobante_por_id(monkeypatch) -> None:
     connection = _install(monkeypatch, [_fila()])
 
-    rows = db_client.fetch_intelisis_ufe_row(7466462)
+    rows = intelisis_ufe_client.fetch_intelisis_ufe_row(7466462)
 
     assert len(rows) == 1
     assert rows[0]["IDVenta"] == 7466462
@@ -278,7 +278,7 @@ def test_lectura_de_los_intentos_de_un_comprobante(monkeypatch) -> None:
     monkeypatch.setattr("syner_check.config.get_intelisis_password", lambda: "x")
     monkeypatch.setattr("syner_check.db_pool.pooled_connection", pooled)
 
-    intentos = db_client.fetch_intelisis_ufe_attempts(7466462)
+    intentos = intelisis_ufe_client.fetch_intelisis_ufe_attempts(7466462)
 
     assert len(intentos) == 1
     intento = intentos[0]
@@ -291,3 +291,4 @@ def test_lectura_de_los_intentos_de_un_comprobante(monkeypatch) -> None:
     sql = connection.cursor_obj.statements[-1]
     assert "FROM dbo.SPPUFE_EjecucionLog" in sql
     assert connection.cursor_obj.params[-1] == (7466462,)
+

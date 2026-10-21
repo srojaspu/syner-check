@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AuthError,
   RequestAbortedError,
+  buscarIntelisisUfe,
   getIntelisisUfe,
   getIntelisisUfeDetalle,
   validarIntelisisUfe,
@@ -49,6 +50,8 @@ interface DetalleState {
   detalleLoading: boolean;
   /** Error de la trazabilidad (distinto del error del listado). */
   detalleError: string | null;
+  /** Resultado de la busqueda por numero de comprobante. */
+  busqueda: { documento: string; rows: IntelisisUfeRow[] } | null;
   /** Documento que se esta validando en SUNAT (id). */
   validando: number | null;
   /** Ultimo resultado de la validacion, para el aviso en pantalla. */
@@ -60,6 +63,7 @@ const EMPTY_DETALLE: DetalleState = {
   detalle: null,
   detalleLoading: false,
   detalleError: null,
+  busqueda: null,
   validando: null,
   aviso: null,
   errorValidacion: null,
@@ -138,9 +142,46 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
     [begin, isCurrent, onAuthFailure],
   );
 
+  /** Busca un comprobante por su numero oficial (sin periodo). */
+  const buscar = useCallback(
+    async (documento: string) => {
+      const { signal, id } = begin();
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const data = await buscarIntelisisUfe(documento, signal);
+        if (!isCurrent(id)) return;
+        setDetalleState((prev) => ({
+          ...prev,
+          busqueda: { documento, rows: data.rows ?? [] },
+        }));
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          searched: true,
+          intelisisEnabled: Boolean(data.intelisis_enabled),
+        }));
+      } catch (error: unknown) {
+        if (error instanceof RequestAbortedError || !isCurrent(id)) return;
+        if (error instanceof AuthError) {
+          onAuthFailure();
+          return;
+        }
+        setDetalleState((prev) => ({ ...prev, busqueda: null }));
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "No fue posible buscar el comprobante.",
+        }));
+      }
+    },
+    [begin, isCurrent, onAuthFailure],
+  );
+
   /** Abre el drawer de trazabilidad de un comprobante. */
-  const abrirDetalle = useCallback(
-    async (idVenta: number) => {
+  const abrirDetalle = useCallback(    async (idVenta: number) => {
       setDetalleState((prev) => ({
         ...prev,
         detalle: null,
@@ -249,6 +290,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
     ...state,
     ...detalleState,
     run,
+    buscar,
     abrirDetalle,
     cerrarDetalle,
     validar,

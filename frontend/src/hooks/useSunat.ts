@@ -8,10 +8,10 @@ import {
   sunatSubmissionStatus,
 } from "../api/client";
 import type {
+  SunatDocumentInput,
   SunatJobResponse,
   SunatScope,
   SunatSubmissionResponse,
-  Voucher,
 } from "../api/types";
 
 const POLL_MS = 3000;
@@ -310,7 +310,7 @@ export function useSunat(onAuthFailure: () => void) {
 
   const runBatch = useCallback(
     async (
-      rows: Voucher[],
+      rows: SunatDocumentInput[],
       refresh: () => Promise<void> | void,
       alcance: SunatScope = "no_aceptados",
     ) => {

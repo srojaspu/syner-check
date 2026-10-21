@@ -111,9 +111,15 @@ export function RangePanel({
 export function NumberPanel({
   disabled,
   onSearch,
+  label = "Número",
+  placeholder = "Ej. F001-00012345",
+  hint,
 }: {
   disabled: boolean;
   onSearch: (number: string) => void;
+  label?: string;
+  placeholder?: string;
+  hint?: string;
 }) {
   const [number, setNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +138,7 @@ export function NumberPanel({
     <div className="flex flex-col gap-3">
       <Panel icon={<HugeiconsIcon icon={HashIcon} size={18} strokeWidth={2} />}>
         <div className="flex min-w-52 flex-1 flex-col gap-1.5">
-          <Label htmlFor="numero-comprobante">Número</Label>
+          <Label htmlFor="numero-comprobante">{label}</Label>
           <Input
             id="numero-comprobante"
             value={number}
@@ -141,7 +147,7 @@ export function NumberPanel({
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
             }}
-            placeholder="Ej. F001-00012345"
+            placeholder={placeholder}
             autoComplete="off"
           />
         </div>
@@ -156,10 +162,7 @@ export function NumberPanel({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <p className="text-sm text-muted-foreground">
-        Busca el comprobante por número en el índice local. Si no está indexado,
-        se consulta GraphQL sobre el rango de los últimos días.
-      </p>
+      <p className="text-sm text-muted-foreground">{hint}</p>
     </div>
   );
 }

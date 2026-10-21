@@ -47,6 +47,10 @@ class IntelisisUfeReader(Protocol):
         """Every bitacora attempt of one document, newest first."""
         ...
 
+    def buscar_por_correlativo(self, correlativo: str) -> list[dict]:
+        """Candidates whose correlativo matches (document search)."""
+        ...
+
 
 class SunatValidator(Protocol):
     """SUNAT Validator microservice (batch submit + job polling)."""

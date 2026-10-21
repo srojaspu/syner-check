@@ -3,15 +3,11 @@ import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CalendarDaysIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   FileDownIcon,
   InformationCircleIcon,
   Loading02Icon,
-  Search01Icon,
   TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
-import { cn } from "cn";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,33 +19,32 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { DataTable } from "@/components/DataTable";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
+import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
-import { DateRangePicker } from "@/components/search/DateRangePicker";
+import { creaRenderFiltro } from "@/components/IntelisisUfeFiltros";
+import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
+import { IntelisisUfePeriodo } from "@/components/IntelisisUfePeriodo";
+import { NumberPanel } from "@/components/SearchPanels";
+import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
+import { SunatProgress } from "@/components/SunatProgress";
+import { Tabs } from "@/components/AppShell";
 import { exportIntelisisUfeExcel } from "../api/excel";
-import { formatDate, toISODate } from "../api/format";
-import type { IntelisisUfeFiltros, IntelisisUfeRow } from "../api/types";
+import { toISODate } from "../api/format";
+import type {
+  IntelisisUfeFiltros,
+  IntelisisUfeRow,
+  SunatDocumentInput,
+} from "../api/types";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
+import { useSunat } from "../hooks/useSunat";
 
 const MAX_DIAS = 31;
-const ALL = "__all";
+const MODOS = [
+  { value: "periodo" as const, label: "Periodo" },
+  { value: "comprobante" as const, label: "Comprobante" },
+];
 
 /** Compara filtros sin depender del orden de las claves. */
 function mismosFiltros(
@@ -58,122 +53,14 @@ function mismosFiltros(
 ): boolean {
   const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const clave of claves) {
-    if (String(a[clave as keyof IntelisisUfeFiltros] ?? "") !==
-        String(b[clave as keyof IntelisisUfeFiltros] ?? "")) {
+    if (
+      String(a[clave as keyof IntelisisUfeFiltros] ?? "") !==
+      String(b[clave as keyof IntelisisUfeFiltros] ?? "")
+    ) {
       return false;
     }
   }
   return true;
-}
-
-function KpiTile({
-  label,
-  value,
-  hint,
-  tone = "neutral",
-  active = false,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  hint?: string;
-  tone?: "neutral" | "alert";
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  const contenido = (
-    <>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "mt-1 text-2xl font-semibold tabular-nums",
-          tone === "alert" && value > 0 && "text-destructive",
-        )}
-      >
-        {value.toLocaleString("es-PE")}
-      </p>
-      {hint ? (
-        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-    </>
-  );
-  if (!onClick) {
-    return (
-      <div className="rounded-2xl bg-card px-4 py-3 ring-1 ring-foreground/10">
-        {contenido}
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      title={active ? "Quitar este filtro" : `Filtrar por ${label.toLowerCase()}`}
-      className={cn(
-        "rounded-2xl bg-card px-4 py-3 text-left ring-1 outline-none transition-shadow",
-        "focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        active ? "ring-2 ring-foreground/40" : "ring-foreground/10 hover:ring-foreground/25",
-      )}
-    >
-      {contenido}
-    </button>
-  );
-}
-
-function FiltroSelect({
-  label,
-  value,
-  placeholder,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <Select
-        value={value || ALL}
-        onValueChange={(next) =>
-          onChange(!next || next === ALL ? "" : next)
-        }
-      >
-        <SelectTrigger
-          size="sm"
-          className="h-8 w-full min-w-0"
-          aria-label={label}
-        >
-          <SelectValue>
-            {(current) =>
-              !current || current === ALL
-                ? placeholder
-                : (options.find((option) => option.value === current)?.label ??
-                  String(current))
-            }
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Todos</SelectItem>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-interface Consulta {
-  desde: string;
-  hasta: string;
-  filtros: IntelisisUfeFiltros;
 }
 
 /**
@@ -185,9 +72,9 @@ interface Consulta {
  * `incidencias`. Los filtros van al servidor: con 31 dias el universo
  * llega a ~18.000 documentos y filtrarlos en el navegador no era viable.
  *
- * **Solo se consulta al pulsar "Consultar"**: entrar en la seccion no
- * golpea el ERP, y el periodo y los filtros quedan en borrador hasta que el
- * usuario decide consultarlos.
+ * Dos modos de consulta, como en la pantalla de comprobantes: por
+ * **periodo** o por **numero de comprobante**. En los dos casos se consulta
+ * solo al pulsar "Consultar".
  */
 export default function IntelisisUfePage({
   onAuthFailure,
@@ -195,6 +82,8 @@ export default function IntelisisUfePage({
   onAuthFailure: () => void;
 }) {
   const ufe = useIntelisisUfe(onAuthFailure);
+  const sunat = useSunat(onAuthFailure);
+  const [modo, setModo] = useState<"periodo" | "comprobante">("periodo");
   const [range, setRange] = useState<DateRange | undefined>(() => {
     const hoy = new Date();
     const desde = new Date(hoy);
@@ -204,21 +93,16 @@ export default function IntelisisUfePage({
   /** Periodo y filtros en borrador: todavia no consultados. */
   const [borrador, setBorrador] = useState<IntelisisUfeFiltros>({});
   /** Consulta aplicada (null = todavia no se consulto nada). */
-  const [consulta, setConsulta] = useState<Consulta | null>(null);
-  const [busqueda, setBusqueda] = useState("");
-  const [qAplicada, setqAplicada] = useState("");
+  const [consulta, setConsulta] = useState<{
+    desde: string;
+    hasta: string;
+    filtros: IntelisisUfeFiltros;
+  } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [coberturaAbierta, setCoberturaAbierta] = useState(false);
+  const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
   const [filteredRows, setFilteredRows] = useState<IntelisisUfeRow[] | null>(
     null,
   );
-
-  // La busqueda se aplica con retardo: no tiene sentido pegarle al ERP en
-  // cada tecla.
-  useEffect(() => {
-    const timer = setTimeout(() => setqAplicada(busqueda.trim()), 350);
-    return () => clearTimeout(timer);
-  }, [busqueda]);
 
   // Unica consulta posible: la que el usuario lanzo con "Consultar".
   useEffect(() => {
@@ -227,7 +111,7 @@ export default function IntelisisUfePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consulta]);
 
-  const consultar = useCallback(() => {
+  const consultarPeriodo = useCallback(() => {
     if (!range?.from || !range?.to) {
       setFormError("Selecciona el periodo completo (inicio y fin).");
       return;
@@ -244,25 +128,19 @@ export default function IntelisisUfePage({
     setConsulta({
       desde: toISODate(range.from),
       hasta: toISODate(range.to),
-      filtros: { ...borrador, q: qAplicada },
+      filtros: borrador,
     });
-  }, [range, borrador, qAplicada]);
-
-  const limpiarFiltros = useCallback(() => {
-    setBorrador({});
-    setBusqueda("");
-  }, []);
+  }, [range, borrador]);
 
   const alternar = useCallback(
-    <K extends keyof IntelisisUfeFiltros>(clave: K, valor: string) => {
+    (clave: "resultado" | "generador" | "sunat", valor: string) => {
       setBorrador((prev) => {
-        const actual = prev[clave];
-        const esIgual = String(actual ?? "") === valor;
+        const esIgual = String(prev[clave] ?? "") === valor;
         const siguiente = { ...prev };
         if (esIgual) {
           delete siguiente[clave];
         } else {
-          siguiente[clave] = valor as IntelisisUfeFiltros[K];
+          siguiente[clave] = valor;
         }
         return siguiente;
       });
@@ -276,62 +154,43 @@ export default function IntelisisUfePage({
     const desde = range?.from ? toISODate(range.from) : "";
     const hasta = range?.to ? toISODate(range.to) : "";
     if (desde !== consulta.desde || hasta !== consulta.hasta) return true;
-    return !mismosFiltros({ ...borrador, q: qAplicada }, consulta.filtros);
-  }, [consulta, range, borrador, qAplicada]);
+    return !mismosFiltros(borrador, consulta.filtros);
+  }, [consulta, range, borrador]);
 
-  const rows = ufe.rows ?? [];
+  const renderFiltro = useMemo(
+    () => creaRenderFiltro(borrador, setBorrador, ufe.kpis),
+    [borrador, ufe.kpis],
+  );
+
+  const filas =
+    modo === "periodo" ? ufe.rows : (ufe.busqueda?.rows ?? []);
   const columns = useMemo(() => intelisisUfeColumns(), []);
   const kpis = ufe.kpis;
-  const visibles = filteredRows ?? rows;
-  const porDia = kpis?.por_dia ?? [];
-  const filtros = borrador;
+  const visibles = filteredRows ?? filas;
 
-  const filtrosActivos = useMemo(() => {
-    const chips: { clave: string; etiqueta: string; limpiar: () => void }[] = [];
-    if (filtros.resultado) {
-      chips.push({
-        clave: "resultado",
-        etiqueta: `Resultado: ${filtros.resultado}`,
-        limpiar: () => alternar("resultado", filtros.resultado ?? ""),
-      });
+  /** Documentos consultables en SUNAT (el backend arma el payload final). */
+  const consultables: SunatDocumentInput[] = useMemo(
+    () =>
+      filas
+        .filter((fila) => fila.tipo_sunat && fila.comprobante)
+        .map((fila) => ({
+          tipo: fila.tipo_sunat,
+          number: fila.comprobante,
+          date: fila.fecha_emision,
+          crossTotal: fila.total,
+          sunat: { estado: fila.estado_sunat },
+        })),
+    [filas],
+  );
+
+  const refrescar = useCallback(async () => {
+    if (modo === "periodo" && consulta) {
+      setConsulta({ ...consulta });
     }
-    if (filtros.generador) {
-      chips.push({
-        clave: "generador",
-        etiqueta: `Generador: ${filtros.generador}`,
-        limpiar: () => alternar("generador", filtros.generador ?? ""),
-      });
-    }
-    if (filtros.tipo) {
-      chips.push({
-        clave: "tipo",
-        etiqueta: `Tipo: ${filtros.tipo}`,
-        limpiar: () => alternar("tipo", filtros.tipo ?? ""),
-      });
-    }
-    if (filtros.sunat) {
-      chips.push({
-        clave: "sunat",
-        etiqueta: `SUNAT: ${filtros.sunat}`,
-        limpiar: () => alternar("sunat", filtros.sunat ?? ""),
-      });
-    }
-    if (filtros.incidencia) {
-      chips.push({
-        clave: "incidencia",
-        etiqueta: `Incidencia: ${filtros.incidencia}`,
-        limpiar: () => alternar("incidencia", filtros.incidencia ?? ""),
-      });
-    }
-    if (filtros.q) {
-      chips.push({
-        clave: "q",
-        etiqueta: `Busqueda: ${filtros.q}`,
-        limpiar: () => setBusqueda(""),
-      });
-    }
-    return chips;
-  }, [filtros, alternar]);
+  }, [modo, consulta]);
+
+  const hayConsulta =
+    modo === "periodo" ? Boolean(consulta) : Boolean(ufe.busqueda);
 
   return (
     <div className="flex flex-col gap-6">
@@ -351,67 +210,28 @@ export default function IntelisisUfePage({
         </p>
       </header>
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-4">
-          <DateRangePicker value={range} onChange={setRange} label="Periodo" />
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              Periodos rapidos
-            </span>
-            <div className="flex items-center gap-1">
-              {[
-                { etiqueta: "Hoy", dias: 0 },
-                { etiqueta: "7 dias", dias: 6 },
-                { etiqueta: "30 dias", dias: 29 },
-              ].map((preset) => (
-                <Button
-                  key={preset.etiqueta}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const hoy = new Date();
-                    const desde = new Date(hoy);
-                    desde.setDate(hoy.getDate() - preset.dias);
-                    setRange({ from: desde, to: hoy });
-                    setFormError(null);
-                  }}
-                >
-                  {preset.etiqueta}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <Button
-            type="button"
-            onClick={consultar}
-            disabled={ufe.loading}
-            className="sm:ml-auto"
-          >
-            {ufe.loading ? (
-              <HugeiconsIcon
-                icon={Loading02Icon}
-                size={16}
-                strokeWidth={2}
-                className="animate-spin"
-                aria-hidden
-              />
-            ) : null}{" "}
-            Consultar
-            {pendiente && !ufe.loading ? (
-              <span
-                className="ml-1 size-1.5 rounded-full bg-current"
-                aria-hidden
-              />
-            ) : null}
-          </Button>
-          {pendiente && !ufe.loading ? (
-            <span className="text-xs text-muted-foreground" aria-live="polite">
-              Hay cambios sin consultar
-            </span>
-          ) : null}
-        </CardContent>
-      </Card>
+      <Tabs mode={modo} onChange={setModo} options={MODOS} />
+
+      {modo === "periodo" ? (
+        <IntelisisUfePeriodo
+          range={range}
+          onRange={setRange}
+          onConsultar={consultarPeriodo}
+          loading={ufe.loading}
+          pendiente={pendiente}
+        />
+      ) : (
+        <NumberPanel
+          disabled={ufe.loading}
+          label="Numero de comprobante"
+          placeholder="Ej. B710-00004539"
+          hint="Busca el comprobante por su numero oficial (prefijo de tipo, serie y correlativo), sin periodo."
+          onSearch={(documento) => {
+            setFormError(null);
+            void ufe.buscar(documento);
+          }}
+        />
+      )}
 
       {formError ? (
         <Alert variant="destructive">
@@ -440,46 +260,13 @@ export default function IntelisisUfePage({
         </Alert>
       ) : null}
 
-      {kpis ? (
-        <section
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
-          aria-label="Resumen del periodo"
-        >
-          <KpiTile
-            label="Emitidos"
-            value={kpis.total}
-            active={!filtros.resultado && !filtros.generador}
-            onClick={limpiarFiltros}
-          />
-          <KpiTile
-            label="Conformes"
-            value={kpis.conformes}
-            hint={`${kpis.con_incidencia} por revisar`}
-            active={filtros.resultado === "CONFORME"}
-            onClick={() => alternar("resultado", "CONFORME")}
-          />
-          <KpiTile
-            label="Con incidencia"
-            value={kpis.con_incidencia}
-            tone="alert"
-            active={filtros.resultado === "REVISAR"}
-            onClick={() => alternar("resultado", "REVISAR")}
-          />
-          <KpiTile
-            label="Sin traza"
-            value={kpis.sin_traza}
-            hint={`${kpis.en_espera} en espera · ${kpis.no_aplica} no aplica`}
-            active={filtros.generador === "SIN TRAZA"}
-            onClick={() => alternar("generador", "SIN TRAZA")}
-          />
-          <KpiTile
-            label="Sin cobertura SUNAT"
-            value={kpis.sin_cobertura_sunat}
-            hint="sin consultar"
-            active={filtros.sunat === "SUNAT SIN CONSULTA"}
-            onClick={() => alternar("sunat", "SUNAT SIN CONSULTA")}
-          />
-        </section>
+      {modo === "periodo" && kpis ? (
+        <IntelisisUfeKpis
+          kpis={kpis}
+          filtros={borrador}
+          onAlternar={alternar}
+          onLimpiar={() => setBorrador({})}
+        />
       ) : null}
 
       {ufe.truncado ? (
@@ -495,221 +282,17 @@ export default function IntelisisUfePage({
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="relative min-w-56 flex-1">
-              <HugeiconsIcon
-                icon={Search01Icon}
-                size={16}
-                strokeWidth={2}
-                aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                value={busqueda}
-                onChange={(event) => setBusqueda(event.target.value)}
-                placeholder="Buscar por documento, cliente o sucursal…"
-                aria-label="Buscar comprobantes"
-                className="pl-9"
-              />
-            </div>
-            <FiltroSelect
-              label="Resultado"
-              value={filtros.resultado ?? ""}
-              placeholder="Todos"
-              options={[
-                { value: "CONFORME", label: "Conforme" },
-                { value: "REVISAR", label: "Revisar" },
-              ]}
-              onChange={(value) => alternar("resultado", value)}
-            />
-            <FiltroSelect
-              label="Generador"
-              value={filtros.generador ?? ""}
-              placeholder="Todos"
-              options={[
-                { value: "OK REGISTRADO", label: "OK registrado" },
-                { value: "SIN OK", label: "Sin OK" },
-                { value: "SIN TRAZA", label: "Sin traza" },
-                { value: "NO APLICA", label: "No aplica" },
-              ]}
-              onChange={(value) => alternar("generador", value)}
-            />
-            <FiltroSelect
-              label="Tipo"
-              value={filtros.tipo ?? ""}
-              placeholder="Todos"
-              options={[
-                { value: "BO", label: "Boleta" },
-                { value: "FA", label: "Factura" },
-                { value: "NC", label: "Nota de crédito" },
-                { value: "ND", label: "Nota de débito" },
-              ]}
-              onChange={(value) => alternar("tipo", value)}
-            />
-            <FiltroSelect
-              label="SUNAT"
-              value={filtros.sunat ?? ""}
-              placeholder="Todos"
-              options={[
-                { value: "ACEPTADO", label: "Aceptado" },
-                { value: "SUNAT NO ENCONTRADO", label: "No encontrado" },
-                { value: "SUNAT NO ACEPTADO", label: "No aceptado" },
-                { value: "SUNAT SIN CONSULTA", label: "Sin consulta" },
-              ]}
-              onChange={(value) => alternar("sunat", value)}
-            />
-            <FiltroSelect
-              label="Estado"
-              value={filtros.estado ?? ""}
-              placeholder="Todos"
-              options={[
-                { value: "generado", label: "Generado" },
-                { value: "error_validacion", label: "Error de validación" },
-                { value: "omitido_validacion", label: "Omitido en validación" },
-                { value: "sin_bloque", label: "Sin bloque de tipo" },
-                { value: "en_proceso", label: "En proceso" },
-                { value: "sin_registro", label: "Sin registro" },
-                { value: "fuera_de_bitacora", label: "Fuera de bitácora" },
-              ]}
-              onChange={(value) => alternar("estado", value)}
-            />
-            <FiltroSelect
-              label="Sucursal"
-              value={filtros.sucursal ? String(filtros.sucursal) : ""}
-              placeholder="Todas"
-              options={(kpis?.por_sucursal ?? []).map((item) => ({
-                value: String(item.sucursal),
-                label: `${item.sucursal} · ${item.nombre}`,
-              }))}
-              onChange={(value) =>
-                setBorrador((prev) => {
-                  const siguiente = { ...prev };
-                  if (value) {
-                    siguiente.sucursal = Number(value);
-                  } else {
-                    delete siguiente.sucursal;
-                  }
-                  return siguiente;
-                })
-              }
-            />
-            <FiltroSelect
-              label="Incidencia"
-              value={filtros.incidencia ?? ""}
-              placeholder="Todas"
-              options={(kpis?.por_incidencia ?? []).map((item) => ({
-                value: item.key,
-                label: `${item.key} (${item.count})`,
-              }))}
-              onChange={(value) => alternar("incidencia", value)}
-            />
-          </div>
+      {sunat.progress || sunat.notice || sunat.warning || sunat.error ? (
+        <SunatProgress
+          progress={sunat.progress}
+          notice={sunat.notice}
+          warning={sunat.warning}
+          error={sunat.error}
+        />
+      ) : null}
 
-          {filtrosActivos.length ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {filtrosActivos.map((chip) => (
-                <Badge key={chip.clave} variant="secondary">
-                  {chip.etiqueta}
-                  <button
-                    type="button"
-                    onClick={chip.limpiar}
-                    aria-label={`Quitar filtro ${chip.etiqueta}`}
-                    className="ml-1 rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    ×
-                  </button>
-                </Badge>
-              ))}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={limpiarFiltros}
-              >
-                Limpiar filtros
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {porDia.length ? (
-        <Card>
-          <CardHeader className="gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-col gap-0.5">
-                <h2 className="text-base font-medium">Cobertura por dia</h2>
-                <p className="text-sm text-muted-foreground">
-                  Documentos emitidos, sin traza y con incidencia, dia por dia.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setCoberturaAbierta((abierta) => !abierta)}
-                aria-expanded={coberturaAbierta}
-              >
-                <HugeiconsIcon
-                  icon={coberturaAbierta ? ChevronUpIcon : ChevronDownIcon}
-                  size={15}
-                  strokeWidth={2}
-                  aria-hidden
-                />{" "}
-                {coberturaAbierta ? "Ocultar" : "Ver"} cobertura ({porDia.length}{" "}
-                dias)
-              </Button>
-            </div>
-          </CardHeader>
-          {coberturaAbierta ? (
-            <CardContent>
-              <div className="max-h-80 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Dia</TableHead>
-                      <TableHead className="text-right">Emitidos</TableHead>
-                      <TableHead className="text-right">Sin traza</TableHead>
-                      <TableHead className="text-right">Con incidencia</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {porDia.map((dia) => (
-                      <TableRow key={dia.dia}>
-                        <TableCell className="tabular-nums">
-                          {formatDate(dia.dia)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {dia.documentos.toLocaleString("es-PE")}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {dia.sin_traza > 0 ? (
-                            <span className="text-destructive">
-                              {dia.sin_traza.toLocaleString("es-PE")}
-                            </span>
-                          ) : (
-                            "0"
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {dia.con_incidencia > 0 ? (
-                            <span className="text-destructive">
-                              {dia.con_incidencia.toLocaleString("es-PE")}
-                            </span>
-                          ) : (
-                            "0"
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          ) : null}
-        </Card>
+      {modo === "periodo" && kpis?.por_dia?.length ? (
+        <IntelisisUfeCobertura dias={kpis.por_dia} />
       ) : null}
 
       <Card>
@@ -718,9 +301,11 @@ export default function IntelisisUfePage({
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h2 className="text-base font-medium">Comprobantes</h2>
               <span className="text-sm text-muted-foreground" aria-live="polite">
-                {ufe.searched
+                {hayConsulta
                   ? `${visibles.length} documentos${
-                      ufe.desde ? ` · ${ufe.desde} a ${ufe.hasta}` : ""
+                      modo === "periodo" && ufe.desde
+                        ? ` · ${ufe.desde} a ${ufe.hasta}`
+                        : ""
                     }`
                   : "Selecciona un periodo para comenzar."}
               </span>
@@ -736,6 +321,25 @@ export default function IntelisisUfePage({
             ) : null}
           </div>
           <div className="flex items-center gap-2 sm:justify-self-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!consultables.length || sunat.busy}
+              onClick={() => setSunatDialogOpen(true)}
+              title="Consulta en SUNAT los documentos mostrados"
+            >
+              {sunat.busy ? (
+                <HugeiconsIcon
+                  icon={Loading02Icon}
+                  size={16}
+                  strokeWidth={2}
+                  className="animate-spin"
+                  aria-hidden
+                />
+              ) : null}{" "}
+              Validar en SUNAT
+              {consultables.length ? ` (${consultables.length})` : ""}
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -764,7 +368,7 @@ export default function IntelisisUfePage({
           </div>
         </CardHeader>
         <CardContent>
-          {!ufe.searched ? (
+          {!hayConsulta ? (
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -772,17 +376,25 @@ export default function IntelisisUfePage({
                 </EmptyMedia>
                 <EmptyTitle>Aun no hay consulta</EmptyTitle>
                 <EmptyDescription>
-                  Elige el periodo y pulsa <b>Consultar</b>. No se consulta
-                  nada hasta que lo pidas.
+                  {modo === "periodo" ? (
+                    <>
+                      Elige el periodo y pulsa <b>Consultar</b>. No se
+                      consulta nada hasta que lo pidas.
+                    </>
+                  ) : (
+                    <>
+                      Escribe el numero de comprobante y pulsa <b>Buscar</b>.
+                    </>
+                  )}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
             <DataTable.Root
-              key={`${ufe.desde}-${ufe.hasta}`}
-              data={rows}
+              key={`${modo}-${ufe.desde}-${ufe.hasta}`}
+              data={filas}
               columns={columns}
-              showFilters={false}
+              renderFilter={renderFiltro}
               onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
               onFilteredRowsChange={setFilteredRows}
             >
@@ -792,6 +404,15 @@ export default function IntelisisUfePage({
           )}
         </CardContent>
       </Card>
+
+      <SunatConfirmDialog
+        open={sunatDialogOpen}
+        onOpenChange={setSunatDialogOpen}
+        rows={consultables}
+        onConfirm={(scope) => {
+          void sunat.runBatch(consultables, refrescar, scope);
+        }}
+      />
 
       <IntelisisUfeDetalle
         open={Boolean(ufe.detalle) || ufe.detalleLoading}

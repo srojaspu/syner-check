@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     validando: null as number | null,
     aviso: null as string | null,
     errorValidacion: null as string | null,
+    buscar: vi.fn(),
     abrirDetalle: vi.fn(),
     cerrarDetalle: vi.fn(),
     validar: vi.fn(),
@@ -153,6 +154,7 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.rows = [fila()];
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
     expect(screen.getByText("B602-00142702")).toBeTruthy();
     expect(screen.getAllByText("OK REGISTRADO").length).toBeGreaterThan(0);
@@ -164,6 +166,7 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.rows = [fila()];
     const { unmount } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
     fireEvent.click(screen.getByText("B602-00142702"));
 
     expect(mocks.ufe.abrirDetalle).toHaveBeenCalledWith(7466462);
@@ -236,6 +239,7 @@ describe("IntelisisUfePage", () => {
     ];
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
     expect(screen.getByText("estimado")).toBeTruthy();
     expect(screen.getAllByText("SIN TRAZA").length).toBeGreaterThan(0);
@@ -274,7 +278,7 @@ describe("IntelisisUfePage", () => {
 
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
-    expect(ultima?.[2]).toEqual({ resultado: "REVISAR", q: "" });
+    expect(ultima?.[2]).toEqual({ resultado: "REVISAR" });
   });
 
   it("no consulta nada al entrar en la seccion", () => {
@@ -326,5 +330,28 @@ describe("IntelisisUfePage", () => {
 
     expect(screen.getByText("Cobertura por dia")).toBeTruthy();
     expect(screen.getAllByText("21/10/2026").length).toBeGreaterThan(0);
+  });
+
+  it("permite buscar por numero de comprobante", () => {
+    mocks.ufe.buscar = vi.fn();
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Comprobante" }));
+    fireEvent.change(
+      screen.getByLabelText("Numero de comprobante"),
+      { target: { value: "B710-00004539" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Buscar/ }));
+
+    expect(mocks.ufe.buscar).toHaveBeenCalledWith("B710-00004539");
+  });
+
+  it("ofrece la validacion en SUNAT de los documentos mostrados", () => {
+    mocks.ufe.rows = [fila()];
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    const boton = screen.getByRole("button", { name: /Validar en SUNAT/ });
+    expect(boton.textContent).toContain("(1)");
   });
 });

@@ -37,9 +37,6 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
-    intelisis_ufe_detail as clean_intelisis_ufe_detail,
-    intelisis_ufe_list as clean_intelisis_ufe_list,
-    intelisis_ufe_validate as clean_intelisis_ufe_validate,
     movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
     summary as clean_summary,
@@ -49,6 +46,7 @@ from src.interfaces.wiring import (
     sunat_submit as clean_sunat_submit,
     sunat_worker_pair,
 )
+from .routers.intelisis_ufe import router as intelisis_ufe_router
 from .config import (
     ALLOWED_ORIGINS,
     BASE_DIR,
@@ -232,6 +230,7 @@ app.add_middleware(
     max_age=8 * 3600,
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
+app.include_router(intelisis_ufe_router)
 
 
 @app.middleware("http")
@@ -441,128 +440,6 @@ async def api_search(
     except Exception as exc:
         logger.exception("Number search failed")
         raise HTTPException(502, "No fue posible completar la búsqueda.") from exc
-
-
-UFE_ESTADOS = {
-    "generado",
-    "error_validacion",
-    "omitido_validacion",
-    "sin_bloque",
-    "en_proceso",
-    "sin_registro",
-    "fuera_de_bitacora",
-}
-UFE_TIPOS = {"BO", "FA", "NC", "ND"}
-UFE_GENERADORES = {"OK REGISTRADO", "SIN OK", "SIN TRAZA", "NO APLICA"}
-UFE_SUNAT = {
-    "ACEPTADO",
-    "SUNAT NO ENCONTRADO",
-    "SUNAT NO ACEPTADO",
-    "SUNAT SIN CONSULTA",
-}
-
-
-@app.get("/api/intelisis/ufe")
-async def api_intelisis_ufe(
-    request: Request,
-    desde: str = Query(..., min_length=10, max_length=10),
-    hasta: str = Query(..., min_length=10, max_length=10),
-    resultado: str = Query("", max_length=20),
-    estado: str = Query("", max_length=200),
-    incidencia: str = Query("", max_length=60),
-    tipo: str = Query("", max_length=4),
-    generador: str = Query("", max_length=20),
-    sunat: str = Query("", max_length=30),
-    sucursal: int | None = Query(None),
-    q: str = Query("", max_length=80),
-):
-    """Comprobantes de origen Intelisis y su estado de generacion (UFE).
-
-    Solo lectura: la consulta porta el universo de ``dbo.PUSP_ControlFac`` y
-    no ejecuta ningun procedimiento almacenado. Los filtros se aplican en el
-    servidor: con 31 dias el universo llega a ~18.000 documentos.
-    """
-    protected(request)
-    estados = [item.strip() for item in estado.split(",") if item.strip()]
-    unknown = [item for item in estados if item not in UFE_ESTADOS]
-    if unknown:
-        raise HTTPException(400, "Estado de generacion invalido.")
-    if resultado and resultado.upper() not in {"CONFORME", "REVISAR"}:
-        raise HTTPException(400, "Resultado invalido.")
-    if tipo and tipo.upper() not in UFE_TIPOS:
-        raise HTTPException(400, "Tipo de documento invalido.")
-    if generador and generador.upper() not in UFE_GENERADORES:
-        raise HTTPException(400, "Generador invalido.")
-    if sunat and sunat.upper() not in UFE_SUNAT:
-        raise HTTPException(400, "Estado SUNAT invalido.")
-    try:
-        return await run_blocking(
-            clean_intelisis_ufe_list,
-            desde,
-            hasta,
-            resultado=resultado.upper(),
-            estados=estados,
-            incidencia=incidencia,
-            tipo=tipo.upper(),
-            generador=generador.upper(),
-            sunat=sunat.upper(),
-            sucursal=sucursal,
-            q=q,
-            correlation_id=request_id_var.get(),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Intelisis UFE list failed")
-        raise HTTPException(
-            502, "No fue posible consultar los comprobantes de Intelisis."
-        ) from exc
-
-
-@app.get("/api/intelisis/ufe/{id_venta}")
-async def api_intelisis_ufe_detail(request: Request, id_venta: int):
-    """Trazabilidad de un comprobante: venta, intentos del generador y SUNAT."""
-    protected(request)
-    try:
-        return await run_blocking(
-            clean_intelisis_ufe_detail, id_venta, request_id_var.get()
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Intelisis UFE detail failed")
-        raise HTTPException(
-            502, "No fue posible consultar la trazabilidad del comprobante."
-        ) from exc
-
-
-@app.post("/api/intelisis/ufe/validar")
-async def api_intelisis_ufe_validate(request: Request):
-    """Consulta individual en SUNAT y deja el estado en el cache local.
-
-    No escribe en Intelisis.
-    """
-    protected(request)
-    body = await read_json_limited(request, MAX_REQUEST_BYTES)
-    data = body if isinstance(body, dict) else {}
-    try:
-        id_venta = int(data.get("id_venta", 0) or 0)
-    except (TypeError, ValueError):
-        raise HTTPException(400, "Identificador de comprobante inválido.")
-    if id_venta <= 0:
-        raise HTTPException(400, "Identificador de comprobante inválido.")
-    try:
-        return await run_blocking(
-            clean_intelisis_ufe_validate,
-            id_venta,
-            _actor_email(request),
-            request_id_var.get(),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Intelisis UFE validation failed")
-        raise HTTPException(502, "No fue posible validar en SUNAT.") from exc
 
 
 @app.get("/api/document/{tipo}/{oid}")

@@ -10,12 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { SunatScope, Voucher } from "../api/types";
+import type { SunatScope, SunatSelectable } from "../api/types";
 
 interface SunatConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  rows: Voucher[];
+  rows: SunatSelectable[];
   onConfirm: (scope: SunatScope) => void;
 }
 
@@ -27,7 +27,9 @@ interface SunatSelectionCounts {
   all: number;
 }
 
-export function sunatSelectionCounts(rows: Voucher[]): SunatSelectionCounts {
+export function sunatSelectionCounts(
+  rows: SunatSelectable[],
+): SunatSelectionCounts {
   const accepted = rows.filter(
     (row) => row.sunat?.estado?.trim().toUpperCase() === "ACEPTADO",
   ).length;

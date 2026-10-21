@@ -1,5 +1,6 @@
 import type {
   DocumentResponse,
+  IntelisisUfeBusqueda,
   IntelisisUfeDetalle,
   IntelisisUfeResponse,
   IntelisisUfeValidacion,
@@ -8,10 +9,10 @@ import type {
   SearchResponse,
   SessionUser,
   SummaryResponse,
+  SunatDocumentInput,
   SunatJobResponse,
   SunatScope,
   SunatSubmissionResponse,
-  Voucher,
 } from "./types";
 
 export class AuthError extends Error {
@@ -190,6 +191,15 @@ export function getIntelisisUfeDetalle(
   return api(`/api/intelisis/ufe/${encodeURIComponent(idVenta)}`, { signal });
 }
 
+/** Busca un comprobante UFE por su numero oficial (sin periodo). */
+export function buscarIntelisisUfe(
+  documento: string,
+  signal?: AbortSignal,
+): Promise<IntelisisUfeBusqueda> {
+  const qs = new URLSearchParams({ documento });
+  return api(`/api/intelisis/ufe/buscar?${qs}`, { signal }, LONG_TIMEOUT_MS);
+}
+
 /**
  * Consulta individual en SUNAT.
  *
@@ -221,7 +231,7 @@ export function logout(): void {
 }
 
 export function submitSunatLote(
-  documentos: Pick<Voucher, "tipo" | "number" | "date" | "crossTotal">[],
+  documentos: SunatDocumentInput[],
   alcance: SunatScope = "no_aceptados",
   signal?: AbortSignal,
 ): Promise<SunatSubmissionResponse> {

@@ -131,21 +131,33 @@ export function LoginCard() {
   );
 }
 
-export function Tabs({
+export function Tabs<T extends string>({
   mode,
   onChange,
+  options,
 }: {
-  mode: "range" | "number";
-  onChange: (mode: "range" | "number") => void;
+  mode: T;
+  onChange: (mode: T) => void;
+  /** Etiquetas del modo; por defecto, las de la pantalla de comprobantes. */
+  options?: { value: T; label: string }[];
 }) {
+  const items =
+    options ??
+    ([
+      { value: "range" as T, label: "Rango de fechas" },
+      { value: "number" as T, label: "Número de comprobante" },
+    ] as { value: T; label: string }[]);
   return (
     <UiTabs
       value={mode}
-      onValueChange={(value) => onChange(value as "range" | "number")}
+      onValueChange={(value) => onChange(value as T)}
     >
       <TabsList>
-        <TabsTrigger value="range">Rango de fechas</TabsTrigger>
-        <TabsTrigger value="number">Número de comprobante</TabsTrigger>
+        {items.map((item) => (
+          <TabsTrigger key={item.value} value={item.value}>
+            {item.label}
+          </TabsTrigger>
+        ))}
       </TabsList>
     </UiTabs>
   );

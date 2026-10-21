@@ -151,6 +151,24 @@ export interface SearchResponse {
 
 export type SunatScope = "no_aceptados" | "todos";
 
+/**
+ * Lo mínimo que el validador necesita de un documento.
+ *
+ * Lo cumplen tanto un `Voucher` (origen SynerPOS) como una fila de la
+ * pantalla Intelisis UFE: el backend arma el payload final.
+ */
+export interface SunatDocumentInput {
+  tipo: string;
+  number?: string;
+  date?: string;
+  crossTotal?: number;
+}
+
+/** Documento seleccionable para una consulta a SUNAT. */
+export interface SunatSelectable extends SunatDocumentInput {
+  sunat?: { estado?: string; fecha_consulta?: string } | null;
+}
+
 export interface SunatOmitted {
   aceptados: number;
   en_proceso: number;
@@ -407,4 +425,12 @@ export interface IntelisisUfeValidacion {
     ruc_condicion?: string;
     observaciones?: string[];
   };
+}
+
+/** Resultado de buscar un comprobante por su numero oficial. */
+export interface IntelisisUfeBusqueda {
+  documento_buscado: string;
+  intelisis_enabled: boolean;
+  encontrados: number;
+  rows: IntelisisUfeRow[];
 }

@@ -15,12 +15,12 @@ from syner_check.config import (
     get_intelisis_password,
     is_intelisis_configured,
 )
-from syner_check.db_client import (
+from syner_check.intelisis_ufe_client import (
     fetch_intelisis_ufe_attempts,
+    fetch_intelisis_ufe_documento,
     fetch_intelisis_ufe_row,
     fetch_intelisis_ufe_rows,
 )
-from syner_check.db_pool import pooled_connection
 
 
 def intelisis_enabled() -> bool:
@@ -60,6 +60,20 @@ def fetch_ufe_row(id_venta: int) -> list[dict[str, Any]]:
         ) from exc
 
 
+def fetch_ufe_documento(correlativo: str) -> list[dict[str, Any]]:
+    """Candidatos por correlativo de documento (busqueda por numero)."""
+    if not is_intelisis_configured():
+        raise UpstreamError("Intelisis no configurado.")
+    try:
+        return fetch_intelisis_ufe_documento(correlativo)
+    except UpstreamError:
+        raise
+    except Exception as exc:
+        raise UpstreamError(
+            f"Intelisis read failed: {type(exc).__name__}."
+        ) from exc
+
+
 def fetch_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
     """Todos los intentos de la bitacora para un comprobante."""
     if not is_intelisis_configured():
@@ -76,6 +90,7 @@ def fetch_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
 
 __all__ = [
     "fetch_ufe_attempts",
+    "fetch_ufe_documento",
     "fetch_ufe_row",
     "fetch_ufe_rows",
     "get_intelisis_config",
