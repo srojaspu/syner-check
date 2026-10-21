@@ -219,17 +219,9 @@ def get_sunat_db_password() -> str:
 # --- MovSynerPos (reenvío manual SynerCom -> SynerPOS) --------------------
 # No hay variables de conexión nuevas: el writer deriva su conexión de DB_*
 # (misma host/base/login que las lecturas) y fuerza application_intent_read_only
-# a False solo en su propia conexión. La única variable nueva es el kill switch.
-
-MOVSYNERPOS_TABLE = "dbo.MovSynerPos"
-# Allowlist del writer: producción y QA (misma base, mismo esquema + creditnote).
-MOVSYNERPOS_TABLES = {
-    "movsynerpos": "MovSynerPos",
-    "dbo.movsynerpos": "MovSynerPos",
-    "movsynerposqa": "MovSynerPosQA",
-    "dbo.movsynerposqa": "MovSynerPosQA",
-}
-MOVSYNERPOS_TABLE_NAMES = tuple(MOVSYNERPOS_TABLES)
+# a False solo en su propia conexión. La tabla destino sale de TABLE_NAME, igual
+# que en las lecturas: cambiar de ambiente es cambiar esa variable, sin nombres
+# hardcodeados ni variables duplicadas.
 
 
 def movsynerpos_enabled() -> bool:
@@ -239,47 +231,28 @@ def movsynerpos_enabled() -> bool:
     return _is_truthy(os.getenv("MOVSYNERPOS_WRITE_ENABLED", "false"))
 
 
-def _movsynerpos_write_table(config: dict) -> str:
-    """Tabla destino del reenvío: ``MOVSYNERPOS_WRITE_TABLE`` o ``TABLE_NAME``.
-
-    Falla cerrado ante cualquier tabla fuera de la allowlist. Devuelve el
-    nombre calificado con ``dbo.`` (el adaptador lo vuelve a validar).
-    """
-    import os
-
-    requested = (
-        os.getenv("MOVSYNERPOS_WRITE_TABLE") or config.get("table") or ""
-    ).strip()
-    canonical = MOVSYNERPOS_TABLES.get(requested.lower())
-    if not canonical:
-        raise RuntimeError(
-            "TABLE_NAME/MOVSYNERPOS_WRITE_TABLE debe ser MovSynerPos o "
-            "MovSynerPosQA para habilitar el reenvío a SynerPOS."
-        )
-    return f"dbo.{canonical}"
-
-
 def get_movsynerpos_config() -> dict:
     """Config del writer derivada de ``get_db_config()``.
 
-    Valida que la tabla destino esté en la allowlist (MovSynerPos o
-    MovSynerPosQA; falla cerrado) y fuerza la conexión de escritura (sin
-    ApplicationIntent=ReadOnly).
+    Reutiliza la tabla configurada en ``TABLE_NAME`` (sin reescribirla) y fuerza
+    la conexión de escritura (sin ApplicationIntent=ReadOnly). El adaptador
+    valida y entrecomilla el identificador antes de usarlo en SQL.
     """
-    config = get_db_config()
-    table = _movsynerpos_write_table(config)
-    return {
-        **config,
-        "table": table,
-        "application_intent_read_only": False,
-    }
+    return {**get_db_config(), "application_intent_read_only": False}
 
 
 def is_movsynerpos_configured() -> bool:
-    """True cuando el writer tiene config y password (sin leer secretos)."""
+    """True cuando el writer tiene config, tabla válida y password.
+
+    No valida nombres concretos: solo que ``TABLE_NAME`` sea un identificador
+    seguro (misma guarda que usa el adaptador).
+    """
+    from syner_check.db_client import quote_table_name
+
     try:
-        get_movsynerpos_config()
-    except RuntimeError:
+        config = get_movsynerpos_config()
+        quote_table_name(str(config.get("table", "")))
+    except (RuntimeError, ValueError):
         return False
     return bool(get_db_password())
 

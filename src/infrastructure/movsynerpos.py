@@ -49,16 +49,7 @@ class MovSynerPosWriterAdapter:
         table = str(config["table"]).strip()
         if "." not in table:
             table = f"dbo.{table}"
-        quoted = quote_table_name(table)
-        if quoted.lower() not in (
-            "[dbo].[movsynerpos]",
-            "[dbo].[movsynerposqa]",
-        ):
-            raise ValueError(
-                "MovSynerPos writer only accepts dbo.MovSynerPos or "
-                "dbo.MovSynerPosQA."
-            )
-        return quoted
+        return quote_table_name(table)
 
     def _connect(self):
         from syner_check.db_client import connect

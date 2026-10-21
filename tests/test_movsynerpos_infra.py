@@ -1,4 +1,4 @@
-"""F2: config (kill switch, allowlist de tabla) y adaptador pyodbc."""
+"""F2: config (kill switch, tabla configurada) y adaptador pyodbc."""
 
 from __future__ import annotations
 
@@ -65,36 +65,19 @@ class ConfigTest(unittest.TestCase):
             self.assertTrue(cfg.movsynerpos_enabled())
 
     def test_config_forces_write_connection(self) -> None:
-        with patch.dict("os.environ", {"MOVSYNERPOS_WRITE_TABLE": ""}), patch.object(
-            cfg, "get_db_config", return_value=dict(DB_CONFIG)
-        ):
+        with patch.object(cfg, "get_db_config", return_value=dict(DB_CONFIG)):
             result = cfg.get_movsynerpos_config()
-        self.assertEqual(result["table"], "dbo.MovSynerPos")
+        self.assertEqual(result["table"], "MovSynerPos")
         self.assertFalse(result["application_intent_read_only"])
 
-    def test_config_accepts_qa_write_table(self) -> None:
-        with patch.dict(
-            "os.environ", {"MOVSYNERPOS_WRITE_TABLE": "dbo.MovSynerPosQA"}
-        ), patch.object(cfg, "get_db_config", return_value=dict(DB_CONFIG)):
-            result = cfg.get_movsynerpos_config()
-        self.assertEqual(result["table"], "dbo.MovSynerPosQA")
-        self.assertFalse(result["application_intent_read_only"])
-
-    def test_config_falls_back_to_table_name(self) -> None:
-        with patch.dict("os.environ", {"MOVSYNERPOS_WRITE_TABLE": ""}), patch.object(
+    def test_config_uses_configured_table(self) -> None:
+        with patch.object(
             cfg,
             "get_db_config",
             return_value={**DB_CONFIG, "table": "MovSynerPosQA"},
         ):
             result = cfg.get_movsynerpos_config()
-        self.assertEqual(result["table"], "dbo.MovSynerPosQA")
-
-    def test_config_rejects_another_table(self) -> None:
-        with patch.dict("os.environ", {"MOVSYNERPOS_WRITE_TABLE": ""}), patch.object(
-            cfg, "get_db_config", return_value={**DB_CONFIG, "table": "Otra"}
-        ):
-            with self.assertRaises(RuntimeError):
-                cfg.get_movsynerpos_config()
+        self.assertEqual(result["table"], "MovSynerPosQA")
 
     def test_writer_connection_is_not_read_only(self) -> None:
         from syner_check.db_client import build_connection_string
@@ -115,6 +98,12 @@ class ConfigTest(unittest.TestCase):
             cfg, "get_db_password", return_value="secret"
         ):
             self.assertTrue(cfg.is_movsynerpos_configured())
+
+    def test_configured_rejects_invalid_table(self) -> None:
+        with patch.object(
+            cfg, "get_db_config", return_value={**DB_CONFIG, "table": "bad;table"}
+        ), patch.object(cfg, "get_db_password", return_value="secret"):
+            self.assertFalse(cfg.is_movsynerpos_configured())
 
 
 class AdapterTest(unittest.TestCase):
@@ -141,7 +130,7 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(params, ("oid-1", "BOLETA"))
         self.assertTrue(connection.closed)
 
-    def test_qa_table_is_allowed(self) -> None:
+    def test_adapter_uses_configured_table(self) -> None:
         adapter = MovSynerPosWriterAdapter(
             config={**DB_CONFIG, "table": "dbo.MovSynerPosQA"}, password="x"
         )
@@ -152,9 +141,21 @@ class AdapterTest(unittest.TestCase):
         sql, _params = connection.cursor_obj.executed[0]
         self.assertIn("FROM [dbo].[MovSynerPosQA]", sql)
 
-    def test_adapter_rejects_other_tables(self) -> None:
+    def test_adapter_qualifies_unqualified_table(self) -> None:
         adapter = MovSynerPosWriterAdapter(
-            config={**DB_CONFIG, "table": "Otra"}, password="x"
+            config={**DB_CONFIG, "table": "MovSynerPosQA"}, password="x"
+        )
+        connection = FakeConnection()
+        with patch("syner_check.db_client.connect", return_value=connection):
+            adapter.existing_lines("oid-1", "BOLETA")
+
+        sql, _params = connection.cursor_obj.executed[0]
+        self.assertIn("FROM [dbo].[MovSynerPosQA]", sql)
+
+    def test_adapter_rejects_invalid_identifier(self) -> None:
+        adapter = MovSynerPosWriterAdapter(
+            config={**DB_CONFIG, "table": "MovSynerPos; DROP TABLE x--"},
+            password="x",
         )
         with self.assertRaises(ValueError):
             adapter.existing_lines("oid-1", "BOLETA")
