@@ -183,6 +183,8 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(len(connection.cursor_obj.executed), 2)
         sql, params = connection.cursor_obj.executed[0]
         self.assertIn("INSERT INTO [dbo].[MovSynerPos]", sql)
+        self.assertIn("[fechaRegistro]", sql)
+        self.assertIn("GETDATE()", sql)
         self.assertEqual(len(params), len(COLUMNAS))
         self.assertFalse(connection.autocommit)
         self.assertTrue(connection.committed)

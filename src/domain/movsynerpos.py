@@ -12,7 +12,7 @@ no una interpretación "más limpia" de los mismos.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import math
 from typing import Any, Iterable, Sequence
@@ -24,9 +24,11 @@ SUCURSAL = "104"
 TIPOS = ("BOLETA", "FACTURA", "NOTA DE CREDITO")
 MAX_DOCUMENTOS = 25
 
-# Columnas que producción escribe. ``fechaRegistro`` y ``EnviadoIntelisis``
-# existen en la tabla pero el POS nunca las inserta (verificado 2026-10-20
-# con SELECT TOP 0 sobre el linked server).
+# Columnas que producción escribe. ``EnviadoIntelisis`` existe en la tabla pero
+# el POS nunca la inserta (verificado 2026-10-20 con SELECT TOP 0 sobre el
+# linked server; en producción solo la tiene un 0,4% de filas que sincronizó
+# Intelisis). ``fechaRegistro`` la pone el procedimiento del POS con GETDATE(),
+# así que el adaptador la escribe igual (ver src/infrastructure/movsynerpos.py).
 COLUMNAS: tuple[str, ...] = (
     "IDSynerPos",
     "Sucursal",
@@ -183,8 +185,8 @@ def require_int(value: Any, field: str) -> int:
     return int(number)
 
 
-def to_datetime(value: Any) -> datetime | None:
-    """ISO date/datetime -> datetime; ``None`` si falta o es inválido."""
+def _parse_iso(value: Any) -> datetime | None:
+    """ISO date/datetime -> datetime (conserva el offset si lo trae)."""
     if value is None:
         return None
     text = str(value).strip()
@@ -193,13 +195,40 @@ def to_datetime(value: Any) -> datetime | None:
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
+        return datetime.fromisoformat(text)
     except ValueError:
         try:
-            parsed = datetime.combine(date.fromisoformat(text[:10]), datetime.min.time())
+            return datetime.combine(date.fromisoformat(text[:10]), datetime.min.time())
         except ValueError:
             return None
+
+
+def to_datetime(value: Any) -> datetime | None:
+    """ISO date/datetime -> datetime naive; ``None`` si falta o es inválido.
+
+    No convierte de zona: se usa para campos que SynerPOS guarda tal cual
+    (``FechaDocumento``, que es fecha sin hora).
+    """
+    parsed = _parse_iso(value)
+    if parsed is None:
+        return None
     return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+
+
+def to_utc_datetime(value: Any) -> datetime | None:
+    """ISO con offset -> datetime naive **en UTC**.
+
+    SynerCom devuelve ``createdDate`` con offset (-05:00) y el POS lo manda
+    crudo a SQL Server, que lo guarda como instante UTC (verificado contra
+    producción el 2026-10-21). Convertimos para escribir lo mismo que
+    producción; los valores sin offset se toman tal cual.
+    """
+    parsed = _parse_iso(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def normalize_date_iso(value: Any) -> str:
@@ -555,7 +584,7 @@ def _header(tipo: str, doc: dict) -> dict[str, Any]:
         "Moneda": or_dash(currency.get("isoCode")),
         "CrossTotal": to_money(doc.get("crossTotal"), Decimal("0.0000")),
         "RefNC": SENTINEL,
-        "createdDate": to_datetime(doc.get("createdDate")),
+        "createdDate": to_utc_datetime(doc.get("createdDate")),
         "nota": (doc.get("nota") or None) if tipo == "BOLETA" else None,
     }
 

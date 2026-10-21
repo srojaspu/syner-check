@@ -27,6 +27,7 @@ from src.domain.movsynerpos import (
     slots_pago_nc,
     to_datetime,
     to_money,
+    to_utc_datetime,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "movsynerpos"
@@ -90,6 +91,24 @@ def test_to_datetime_normalizes_z_and_plain_dates():
     assert to_datetime("2026-10-20") == datetime(2026, 10, 20)
     assert to_datetime("2026-10-20T10:15:00Z") == datetime(2026, 10, 20, 10, 15)
     assert to_datetime("-") is None
+
+
+def test_to_utc_datetime_converts_offset_to_utc():
+    # SynerCom manda createdDate con offset -05:00; SynerPOS lo guarda en UTC.
+    assert to_utc_datetime("2026-10-20T22:22:10.723148-05:00") == datetime(
+        2026, 10, 21, 3, 22, 10, 723148
+    )
+    assert to_utc_datetime("2026-10-20T10:15:00Z") == datetime(2026, 10, 20, 10, 15)
+    # Sin offset se toma tal cual (no hay zona que convertir).
+    assert to_utc_datetime("2026-10-20T10:15:00") == datetime(2026, 10, 20, 10, 15)
+    assert to_utc_datetime("-") is None
+
+
+def test_to_datetime_keeps_local_wall_clock_for_offset_values():
+    # FechaDocumento no se convierte de zona: solo createdDate va a UTC.
+    assert to_datetime("2026-10-20T22:22:10-05:00") == datetime(
+        2026, 10, 20, 22, 22, 10
+    )
 
 
 def test_normalize_date_iso_trims_time_component():

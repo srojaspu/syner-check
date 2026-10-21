@@ -21,8 +21,15 @@ from src.domain.movsynerpos import COLUMNAS
 
 logger = logging.getLogger("syner_check.movsynerpos")
 
-_INSERT_COLUMNS = ", ".join(f"[{column}]" for column in COLUMNAS)
-_INSERT_PLACEHOLDERS = ", ".join("?" for _ in COLUMNAS)
+_INSERT_COLUMNS = ", ".join(
+    [*(f"[{column}]" for column in COLUMNAS), "[fechaRegistro]"]
+)
+# ``fechaRegistro`` no la manda el POS: la escribe su procedimiento con la hora
+# del servidor. Aquí se replica igual (GETDATE()), para que las filas del
+# reenvío manual sean indistinguibles de las que ya hay en producción.
+_INSERT_PLACEHOLDERS = ", ".join(
+    [*( "?" for _ in COLUMNAS), "GETDATE()"]
+)
 
 
 class MovSynerPosWriterAdapter:
