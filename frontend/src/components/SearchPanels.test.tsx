@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { toISODate } from "../api/format";
 import { RangePanel } from "./SearchPanels";
-import { Tabs } from "./AppShell";
+import { Tabs } from "./Tabs";
 
 afterEach(cleanup);
 
@@ -91,3 +91,4 @@ describe("mode Tabs", () => {
     expect(screen.getByTestId("mode").textContent).toBe("number");
   });
 });
+

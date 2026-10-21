@@ -373,7 +373,9 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.buscar = vi.fn();
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Comprobante" }));
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Número de comprobante" }),
+    );
     fireEvent.change(
       screen.getByLabelText("Numero de comprobante"),
       { target: { value: "B710-00004539" } },

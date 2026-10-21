@@ -29,7 +29,7 @@ import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { SunatProgress } from "@/components/SunatProgress";
-import { Tabs } from "@/components/AppShell";
+import { Tabs } from "@/components/Tabs";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
 import type {
@@ -41,10 +41,6 @@ import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 import { useSunat } from "../hooks/useSunat";
 
 const MAX_DIAS = 31;
-const MODOS = [
-  { value: "periodo" as const, label: "Periodo" },
-  { value: "comprobante" as const, label: "Comprobante" },
-];
 
 /**
  * Pantalla Intelisis UFE: comprobantes de origen Intelisis y el estado del
@@ -190,7 +186,7 @@ export default function IntelisisUfePage({
 
   return (
     <div className="flex flex-col gap-6">
-      <Tabs mode={modo} onChange={setModo} options={MODOS} />
+      <Tabs mode={modo} onChange={setModo} />
 
       {modo === "periodo" ? (
         <PeriodoPanel
@@ -413,3 +409,4 @@ export default function IntelisisUfePage({
     </div>
   );
 }
+

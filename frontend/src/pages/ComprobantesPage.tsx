@@ -20,7 +20,7 @@ import { MovSynerPosProgress } from "@/components/MovSynerPosProgress";
 import { NumberPanel, RangePanel } from "@/components/SearchPanels";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { SunatProgress } from "@/components/SunatProgress";
-import { Tabs } from "@/components/AppShell";
+import { Tabs } from "@/components/Tabs";
 import { voucherColumns } from "@/components/columns";
 import { useDocument } from "@/hooks/useDocument";
 import { useMovSynerPos } from "@/hooks/useMovSynerPos";
@@ -403,3 +403,4 @@ export default function ComprobantesPage({
     </div>
   );
 }
+
