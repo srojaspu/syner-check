@@ -83,14 +83,23 @@ async function api<T>(
       signal: controller.signal,
     });
     if (response.status === 401) throw new AuthError();
-    let body: { detail?: string };
+    let body: { detail?: unknown };
     try {
       body = await response.json();
     } catch {
       throw new Error("Respuesta inválida del servidor.");
     }
     if (!response.ok) {
-      throw new ApiError(response.status, body.detail ?? "Error de consulta");
+      // Un 422 de validacion trae `detail` como lista de errores: nunca
+      // mostrarlo crudo (salia "[object Object]").
+      const detail = body.detail;
+      const message =
+        typeof detail === "string" && detail.trim()
+          ? detail
+          : response.status === 422
+            ? "Los filtros enviados no son válidos."
+            : "Error de consulta";
+      throw new ApiError(response.status, message);
     }
     return body as T;
   } catch (error: unknown) {

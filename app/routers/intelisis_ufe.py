@@ -71,7 +71,7 @@ async def listar_ufe(
     resultado: str = Query("", max_length=20),
     estado: str = Query("", max_length=200),
     incidencia: str = Query("", max_length=60),
-    tipo: str = Query("", max_length=4),
+    tipo: str = Query("", max_length=20),
     generador: str = Query("", max_length=20),
     sunat: str = Query("", max_length=30),
     sucursal: int | None = Query(None),
@@ -90,8 +90,6 @@ async def listar_ufe(
         raise HTTPException(400, "Estado de generacion invalido.")
     if resultado and resultado.upper() not in {"CONFORME", "REVISAR"}:
         raise HTTPException(400, "Resultado invalido.")
-    if tipo and tipo.upper() not in UFE_TIPOS:
-        raise HTTPException(400, "Tipo de documento invalido.")
     tipos = [item.strip().upper() for item in tipo.split(",") if item.strip()]
     invalid_tipos = [item for item in tipos if item not in UFE_TIPOS]
     if invalid_tipos:

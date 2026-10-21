@@ -90,6 +90,31 @@ def test_periodo_mayor_a_31_dias_es_400(autenticado) -> None:
     assert "31 dias" in response.json()["detail"]
 
 
+def test_el_tipo_viaja_como_lista(autenticado) -> None:
+    """Los chips de tipo de documento viajan juntos (BO,FA,NC,ND)."""
+    response = autenticado.get(
+        "/api/intelisis/ufe",
+        params={
+            "desde": "2026-10-20",
+            "hasta": "2026-10-20",
+            "tipo": "BO,FA,NC,ND",
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_un_tipo_desconocido_en_la_lista_es_400(autenticado) -> None:
+    response = autenticado.get(
+        "/api/intelisis/ufe",
+        params={
+            "desde": "2026-10-20",
+            "hasta": "2026-10-20",
+            "tipo": "BO,XX",
+        },
+    )
+    assert response.status_code == 400
+
+
 def test_documento_inexistente_es_404(autenticado) -> None:
     response = autenticado.get("/api/intelisis/ufe/999999999")
     assert response.status_code == 404

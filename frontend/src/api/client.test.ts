@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
   AuthError,
   RequestAbortedError,
+  getIntelisisUfe,
   sendMovSynerPos,
 } from "./client";
 
@@ -102,5 +104,35 @@ describe("sendMovSynerPos", () => {
     await expect(sendMovSynerPos([], false)).rejects.toThrow(
       "Respuesta inválida del servidor.",
     );
+  });
+});
+
+describe("errores de la API", () => {
+  it("un 422 con detalle en lista no muestra [object Object]", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        { detail: [{ loc: ["query", "tipo"], msg: "too long" }] },
+        422,
+      ),
+    );
+
+    await expect(
+      getIntelisisUfe({ desde: "2026-10-21", hasta: "2026-10-21" }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: /Los filtros enviados no son v.lidos\./,
+    });
+  });
+
+  it("un 400 con detalle de texto lo conserva", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "Tipo de documento invalido." }, 400),
+    );
+
+    await expect(
+      getIntelisisUfe({ desde: "2026-10-21", hasta: "2026-10-21" }),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });
