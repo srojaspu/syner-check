@@ -1,4 +1,6 @@
-"""Adaptador pyodbc para dbo.MovSynerPos / dbo.MovSynerPosQA (SELECT + INSERT).
+"""Adaptador pyodbc para la tabla SynerPOS configurada en ``TABLE_NAME``
+(SELECT + INSERT). En producción es ``dbo.MovSynerPos``; para probar sin tocar
+producción basta ``TABLE_NAME=MovSynerPosQA`` (misma base).
 
 Fuente de la conexión: ``get_movsynerpos_config()`` (deriva de DB_* y fuerza
 ``application_intent_read_only=False``). Nunca se reutiliza el pool de lectura:
@@ -24,9 +26,12 @@ logger = logging.getLogger("syner_check.movsynerpos")
 _INSERT_COLUMNS = ", ".join(
     [*(f"[{column}]" for column in COLUMNAS), "[fechaRegistro]"]
 )
-# ``fechaRegistro`` no la manda el POS: la escribe su procedimiento con la hora
-# del servidor. Aquí se replica igual (GETDATE()), para que las filas del
-# reenvío manual sean indistinguibles de las que ya hay en producción.
+# ``fechaRegistro`` no la manda el POS: la escribe su propio INSERT
+# (querys.storeDocumentoDeVenta) con GETDATE(), en el mismo statement y sin
+# default en la columna. Aquí se replica igual, para que las filas del reenvío
+# manual sean indistinguibles de las que ya hay en producción.
+# Verificado 2026-10-21 contra el SQL real de producción: mismas 38 columnas,
+# con @name -> [promotion] y @date -> [createdDate].
 _INSERT_PLACEHOLDERS = ", ".join(
     [*( "?" for _ in COLUMNAS), "GETDATE()"]
 )
@@ -50,13 +55,10 @@ class MovSynerPosWriterAdapter:
         return self._config, self._password
 
     def _table(self) -> str:
-        from syner_check.db_client import quote_table_name
+        from syner_check.db_client import qualified_table_name
 
         config, _password = self._settings()
-        table = str(config["table"]).strip()
-        if "." not in table:
-            table = f"dbo.{table}"
-        return quote_table_name(table)
+        return qualified_table_name(str(config["table"]))
 
     def _connect(self):
         from syner_check.db_client import connect
@@ -92,7 +94,19 @@ class MovSynerPosWriterAdapter:
     def serie_conflicts(
         self, tipo: str, serie: str, idxs: Sequence[int]
     ) -> dict[int, str]:
-        """Líneas de otra oid con la misma serie/tipo/Idx (D4)."""
+        """Líneas de otra oid con la misma serie/tipo/Idx (D4).
+
+        Réplica de ``querys.getRegistro`` del POS (verificado 2026-10-21):
+
+            SELECT SerieNumero FROM MovSynerPos
+             WHERE SerieNumero = @SerieNumero AND idx = @Idx
+               AND TipoDocumento = @TipoDoc
+
+        Producción no filtra por ``IDSynerPos`` porque solo necesita saber si la
+        línea ya existe. Aquí se agrega ``IDSynerPos`` para distinguir una línea
+        insertada por este mismo documento (no es colisión) de la de otro oid.
+        La tabla sale de ``TABLE_NAME``, nunca de un literal.
+        """
         targets = [int(idx) for idx in idxs]
         if not targets:
             return {}
@@ -135,6 +149,15 @@ class MovSynerPosWriterAdapter:
                 cursor.execute(query, *[line.get(column) for column in COLUMNAS])
                 inserted += 1
             connection.commit()
+            # Deja en el log a qué tabla se escribió: es la única forma de
+            # auditar que un smoke de QA no terminó en producción.
+            logger.info(
+                "MovSynerPos insert target=%s tipo=%s oid=%s lineas=%d",
+                table,
+                getattr(documento, "tipo", ""),
+                getattr(documento, "oid", ""),
+                inserted,
+            )
             return inserted
         except Exception as exc:  # noqa: BLE001 - rollback total del documento
             try:

@@ -166,6 +166,19 @@ def _sunat_worker_task(stop: asyncio.Event) -> asyncio.Task | None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Antes de aceptar peticiones: si el reenvío manual está habilitado, deja
+    # en el log a qué tabla escribe. Es lo que distingue un smoke de QA de una
+    # escritura real en producción sin tener que adivinar el .env.
+    from syner_check import config as cfg
+
+    if cfg.movsynerpos_enabled():
+        logger.info(
+            "MovSynerPos writer enabled target=%s",
+            cfg.get_movsynerpos_target() or "<unconfigured>",
+        )
+    else:
+        logger.info("MovSynerPos writer disabled (MOVSYNERPOS_WRITE_ENABLED=false)")
+
     stop = asyncio.Event()
     task: asyncio.Task | None = None
     try:

@@ -9,7 +9,7 @@ from syner_check.db_client import (
     ALLOWED_TIPOS,
     _to_iso_date,
     _to_str,
-    quote_table_name,
+    qualified_table_name,
 )
 from syner_check.db_pool import pooled_connection
 
@@ -28,7 +28,7 @@ def fetch_documents(
     if not wanted:
         wanted = list(ALLOWED_TIPOS)
     cfg = get_db_config()
-    table = quote_table_name(cfg["table"])
+    table = qualified_table_name(cfg["table"])
     placeholders = ", ".join("?" for _ in wanted)
     query = f"""SELECT [IDSynerPos],[TipoDocumento],[Sku],[FechaDocumento],[SerieNumero]
               FROM {table}
@@ -52,7 +52,7 @@ def fetch_by_number(
         # Never fall through to `IN ()`: reject-all is a syntax error.
         wanted = list(ALLOWED_TIPOS)
     cfg = get_db_config()
-    table = quote_table_name(cfg["table"])
+    table = qualified_table_name(cfg["table"])
     placeholders = ", ".join("?" for _ in wanted)
     filters = ["[SerieNumero] = ?", f"[TipoDocumento] IN ({placeholders})"]
     params = [number.strip(), *wanted]

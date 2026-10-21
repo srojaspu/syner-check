@@ -58,6 +58,22 @@ def quote_table_name(table: str) -> str:
     return ".".join(quoted)
 
 
+def qualified_table_name(table: str) -> str:
+    """``quote_table_name`` con esquema ``dbo`` cuando falta.
+
+    Lecturas y escrituras deben resolver la misma tabla a partir del mismo
+    ``TABLE_NAME``. Sin esquema explícito la resolución depende del esquema
+    por defecto del login, así que un ``TABLE_NAME=MovSynerPosQA`` podría
+    apuntar a tablas distintas según la cuenta.
+
+    Acepta ``tabla``, ``esquema.tabla`` y ``base.esquema.tabla``.
+    """
+    text = str(table or "").strip()
+    if "." not in text:
+        text = f"dbo.{text}"
+    return quote_table_name(text)
+
+
 def build_connection_string(db_config: dict[str, Any], password: str) -> str:
     """Build the ODBC connection string. Callers must never log it."""
     server = db_config["server"]
@@ -150,7 +166,7 @@ def fetch_sql_documents(
         wanted = list(ALLOWED_TIPOS)
     db_config = get_db_config()  # raises naming the missing env var
     password = get_db_password()
-    table = quote_table_name(db_config["table"])
+    table = qualified_table_name(db_config["table"])
     columns = ", ".join(f"[{col}]" for col in SQL_DOCUMENT_COLUMNS)
     placeholders = ", ".join("?" for _ in wanted)
     query = (

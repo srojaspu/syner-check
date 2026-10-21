@@ -247,14 +247,29 @@ def is_movsynerpos_configured() -> bool:
     No valida nombres concretos: solo que ``TABLE_NAME`` sea un identificador
     seguro (misma guarda que usa el adaptador).
     """
-    from syner_check.db_client import quote_table_name
+    from syner_check.db_client import qualified_table_name
 
     try:
         config = get_movsynerpos_config()
-        quote_table_name(str(config.get("table", "")))
+        qualified_table_name(str(config.get("table", "")))
     except (RuntimeError, ValueError):
         return False
     return bool(get_db_password())
+
+
+def get_movsynerpos_target() -> str | None:
+    """Tabla resuelta del writer (``TABLE_NAME``) o ``None`` si no es válida.
+
+    Solo para logs de arranque: permite ver si el proceso va a escribir en
+    producción o en una tabla de prueba antes de la primera escritura.
+    """
+    from syner_check.db_client import qualified_table_name
+
+    try:
+        config = get_movsynerpos_config()
+        return qualified_table_name(str(config.get("table", "")))
+    except (RuntimeError, ValueError):
+        return None
 
 
 def is_intelisis_configured() -> bool:

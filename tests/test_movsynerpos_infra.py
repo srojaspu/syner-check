@@ -105,6 +105,22 @@ class ConfigTest(unittest.TestCase):
         ), patch.object(cfg, "get_db_password", return_value="secret"):
             self.assertFalse(cfg.is_movsynerpos_configured())
 
+    def test_target_helper_shows_configured_table(self) -> None:
+        with patch.object(
+            cfg,
+            "get_db_config",
+            return_value={**DB_CONFIG, "table": "MovSynerPosQA"},
+        ):
+            self.assertEqual(
+                cfg.get_movsynerpos_target(), "[dbo].[MovSynerPosQA]"
+            )
+
+    def test_target_helper_returns_none_for_invalid_table(self) -> None:
+        with patch.object(
+            cfg, "get_db_config", return_value={**DB_CONFIG, "table": "bad;table"}
+        ):
+            self.assertIsNone(cfg.get_movsynerpos_target())
+
 
 class AdapterTest(unittest.TestCase):
     def build(self, rows=(), connection=None):
@@ -151,6 +167,37 @@ class AdapterTest(unittest.TestCase):
 
         sql, _params = connection.cursor_obj.executed[0]
         self.assertIn("FROM [dbo].[MovSynerPosQA]", sql)
+
+    def test_every_query_uses_the_configured_table(self) -> None:
+        """Las 3 consultas del writer salen de TABLE_NAME, nunca de un literal.
+
+        Es la garantía real de testabilidad: con TABLE_NAME apuntando a una
+        tabla de prueba, ninguna sentencia (SELECT de líneas existentes,
+        SELECT de colisión de serie e INSERT) puede nombrar la tabla de
+        producción.
+        """
+        for configured in ("MovSynerPosQA", "dbo.MovSynerPosQA"):
+            with self.subTest(table=configured):
+                adapter = MovSynerPosWriterAdapter(
+                    config={**DB_CONFIG, "table": configured}, password="x"
+                )
+                connection = FakeConnection()
+                with patch(
+                    "syner_check.db_client.connect", return_value=connection
+                ):
+                    adapter.existing_lines("oid-1", "BOLETA")
+                    adapter.serie_conflicts("BOLETA", "B004-1", [1])
+                    adapter.insert_lines(
+                        object(), [{column: None for column in COLUMNAS}]
+                    )
+
+                statements = [sql for sql, _ in connection.cursor_obj.executed]
+                self.assertEqual(len(statements), 3)
+                self.assertTrue(statements[2].startswith("INSERT INTO"))
+                for sql in statements:
+                    self.assertIn("[dbo].[MovSynerPosQA]", sql)
+                    self.assertNotIn("[dbo].[MovSynerPos]", sql)
+                    self.assertNotIn("[MovSynerPos]", sql)
 
     def test_adapter_rejects_invalid_identifier(self) -> None:
         adapter = MovSynerPosWriterAdapter(
