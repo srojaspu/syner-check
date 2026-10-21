@@ -191,22 +191,6 @@ export default function IntelisisUfePage({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            Intelisis · UFE
-          </h1>
-          <span className="text-sm text-muted-foreground">
-            Comprobantes de origen Intelisis y el estado del generador
-          </span>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Revisa que el generador de comprobantes electronicos produjo el
-          archivo de cada venta y si SUNAT lo acepto. El estado SUNAT se
-          consulta en SUNAT; la conciliacion del portal de Carvajal no aplica.
-        </p>
-      </header>
-
       <Tabs mode={modo} onChange={setModo} options={MODOS} />
 
       {modo === "periodo" ? (

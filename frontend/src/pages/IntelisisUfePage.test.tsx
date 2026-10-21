@@ -143,10 +143,9 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.validar.mockReset();
   });
 
-  it("muestra el encabezado y el resumen del periodo", () => {
+  it("muestra el resumen del periodo", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("Intelisis · UFE")).toBeTruthy();
     expect(screen.getByText("Emitidos")).toBeTruthy();
     expect(screen.getByText("Sin cobertura SUNAT")).toBeTruthy();
   });
