@@ -129,15 +129,38 @@ listado de 31 días devolvía **17,7 MB**.
 
 ```powershell
 # 1) Paridad del universo (14 días)
-.venv\Scripts\python.exe -m tests.qa_paridad_universo     # o el script .sql en SSMS
+.venv\Scripts\python.exe -m tests.qa_paridad_universo
 
 # 2) Paridad de la clasificación (por día)
 .venv\Scripts\python.exe -m tests.qa_paridad_clasificacion 2026-10-20
 
-# 3) Smoke completo (listado + trazabilidad + validación SUNAT)
-.venv\Scripts\python.exe -m tests.smoke_intelisis_ufe --validar
+# 3) Smoke de la pantalla (listado + trazabilidad)
+.venv\Scripts\python.exe -m tests.smoke_intelisis_ufe
+
+# 4) End-to-end con validacion en SUNAT (gasta cuota, no escribe en Intelisis)
+.venv\Scripts\python.exe -m tests.smoke_e2e_intelisis_ufe --validar
 ```
 
 Todos usan el `.env` local (login de lectura) y **no escriben nada en Intelisis**.
 El único que escribe es el `dbo.SunatValidacion` de nuestra base (el estado SUNAT).
+
+### El end-to-end no tiene efectos, y lo demuestra
+
+`tests/smoke_e2e_intelisis_ufe.py` recorre el flujo completo (listado → filtro →
+trazabilidad → validación) y verifica, sobre `PUnidas`:
+
+| Verificación | Por qué |
+|---|---|
+| 0 filas de `SPPUFE_EjecucionLog` con `LoginName = pu_reader` (antes y después) | El generador **siempre** inserta una fila en la bitácora: si no hay ninguna atribuida a nuestro login, el SP no se ejecutó |
+| `HAS_PERMS_BY_NAME('dbo.SPPUFE_UBL21','EXECUTE') = 0` (y el de `_NCND`) | Nuestro login **no puede** ejecutar el generador |
+| `HAS_PERMS_BY_NAME('dbo.Venta','UPDATE') = 0` y `('dbo.SPPUFE_EjecucionLog','INSERT') = 0` | No puede escribir en las tablas que el generador toca |
+
+Ojo con un detalle que se lleva por delante: **la bitácora crece sola** (los jobs
+del propio ERP generan documentos con el login `sa`, desde `PUSVRGOGLOBAL`,
+`PHXSVRGOGLOBAL`, `JACKSON-31`…). Comparar el total de filas antes y después no
+prueba nada; por eso la verificación se hace por atribución (`LoginName`) y por
+permisos, no por conteo.
+
+Y **nada llega a Carvajal**: lo único que produce un TXT para Carvajal es el
+generador, que la app no puede ejecutar.
 
