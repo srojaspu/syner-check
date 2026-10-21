@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  CalendarDaysIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   FileDownIcon,
@@ -15,6 +16,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -43,14 +51,19 @@ import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 const MAX_DIAS = 31;
 const ALL = "__all";
 
-function rangoInicial(): { desde: string; hasta: string } {
-  const hoy = new Date();
-  const desde = new Date(hoy);
-  desde.setDate(hoy.getDate() - 6);
-  return {
-    desde: toISODate(desde),
-    hasta: toISODate(hoy),
-  };
+/** Compara filtros sin depender del orden de las claves. */
+function mismosFiltros(
+  a: IntelisisUfeFiltros,
+  b: IntelisisUfeFiltros,
+): boolean {
+  const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const clave of claves) {
+    if (String(a[clave as keyof IntelisisUfeFiltros] ?? "") !==
+        String(b[clave as keyof IntelisisUfeFiltros] ?? "")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function KpiTile({
@@ -157,6 +170,12 @@ function FiltroSelect({
   );
 }
 
+interface Consulta {
+  desde: string;
+  hasta: string;
+  filtros: IntelisisUfeFiltros;
+}
+
 /**
  * Pantalla Intelisis UFE: comprobantes de origen Intelisis y el estado del
  * generador (`SPPUFE_UBL21`), el estado SUNAT y las incidencias.
@@ -165,6 +184,10 @@ function FiltroSelect({
  * (CONFORME/REVISAR), `generador` (SIN TRAZA/OK REGISTRADO/SIN OK) e
  * `incidencias`. Los filtros van al servidor: con 31 dias el universo
  * llega a ~18.000 documentos y filtrarlos en el navegador no era viable.
+ *
+ * **Solo se consulta al pulsar "Consultar"**: entrar en la seccion no
+ * golpea el ERP, y el periodo y los filtros quedan en borrador hasta que el
+ * usuario decide consultarlos.
  */
 export default function IntelisisUfePage({
   onAuthFailure,
@@ -172,14 +195,16 @@ export default function IntelisisUfePage({
   onAuthFailure: () => void;
 }) {
   const ufe = useIntelisisUfe(onAuthFailure);
-  const [periodo, setPeriodo] = useState(rangoInicial);
   const [range, setRange] = useState<DateRange | undefined>(() => {
     const hoy = new Date();
     const desde = new Date(hoy);
     desde.setDate(hoy.getDate() - 6);
     return { from: desde, to: hoy };
   });
-  const [filtros, setFiltros] = useState<IntelisisUfeFiltros>({});
+  /** Periodo y filtros en borrador: todavia no consultados. */
+  const [borrador, setBorrador] = useState<IntelisisUfeFiltros>({});
+  /** Consulta aplicada (null = todavia no se consulto nada). */
+  const [consulta, setConsulta] = useState<Consulta | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [qAplicada, setqAplicada] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -188,8 +213,6 @@ export default function IntelisisUfePage({
     null,
   );
 
-  const filtrosKey = JSON.stringify({ ...filtros, q: qAplicada });
-
   // La busqueda se aplica con retardo: no tiene sentido pegarle al ERP en
   // cada tecla.
   useEffect(() => {
@@ -197,11 +220,12 @@ export default function IntelisisUfePage({
     return () => clearTimeout(timer);
   }, [busqueda]);
 
-  // Una sola consulta gobierna periodo y filtros.
+  // Unica consulta posible: la que el usuario lanzo con "Consultar".
   useEffect(() => {
-    void ufe.run(periodo.desde, periodo.hasta, filtros);
+    if (!consulta) return;
+    void ufe.run(consulta.desde, consulta.hasta, consulta.filtros);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo.desde, periodo.hasta, filtrosKey]);
+  }, [consulta]);
 
   const consultar = useCallback(() => {
     if (!range?.from || !range?.to) {
@@ -217,20 +241,21 @@ export default function IntelisisUfePage({
       return;
     }
     setFormError(null);
-    setPeriodo({
+    setConsulta({
       desde: toISODate(range.from),
       hasta: toISODate(range.to),
+      filtros: { ...borrador, q: qAplicada },
     });
-  }, [range]);
+  }, [range, borrador, qAplicada]);
 
   const limpiarFiltros = useCallback(() => {
-    setFiltros({});
+    setBorrador({});
     setBusqueda("");
   }, []);
 
   const alternar = useCallback(
     <K extends keyof IntelisisUfeFiltros>(clave: K, valor: string) => {
-      setFiltros((prev) => {
+      setBorrador((prev) => {
         const actual = prev[clave];
         const esIgual = String(actual ?? "") === valor;
         const siguiente = { ...prev };
@@ -245,11 +270,21 @@ export default function IntelisisUfePage({
     [],
   );
 
+  // Hay cambios sin consultar: el boton lo avisa.
+  const pendiente = useMemo(() => {
+    if (!consulta) return true;
+    const desde = range?.from ? toISODate(range.from) : "";
+    const hasta = range?.to ? toISODate(range.to) : "";
+    if (desde !== consulta.desde || hasta !== consulta.hasta) return true;
+    return !mismosFiltros({ ...borrador, q: qAplicada }, consulta.filtros);
+  }, [consulta, range, borrador, qAplicada]);
+
   const rows = ufe.rows ?? [];
   const columns = useMemo(() => intelisisUfeColumns(), []);
   const kpis = ufe.kpis;
   const visibles = filteredRows ?? rows;
   const porDia = kpis?.por_dia ?? [];
+  const filtros = borrador;
 
   const filtrosActivos = useMemo(() => {
     const chips: { clave: string; etiqueta: string; limpiar: () => void }[] = [];
@@ -340,10 +375,6 @@ export default function IntelisisUfePage({
                     desde.setDate(hoy.getDate() - preset.dias);
                     setRange({ from: desde, to: hoy });
                     setFormError(null);
-                    setPeriodo({
-                      desde: toISODate(desde),
-                      hasta: toISODate(hoy),
-                    });
                   }}
                 >
                   {preset.etiqueta}
@@ -367,7 +398,18 @@ export default function IntelisisUfePage({
               />
             ) : null}{" "}
             Consultar
+            {pendiente && !ufe.loading ? (
+              <span
+                className="ml-1 size-1.5 rounded-full bg-current"
+                aria-hidden
+              />
+            ) : null}
           </Button>
+          {pendiente && !ufe.loading ? (
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              Hay cambios sin consultar
+            </span>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -542,7 +584,7 @@ export default function IntelisisUfePage({
                 label: `${item.sucursal} · ${item.nombre}`,
               }))}
               onChange={(value) =>
-                setFiltros((prev) => {
+                setBorrador((prev) => {
                   const siguiente = { ...prev };
                   if (value) {
                     siguiente.sucursal = Number(value);
@@ -722,17 +764,32 @@ export default function IntelisisUfePage({
           </div>
         </CardHeader>
         <CardContent>
-          <DataTable.Root
-            key={`${ufe.desde}-${ufe.hasta}-${filtrosKey}`}
-            data={rows}
-            columns={columns}
-            showFilters={false}
-            onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
-            onFilteredRowsChange={setFilteredRows}
-          >
-            <DataTable.View<IntelisisUfeRow> loading={ufe.loading} />
-            <DataTable.Pagination loading={ufe.loading} />
-          </DataTable.Root>
+          {!ufe.searched ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={CalendarDaysIcon} strokeWidth={2} />
+                </EmptyMedia>
+                <EmptyTitle>Aun no hay consulta</EmptyTitle>
+                <EmptyDescription>
+                  Elige el periodo y pulsa <b>Consultar</b>. No se consulta
+                  nada hasta que lo pidas.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <DataTable.Root
+              key={`${ufe.desde}-${ufe.hasta}`}
+              data={rows}
+              columns={columns}
+              showFilters={false}
+              onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
+              onFilteredRowsChange={setFilteredRows}
+            >
+              <DataTable.View<IntelisisUfeRow> loading={ufe.loading} />
+              <DataTable.Pagination loading={ufe.loading} />
+            </DataTable.Root>
+          )}
         </CardContent>
       </Card>
 

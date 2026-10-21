@@ -265,9 +265,45 @@ describe("IntelisisUfePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Con incidencia/ }));
 
+    // El filtro queda en borrador: todavia no se consulta.
+    expect(mocks.ufe.run).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Consultar/ }),
+    );
+
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
-    expect(ultima?.[2]).toEqual({ resultado: "REVISAR" });
+    expect(ultima?.[2]).toEqual({ resultado: "REVISAR", q: "" });
+  });
+
+  it("no consulta nada al entrar en la seccion", () => {
+    mocks.ufe.searched = false;
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(mocks.ufe.run).not.toHaveBeenCalled();
+    expect(screen.getByText("Aun no hay consulta")).toBeTruthy();
+  });
+
+  it("consulta el periodo al pulsar Consultar", () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Consultar/ }),
+    );
+
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
+    const llamadas = mocks.ufe.run.mock.calls;
+    const ultima = llamadas[llamadas.length - 1];
+    expect(ultima?.[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(ultima?.[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("avisa cuando hay cambios sin consultar", () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(screen.getByText("Hay cambios sin consultar")).toBeTruthy();
   });
 
   it("avisa cuando el listado viene recortado", () => {
