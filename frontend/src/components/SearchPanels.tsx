@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CalendarDaysIcon,
   HashIcon,
   Search01Icon,
   TriangleAlertIcon,
@@ -12,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DateRangePicker } from "./search/DateRangePicker";
+import { PeriodoPanel } from "./search/PeriodoPanel";
 import { ALL_TIPOS, TypeChips } from "./search/TypeChips";
 import { toISODate } from "../api/format";
 
@@ -75,23 +74,18 @@ export function RangePanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <Panel
-        icon={<HugeiconsIcon icon={CalendarDaysIcon} size={18} strokeWidth={2} />}
-      >
-        <DateRangePicker value={range} onChange={setRange} />
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Tipo de documento</span>
-          <TypeChips values={tipos} onChange={setTipos} />
-        </div>
-        <Button
-          type="button"
-          className="sm:ml-auto"
-          onClick={submit}
-          disabled={disabled}
-        >
-          Consultar
-        </Button>
-      </Panel>
+      <PeriodoPanel
+        range={range}
+        onRange={setRange}
+        onConsultar={submit}
+        disabled={disabled}
+        extra={
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">Tipo de documento</span>
+            <TypeChips values={tipos} onChange={setTipos} />
+          </div>
+        }
+      />
       {error ? (
         <Alert variant="destructive">
           <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />

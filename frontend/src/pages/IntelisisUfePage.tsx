@@ -25,8 +25,8 @@ import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import { creaRenderFiltro, filtraUfeFilas } from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
-import { IntelisisUfePeriodo } from "@/components/IntelisisUfePeriodo";
 import { NumberPanel } from "@/components/SearchPanels";
+import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { SunatProgress } from "@/components/SunatProgress";
 import { Tabs } from "@/components/AppShell";
@@ -193,12 +193,17 @@ export default function IntelisisUfePage({
       <Tabs mode={modo} onChange={setModo} options={MODOS} />
 
       {modo === "periodo" ? (
-        <IntelisisUfePeriodo
+        <PeriodoPanel
           range={range}
           onRange={setRange}
           onConsultar={consultarPeriodo}
           loading={ufe.loading}
           periodoDistinto={periodoDistinto}
+          aviso={
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              El periodo cambio: la tabla sigue mostrando el consultado
+            </span>
+          }
         />
       ) : (
         <NumberPanel
