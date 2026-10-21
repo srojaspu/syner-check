@@ -20,6 +20,7 @@ from src.application import (
     sunat_job_status,
     sunat_revalidate,
 )
+from src.application.intelisis_ufe import RangoInvalidoError, listar_ufe
 from src.domain.entities import TipoDocumento
 from src.domain.errors import (
     InvalidDocumentTypeError,
@@ -35,6 +36,7 @@ from src.infrastructure import (
     SunatCacheStoreAdapter,
     SunatValidatorAdapter,
 )
+from src.infrastructure.intelisis_ufe import IntelisisUfeReaderAdapter
 
 logger = logging.getLogger("syner_check.wiring")
 
@@ -55,6 +57,18 @@ def _intelisis_reader():
             return IntelisisReaderAdapter()
     except Exception:
         logger.warning("Intelisis check failed; continuing degraded")
+    return None
+
+
+def _intelisis_ufe_reader():
+    """Intelisis UFE adapter when configured, else None (degraded)."""
+    from app import intelisis_db
+
+    try:
+        if intelisis_db.intelisis_enabled():
+            return IntelisisUfeReaderAdapter()
+    except Exception:
+        logger.warning("Intelisis UFE check failed; continuing degraded")
     return None
 
 
@@ -250,6 +264,66 @@ def document_detail(
     except UpstreamError:
         logger.exception("Document detail upstream failure")
         raise HTTPException(502, "No fue posible cargar el detalle.")
+
+
+def intelisis_ufe_list(
+    start_iso: str,
+    end_iso: str,
+    *,
+    resultado: str = "",
+    estados: Sequence[str] = (),
+    incidencia: str = "",
+    tipo: str = "",
+    sucursal: int | None = None,
+    q: str = "",
+) -> dict:
+    """Comprobantes del universo UFE con su estado de generacion y SUNAT."""
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        # Degradado: la pantalla avisa y no rompe (mismo criterio que
+        # intelisis_enabled=false en el resumen).
+        return {
+            "desde": start_iso,
+            "hasta": end_iso,
+            "intelisis_enabled": False,
+            "bitacora_desde": "",
+            "kpis": {
+                "total": 0,
+                "conformes": 0,
+                "con_incidencia": 0,
+                "sin_traza": 0,
+                "en_espera": 0,
+                "no_aplica": 0,
+                "sin_cobertura_sunat": 0,
+                "por_generador": [],
+                "por_incidencia": [],
+                "por_sucursal": [],
+            },
+            "filtrados": 0,
+            "rows": [],
+        }
+    _validator, sunat_store, sunat_ruc = _sunat_pair()
+    try:
+        return listar_ufe(
+            reader,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            sunat_store=sunat_store,
+            sunat_ruc=sunat_ruc,
+            resultado=resultado,
+            estados=estados,
+            incidencia=incidencia,
+            tipo=tipo,
+            sucursal=sucursal,
+            q=q,
+        )
+    except RangoInvalidoError as exc:
+        raise HTTPException(400, str(exc) or "Periodo invalido.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE read failure")
+        raise HTTPException(
+            502, "No fue posible consultar los comprobantes de Intelisis."
+        )
 
 
 def movsynerpos_send(

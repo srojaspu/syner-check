@@ -164,6 +164,18 @@ class SunatCacheStoreAdapter:
         except Exception as exc:
             raise UpstreamError(f"SUNAT cache read failed: {type(exc).__name__}.") from exc
 
+    def fetch_by_series(
+        self, ruc: str, series: Sequence[str]
+    ) -> dict[tuple[str, str, str, str], dict]:
+        from app import sunat_db as sunat
+
+        try:
+            return sunat.fetch_cache_by_series(ruc, list(series))
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(f"SUNAT cache read failed: {type(exc).__name__}.") from exc
+
     def upsert(self, row: dict) -> None:
         from app import sunat_db as sunat
 

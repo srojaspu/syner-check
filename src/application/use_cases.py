@@ -679,6 +679,18 @@ def _sunat_key(
     return (ruc, code, serie, numero)
 
 
+def sunat_cache_key(
+    ruc: str, tipo_value: str, number: str
+) -> tuple[str, str, str, str] | None:
+    """Clave del cache SUNAT ``(ruc, tipo, serie, numero)`` o None.
+
+    Wrapper publico sobre la clave interna: la usan los flujos que no
+    manejan un ``Voucher`` (p.ej. comprobantes de origen Intelisis, que
+    bring su propia identidad ``serie-numero``).
+    """
+    return _sunat_key(ruc, tipo_value, number)
+
+
 def _sunat_doc_payload(
     ruc: str, tipo_value: str, number: str, date_iso: str, importe: object
 ) -> dict[str, Any]:

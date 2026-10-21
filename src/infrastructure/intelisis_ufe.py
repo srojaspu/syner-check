@@ -1,0 +1,27 @@
+"""Adaptador de lectura de Intelisis para el universo UFE.
+
+Solo lectura: la conexion usa ``ApplicationIntent=ReadOnly`` y el login no
+tiene ``EXECUTE`` sobre ningun procedimiento (D22).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from src.domain.errors import UpstreamError
+
+
+class IntelisisUfeReaderAdapter:
+    """Adapts ``app.intelisis_db`` to the IntelisisUfeReader port."""
+
+    def fetch_rows(self, start_iso: str, end_iso: str) -> list[dict[str, Any]]:
+        from app import intelisis_db
+
+        try:
+            return intelisis_db.fetch_ufe_rows(start_iso, end_iso)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"Intelisis UFE read failed: {type(exc).__name__}."
+            ) from exc

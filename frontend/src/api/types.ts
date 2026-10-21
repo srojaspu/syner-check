@@ -233,3 +233,109 @@ export interface MovSynerPosResponse {
   errores: number;
   detalle: MovSynerPosDetalle[];
 }
+
+/* --- Pantalla Intelisis UFE (comprobantes de origen Intelisis) --------- */
+
+/** Estado tecnico del generador (7 valores, los del drawer). */
+export type UfeEstadoGeneracion =
+  | "generado"
+  | "error_validacion"
+  | "omitido_validacion"
+  | "sin_bloque"
+  | "en_proceso"
+  | "sin_registro"
+  | "fuera_de_bitacora";
+
+/** Vocabulario del bloque "Generador" (paridad con la pestana FE del PHP). */
+export type UfeGenerador =
+  | "OK REGISTRADO"
+  | "SIN OK"
+  | "SIN TRAZA"
+  | "NO APLICA";
+
+/** Resultado de la revision: CONFORME o REVISAR. */
+export type UfeResultado = "CONFORME" | "REVISAR";
+
+/** Estado SUNAT: reemplaza al estado del portal de Carvajal (D15). */
+export type UfeEstadoSunat =
+  | "ACEPTADO"
+  | "SUNAT NO ENCONTRADO"
+  | "SUNAT NO ACEPTADO"
+  | "SUNAT SIN CONSULTA";
+
+export interface IntelisisUfeRow {
+  id_venta: number;
+  /** Tipo de movimiento: BO, FA, NC, ND. */
+  tipo: string;
+  /** TipoDocumentoPU de Intelisis: 01, 03, 07, 08. */
+  tipo_documento_pu: string;
+  /** Documento oficial (de la bitacora) o estimado si no hay traza. */
+  documento: string;
+  documento_estimado: boolean;
+  documento_teorico: string;
+  mov: string;
+  mov_id: string;
+  fecha_emision: string;
+  sucursal: number;
+  sucursal_nombre: string;
+  cliente: string;
+  cliente_codigo: string;
+  ruc: string;
+  importe: number;
+  impuestos: number;
+  total: number;
+  estatus_erp: string;
+  /** Documento que acredita (notas de credito). */
+  referencia: string;
+  estado_generacion: UfeEstadoGeneracion;
+  generador: UfeGenerador;
+  incidencias: string[];
+  resultado: UfeResultado;
+  detalle_incidencia: string | null;
+  /** Emitido hoy dentro de la ventana de gracia: todavia no es un fallo. */
+  en_espera: boolean;
+  /** No aplica el generador (nota de credito que acredita un SE-*). */
+  exento_generador: boolean;
+  fuera_de_bitacora: boolean;
+  etapa: string;
+  intentos: number;
+  ok_registrados: number;
+  ultimo_intento: string;
+  hash: string;
+  archivo_out: string;
+  procedimiento: string;
+  tipo_sunat: string;
+  sunat: { estado: string; consultado: string } | null;
+  estado_sunat: UfeEstadoSunat;
+  reenvio: { estado: string | null; id: number | null } | null;
+}
+
+export interface IntelisisUfeSucursal {
+  sucursal: number;
+  nombre: string;
+  ventas: number;
+  incidencias: number;
+}
+
+export interface IntelisisUfeKpis {
+  total: number;
+  conformes: number;
+  con_incidencia: number;
+  sin_traza: number;
+  en_espera: number;
+  no_aplica: number;
+  sin_cobertura_sunat: number;
+  por_generador: { key: string; count: number }[];
+  por_incidencia: { key: string; count: number }[];
+  por_sucursal: IntelisisUfeSucursal[];
+}
+
+export interface IntelisisUfeResponse {
+  desde: string;
+  hasta: string;
+  bitacora_desde: string;
+  intelisis_enabled: boolean;
+  kpis: IntelisisUfeKpis;
+  filtrados: number;
+  rows: IntelisisUfeRow[];
+}

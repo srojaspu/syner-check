@@ -1,5 +1,6 @@
 import type {
   DocumentResponse,
+  IntelisisUfeResponse,
   MovSynerPosRequestDocumento,
   MovSynerPosResponse,
   SearchResponse,
@@ -142,6 +143,37 @@ export function getDocument(
     `/api/document/${encodeURIComponent(tipo)}/${encodeURIComponent(oid)}` +
     `?${qs}`;
   return api(url, { signal });
+}
+
+/**
+ * Comprobantes de origen Intelisis con el estado del generador UFE.
+ *
+ * El rango completo (hasta 31 dias) se resuelve en una consulta contra
+ * PUnidas, asi que necesita el mismo margen que un resumen con GraphQL.
+ */
+export function getIntelisisUfe(
+  params: {
+    desde: string;
+    hasta: string;
+    resultado?: string;
+    estado?: string;
+    incidencia?: string;
+    tipo?: string;
+    sucursal?: number;
+    q?: string;
+  },
+  signal?: AbortSignal,
+): Promise<IntelisisUfeResponse> {
+  const qs = new URLSearchParams();
+  qs.set("desde", params.desde);
+  qs.set("hasta", params.hasta);
+  if (params.resultado) qs.set("resultado", params.resultado);
+  if (params.estado) qs.set("estado", params.estado);
+  if (params.incidencia) qs.set("incidencia", params.incidencia);
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.sucursal !== undefined) qs.set("sucursal", String(params.sucursal));
+  if (params.q) qs.set("q", params.q);
+  return api(`/api/intelisis/ufe?${qs}`, { signal }, LONG_TIMEOUT_MS);
 }
 
 export function logout(): void {

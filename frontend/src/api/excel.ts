@@ -1,5 +1,5 @@
 import { formatDateTime, formatMoney, toISODate } from "../api/format";
-import type { Voucher } from "../api/types";
+import type { IntelisisUfeRow, Voucher } from "../api/types";
 
 function canceladoONConcluido(doc: Voucher): string {
   const raw = doc.intelisis;
@@ -82,4 +82,60 @@ export async function exportExcel(rows: Voucher[]): Promise<void> {
 
 export function formatMoneyCell(value: unknown, currency?: string): string {
   return formatMoney(value, currency ?? "PEN");
+}
+
+/** Excel export de la grilla Intelisis UFE (mismas columnas que la pantalla). */
+export async function exportIntelisisUfeExcel(
+  rows: IntelisisUfeRow[],
+): Promise<void> {
+  const XLSX = await import("xlsx/dist/xlsx.mini.min.js");
+  const sheet = XLSX.utils.json_to_sheet(
+    rows.map((row) => ({
+      Comprobante: row.documento,
+      "Estimado": row.documento_estimado ? "SI" : "NO",
+      Tipo: row.tipo,
+      "Fecha emision": row.fecha_emision,
+      Sucursal: row.sucursal,
+      Tienda: row.sucursal_nombre,
+      Cliente: row.cliente,
+      "Estatus ERP": row.estatus_erp,
+      Total: row.total,
+      Generador: row.generador,
+      "Estado generacion": row.estado_generacion,
+      Intentos: row.intentos,
+      "Ultimo intento": row.ultimo_intento,
+      SUNAT: row.estado_sunat,
+      "Fecha SUNAT": row.sunat?.consultado ?? "",
+      Revision: row.resultado,
+      Incidencias: (row.incidencias ?? []).join(", "),
+      Detalle: row.detalle_incidencia ?? "",
+      "Documento que acredita": row.referencia,
+      "ID ERP": row.id_venta,
+    })),
+  );
+  sheet["!cols"] = [
+    { wch: 20 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 28 },
+    { wch: 32 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 20 },
+    { wch: 10 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 12 },
+    { wch: 34 },
+    { wch: 40 },
+    { wch: 24 },
+    { wch: 12 },
+  ];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Intelisis UFE");
+  XLSX.writeFile(book, `syner-check-ufe-${toISODate(new Date())}.xlsx`);
 }

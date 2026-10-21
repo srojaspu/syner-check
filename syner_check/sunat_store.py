@@ -38,6 +38,10 @@ CACHE_COLUMNS = (
 _CACHE_KEY = ("Ruc", "Tipo", "Serie", "Numero")
 
 _CHUNK = 200
+# Series por consulta en ``fetch_by_series`` (evita consultas gigantes).
+_SERIE_CHUNK = 500
+# A partir de esta cantidad de claves, ``fetch_many`` cambia de estrategia.
+_MANY_KEYS_LIMIT = 500
 
 
 def _connection_args():
@@ -105,6 +109,17 @@ def fetch_many(
     wanted = [k for k in wanted if all(k)]
     if not wanted:
         return {}
+    if len(wanted) > _MANY_KEYS_LIMIT:
+        # Con miles de claves el "OR" por clave se dispara: se resuelve por
+        # serie (una consulta por RUC) y se filtra por la llave completa.
+        por_ruc: dict[str, set[str]] = {}
+        for key in wanted:
+            por_ruc.setdefault(key[0], set()).add(key[2])
+        out: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for ruc, series in por_ruc.items():
+            filas = fetch_by_series(ruc, sorted(series))
+            out.update({key: filas[key] for key in wanted if key in filas})
+        return out
     from .db_client import _to_iso_date  # reuse date normalization
     from .db_pool import pooled_connection
 
@@ -124,6 +139,59 @@ def fetch_many(
             for key in batch:
                 params.extend(key)
             cur.execute(f"SELECT {cols} FROM {table} WHERE {where}", *params)
+            names = [c[0] for c in cur.description]
+            for record in cur.fetchall():
+                row = dict(zip(names, record))
+                key = (
+                    _to_str(row.get("Ruc")),
+                    _to_str(row.get("Tipo")),
+                    _to_str(row.get("Serie")),
+                    _to_str(row.get("Numero")),
+                )
+                row["FechaEmision"] = _to_iso_date(row.get("FechaEmision"))
+                out[key] = {k: _to_str(row.get(k)) for k in CACHE_COLUMNS}
+                out[key]["FechaConsulta"] = _to_iso_datetime(
+                    row.get("FechaConsulta")
+                )
+    return out
+
+
+def fetch_by_series(
+    ruc: str,
+    series: Sequence[str],
+) -> dict[tuple[str, str, str, str], dict[str, Any]]:
+    """Cache rows of one RUC for a set of series (one query, not N).
+
+    ``fetch_many`` arma un ``OR`` por clave (4 parametros cada una): con
+    miles de comprobantes eso son decenas de consultas lentas. Aqui se
+    filtra por ``Ruc`` + ``Serie IN (...)``, que el indice clustered
+    ``(Ruc, Tipo, Serie, Numero)`` resuelve con rangos.
+
+    Devuelve todas las filas de esas series; el llamador decide cuales le
+    sirven comparando la llave completa.
+    """
+    wanted = sorted({str(s).strip().upper() for s in series if str(s).strip()})
+    if not wanted:
+        return {}
+    from .db_client import _to_iso_date  # reuse date normalization
+    from .db_pool import pooled_connection
+
+    table = _table()
+    cols = ", ".join(f"[{c}]" for c in CACHE_COLUMNS)
+    out: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    cfg, password = _connection_args()
+    ruc_value = str(ruc).strip()
+    with pooled_connection(cfg, password) as cn:
+        cur = cn.cursor()
+        for pos in range(0, len(wanted), _SERIE_CHUNK):
+            batch = wanted[pos : pos + _SERIE_CHUNK]
+            placeholders = ", ".join("?" for _ in batch)
+            cur.execute(
+                f"SELECT {cols} FROM {table} "
+                f"WHERE [Ruc] = ? AND [Serie] IN ({placeholders})",
+                ruc_value,
+                *batch,
+            )
             names = [c[0] for c in cur.description]
             for record in cur.fetchall():
                 row = dict(zip(names, record))

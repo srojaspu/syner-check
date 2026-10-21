@@ -27,6 +27,16 @@ def fetch_cache(
     return store.fetch_many(keys)
 
 
+def fetch_cache_by_series(
+    ruc: str,
+    series: Sequence[str],
+) -> dict[tuple[str, str, str, str], dict]:
+    """Cache rows of one RUC for a set of series (one query)."""
+    from syner_check import sunat_store as store
+
+    return store.fetch_by_series(ruc, series)
+
+
 def upsert_cache(row: dict) -> None:
     from syner_check import sunat_store as store
 

@@ -66,22 +66,32 @@ export function Account({ user }: { user: SessionUser }) {
   );
 }
 
-export function TopBar({ actions }: { actions: ReactNode }) {
+export function TopBar({
+  actions,
+  nav,
+}: {
+  actions: ReactNode;
+  /** Navegacion de primer nivel (links, no tabs). */
+  nav?: ReactNode;
+}) {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
       <div className="mx-auto flex w-full max-w-11/12 items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary font-semibold text-primary-foreground">
-            S
+        <div className="flex min-w-0 items-center gap-3 sm:gap-5">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-primary font-semibold text-primary-foreground">
+              S
+            </div>
+            <div className="flex flex-col leading-tight">
+              <b className="text-sm">Syner Check</b>
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                Consulta de comprobantes
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col leading-tight">
-            <b className="text-sm">Syner Check</b>
-            <span className="text-xs text-muted-foreground">
-              Consulta de comprobantes
-            </span>
-          </div>
+          {nav}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
           {actions}
         </div>

@@ -37,6 +37,7 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
+    intelisis_ufe_list as clean_intelisis_ufe_list,
     movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
     summary as clean_summary,
@@ -438,6 +439,65 @@ async def api_search(
     except Exception as exc:
         logger.exception("Number search failed")
         raise HTTPException(502, "No fue posible completar la búsqueda.") from exc
+
+
+UFE_ESTADOS = {
+    "generado",
+    "error_validacion",
+    "omitido_validacion",
+    "sin_bloque",
+    "en_proceso",
+    "sin_registro",
+    "fuera_de_bitacora",
+}
+UFE_TIPOS = {"BO", "FA", "NC", "ND"}
+
+
+@app.get("/api/intelisis/ufe")
+async def api_intelisis_ufe(
+    request: Request,
+    desde: str = Query(..., min_length=10, max_length=10),
+    hasta: str = Query(..., min_length=10, max_length=10),
+    resultado: str = Query("", max_length=20),
+    estado: str = Query("", max_length=200),
+    incidencia: str = Query("", max_length=60),
+    tipo: str = Query("", max_length=4),
+    sucursal: int | None = Query(None),
+    q: str = Query("", max_length=80),
+):
+    """Comprobantes de origen Intelisis y su estado de generacion (UFE).
+
+    Solo lectura: la consulta porta el universo de ``dbo.PUSP_ControlFac`` y
+    no ejecuta ningun procedimiento almacenado.
+    """
+    protected(request)
+    estados = [item.strip() for item in estado.split(",") if item.strip()]
+    unknown = [item for item in estados if item not in UFE_ESTADOS]
+    if unknown:
+        raise HTTPException(400, "Estado de generacion invalido.")
+    if resultado and resultado.upper() not in {"CONFORME", "REVISAR"}:
+        raise HTTPException(400, "Resultado invalido.")
+    if tipo and tipo.upper() not in UFE_TIPOS:
+        raise HTTPException(400, "Tipo de documento invalido.")
+    try:
+        return await run_blocking(
+            clean_intelisis_ufe_list,
+            desde,
+            hasta,
+            resultado=resultado.upper(),
+            estados=estados,
+            incidencia=incidencia,
+            tipo=tipo.upper(),
+            sucursal=sucursal,
+            q=q,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE list failed")
+        raise HTTPException(
+            502, "No fue posible consultar los comprobantes de Intelisis."
+        ) from exc
 
 
 @app.get("/api/document/{tipo}/{oid}")

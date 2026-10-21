@@ -28,6 +28,18 @@ class IntelisisReader(Protocol):
         ...
 
 
+class IntelisisUfeReader(Protocol):
+    """Reads the Intelisis universe that goes through the UFE generator.
+
+    One row per document in ``dbo.Venta`` (origin Intelisis, ``E-*``) with
+    its last attempt in ``dbo.SPPUFE_EjecucionLog`` already attached.
+    Read-only: no stored procedure is executed.
+    """
+
+    def fetch_rows(self, start_iso: str, end_iso: str) -> list[dict]:
+        ...
+
+
 class SunatValidator(Protocol):
     """SUNAT Validator microservice (batch submit + job polling)."""
 
@@ -58,6 +70,16 @@ class SunatCacheStore(Protocol):
     def fetch_many(
         self, keys: Sequence[tuple[str, str, str, str]]
     ) -> dict[tuple[str, str, str, str], dict]:
+        ...
+
+    def fetch_by_series(
+        self, ruc: str, series: Sequence[str]
+    ) -> dict[tuple[str, str, str, str], dict]:
+        """Cache rows of one RUC for a set of series (one query).
+
+        Resuelve miles de comprobantes en una consulta; el llamador
+        filtra por la llave completa.
+        """
         ...
 
     def upsert(self, row: dict) -> None:
