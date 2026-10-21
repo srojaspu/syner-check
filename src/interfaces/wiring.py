@@ -20,7 +20,12 @@ from src.application import (
     sunat_job_status,
     sunat_revalidate,
 )
-from src.application.intelisis_ufe import RangoInvalidoError, listar_ufe
+from src.application.intelisis_ufe import (
+    RangoInvalidoError,
+    detalle_ufe,
+    listar_ufe,
+    validar_ufe,
+)
 from src.domain.entities import TipoDocumento
 from src.domain.errors import (
     InvalidDocumentTypeError,
@@ -324,6 +329,54 @@ def intelisis_ufe_list(
         raise HTTPException(
             502, "No fue posible consultar los comprobantes de Intelisis."
         )
+
+
+def intelisis_ufe_detail(id_venta: int) -> dict:
+    """Trazabilidad de un comprobante UFE (venta, intentos, SUNAT)."""
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        raise HTTPException(503, "Intelisis no disponible.")
+    _validator, sunat_store, sunat_ruc = _sunat_pair()
+    try:
+        return detalle_ufe(
+            reader,
+            id_venta=int(id_venta),
+            sunat_store=sunat_store,
+            sunat_ruc=sunat_ruc,
+        )
+    except NotFoundError:
+        raise HTTPException(404, "Comprobante no encontrado.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE detail failure")
+        raise HTTPException(
+            502, "No fue posible consultar la trazabilidad del comprobante."
+        )
+
+
+def intelisis_ufe_validate(id_venta: int, usuario: str) -> dict:
+    """Consulta individual en SUNAT (no escribe en Intelisis)."""
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        raise HTTPException(503, "Intelisis no disponible.")
+    validator, store, ruc = _sunat_pair()
+    if validator is None or store is None or not ruc:
+        raise HTTPException(400, "Validación SUNAT no configurada.")
+    try:
+        return validar_ufe(
+            reader,
+            validator,
+            store,
+            id_venta=int(id_venta),
+            sunat_ruc=ruc,
+            usuario=usuario or "",
+        )
+    except NotFoundError:
+        raise HTTPException(404, "Comprobante no encontrado.")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Solicitud inválida.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE validation failure")
+        raise HTTPException(502, "No fue posible validar en SUNAT.")
 
 
 def movsynerpos_send(

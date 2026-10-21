@@ -3,8 +3,14 @@ import {
   AuthError,
   RequestAbortedError,
   getIntelisisUfe,
+  getIntelisisUfeDetalle,
+  validarIntelisisUfe,
 } from "../api/client";
-import type { IntelisisUfeKpis, IntelisisUfeRow } from "../api/types";
+import type {
+  IntelisisUfeDetalle,
+  IntelisisUfeKpis,
+  IntelisisUfeRow,
+} from "../api/types";
 
 interface UfeState {
   rows: IntelisisUfeRow[];
@@ -28,12 +34,36 @@ const EMPTY: UfeState = {
   hasta: "",
 };
 
+interface DetalleState {
+  detalle: IntelisisUfeDetalle | null;
+  /** Carga de la trazabilidad (distinta de la carga del listado). */
+  detalleLoading: boolean;
+  error: string | null;
+  /** Documento que se esta validando en SUNAT (id). */
+  validando: number | null;
+  /** Ultimo resultado de la validacion, para el aviso en pantalla. */
+  aviso: string | null;
+  errorValidacion: string | null;
+}
+
+const EMPTY_DETALLE: DetalleState = {
+  detalle: null,
+  detalleLoading: false,
+  error: null,
+  validando: null,
+  aviso: null,
+  errorValidacion: null,
+};
+
 /**
  * Container de la pantalla Intelisis UFE: fetching + estado.
  * La presentacion vive en los componentes.
  */
 export function useIntelisisUfe(onAuthFailure: () => void) {
   const [state, setState] = useState<UfeState>(EMPTY);
+  const [detalleState, setDetalleState] = useState<DetalleState>(
+    EMPTY_DETALLE,
+  );
   const abortRef = useRef<AbortController | null>(null);
   const seq = useRef(0);
 
@@ -91,5 +121,119 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
     [begin, isCurrent, onAuthFailure],
   );
 
-  return { ...state, run };
+  /** Abre el drawer de trazabilidad de un comprobante. */
+  const abrirDetalle = useCallback(
+    async (idVenta: number) => {
+      setDetalleState((prev) => ({
+        ...prev,
+        detalle: null,
+        detalleLoading: true,
+        error: null,
+        aviso: null,
+        errorValidacion: null,
+      }));
+      try {
+        const data = await getIntelisisUfeDetalle(idVenta);
+        setDetalleState((prev) => ({
+          ...prev,
+          detalle: data,
+          detalleLoading: false,
+          error: null,
+        }));
+      } catch (error: unknown) {
+        if (error instanceof AuthError) {
+          onAuthFailure();
+          return;
+        }
+        setDetalleState((prev) => ({
+          ...prev,
+          detalleLoading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "No fue posible consultar la trazabilidad.",
+        }));
+      }
+    },
+    [onAuthFailure],
+  );
+
+  const cerrarDetalle = useCallback(() => {
+    setDetalleState(EMPTY_DETALLE);
+  }, []);
+
+  /**
+   * Consulta individual en SUNAT y refresca el estado del documento.
+   *
+   * Actualiza la fila en la grilla para que el estado SUNAT se vea sin
+   * volver a consultar el periodo entero.
+   */
+  const validar = useCallback(
+    async (idVenta: number) => {
+      setDetalleState((prev) => ({
+        ...prev,
+        validando: idVenta,
+        aviso: null,
+        errorValidacion: null,
+      }));
+      try {
+        const data = await validarIntelisisUfe(idVenta);
+        setState((prev) => ({
+          ...prev,
+          rows: prev.rows.map((row) =>
+            row.id_venta === idVenta
+              ? {
+                  ...row,
+                  estado_sunat: (data.estado ||
+                    row.estado_sunat) as IntelisisUfeRow["estado_sunat"],
+                  sunat: {
+                    estado: data.estado || "",
+                    consultado: new Date().toISOString(),
+                  },
+                }
+              : row,
+          ),
+        }));
+        setDetalleState((prev) => ({
+          ...prev,
+          validando: null,
+          aviso: `SUNAT: ${data.estado || "sin respuesta"}.`,
+          detalle: prev.detalle
+            ? {
+                ...prev.detalle,
+                estado_sunat: (data.estado ||
+                  prev.detalle.estado_sunat) as IntelisisUfeDetalle["estado_sunat"],
+                sunat: {
+                  estado: data.estado || "",
+                  consultado: new Date().toISOString(),
+                },
+              }
+            : prev.detalle,
+        }));
+      } catch (error: unknown) {
+        if (error instanceof AuthError) {
+          onAuthFailure();
+          return;
+        }
+        setDetalleState((prev) => ({
+          ...prev,
+          validando: null,
+          errorValidacion:
+            error instanceof Error
+              ? error.message
+              : "No fue posible validar en SUNAT.",
+        }));
+      }
+    },
+    [onAuthFailure],
+  );
+
+  return {
+    ...state,
+    ...detalleState,
+    run,
+    abrirDetalle,
+    cerrarDetalle,
+    validar,
+  };
 }

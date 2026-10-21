@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/DataTable";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
+import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import { DateRangePicker } from "@/components/search/DateRangePicker";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
@@ -306,6 +307,7 @@ export default function IntelisisUfePage({
             key={`${ufe.desde}-${ufe.hasta}`}
             data={rows}
             columns={columns}
+            onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
             onFilteredRowsChange={setFilteredRows}
           >
             <DataTable.Toolbar />
@@ -314,6 +316,18 @@ export default function IntelisisUfePage({
           </DataTable.Root>
         </CardContent>
       </Card>
+
+      <IntelisisUfeDetalle
+        open={Boolean(ufe.detalle) || ufe.detalleLoading}
+        detalle={ufe.detalle}
+        loading={ufe.detalleLoading}
+        error={ufe.error}
+        validando={ufe.validando}
+        aviso={ufe.aviso}
+        errorValidacion={ufe.errorValidacion}
+        onValidar={(idVenta) => void ufe.validar(idVenta)}
+        onClose={ufe.cerrarDetalle}
+      />
     </div>
   );
 }

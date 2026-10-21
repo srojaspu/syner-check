@@ -1,6 +1,8 @@
 import type {
   DocumentResponse,
+  IntelisisUfeDetalle,
   IntelisisUfeResponse,
+  IntelisisUfeValidacion,
   MovSynerPosRequestDocumento,
   MovSynerPosResponse,
   SearchResponse,
@@ -174,6 +176,36 @@ export function getIntelisisUfe(
   if (params.sucursal !== undefined) qs.set("sucursal", String(params.sucursal));
   if (params.q) qs.set("q", params.q);
   return api(`/api/intelisis/ufe?${qs}`, { signal }, LONG_TIMEOUT_MS);
+}
+
+/** Trazabilidad de un comprobante UFE: venta, intentos del generador y SUNAT. */
+export function getIntelisisUfeDetalle(
+  idVenta: number,
+  signal?: AbortSignal,
+): Promise<IntelisisUfeDetalle> {
+  return api(`/api/intelisis/ufe/${encodeURIComponent(idVenta)}`, { signal });
+}
+
+/**
+ * Consulta individual en SUNAT.
+ *
+ * Es la unica accion que gasta cuota del validador: la pantalla la pide
+ * de forma explicita, documento por documento.
+ */
+export function validarIntelisisUfe(
+  idVenta: number,
+  signal?: AbortSignal,
+): Promise<IntelisisUfeValidacion> {
+  return api(
+    "/api/intelisis/ufe/validar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_venta: idVenta }),
+      signal,
+    },
+    SUNAT_STATUS_TIMEOUT_MS,
+  );
 }
 
 export function logout(): void {

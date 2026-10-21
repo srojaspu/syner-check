@@ -91,7 +91,8 @@ export async function exportIntelisisUfeExcel(
   const XLSX = await import("xlsx/dist/xlsx.mini.min.js");
   const sheet = XLSX.utils.json_to_sheet(
     rows.map((row) => ({
-      Comprobante: row.documento,
+      Comprobante: row.comprobante || row.documento,
+      "Documento en bitácora": row.documento,
       "Estimado": row.documento_estimado ? "SI" : "NO",
       Tipo: row.tipo,
       "Fecha emision": row.fecha_emision,
@@ -114,6 +115,7 @@ export async function exportIntelisisUfeExcel(
     })),
   );
   sheet["!cols"] = [
+    { wch: 20 },
     { wch: 20 },
     { wch: 10 },
     { wch: 16 },

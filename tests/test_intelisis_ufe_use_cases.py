@@ -8,9 +8,12 @@ import pytest
 
 from src.application.intelisis_ufe import (
     RangoInvalidoError,
+    detalle_ufe,
     listar_ufe,
+    validar_ufe,
     validar_rango,
 )
+from src.domain.errors import NotFoundError
 
 AHORA = datetime(2026, 10, 21, 18, 0, 0)
 
@@ -23,6 +26,46 @@ class _Reader:
     def fetch_rows(self, start_iso: str, end_iso: str) -> list[dict]:
         self.calls.append((start_iso, end_iso))
         return self.rows
+
+    def fetch_row(self, id_venta: int) -> list[dict]:
+        return [row for row in self.rows if row["IDVenta"] == id_venta]
+
+    def fetch_attempts(self, id_venta: int) -> list[dict]:
+        return [
+            {
+                "LogID": 22224,
+                "Estado": "OK",
+                "Etapa": "FINALIZADO",
+                "Documento": "602-00142702",
+                "Detalle": "",
+                "ErrorMensaje": "",
+                "FechaInicio": "2026-10-21 12:41:07",
+                "FechaFin": "2026-10-21 12:41:09",
+                "ArchivoOut": "BO-602-00142702.txt",
+                "Procedimiento": "SPPUFE_UBL21",
+                "DuracionMs": 2100,
+                "HashSalida": "abc123",
+                "TipoMovimiento": "BO",
+            }
+        ]
+
+
+class _Validator:
+    def __init__(self, estado: str = "ACEPTADO") -> None:
+        self.estado = estado
+        self.payloads: list[dict] = []
+
+    def validate_single(self, documento: dict, usuario: str = "", origen: str = ""):
+        self.payloads.append(dict(documento))
+        return {
+            "consulta_id": "C-1",
+            "correlation_id": "X-1",
+            "resultado": {
+                "estado": self.estado,
+                "codigo_sunat": "0",
+                "observaciones": [],
+            },
+        }
 
 
 class _Store:
@@ -42,6 +85,11 @@ class _Store:
             for key, value in self.cache.items()
             if key[0] == ruc and key[2] in self.series
         }
+
+    def upsert(self, row: dict) -> None:
+        self.cache[
+            (row["Ruc"], row["Tipo"], row["Serie"], row["Numero"])
+        ] = row
 
 
 def _fila(
@@ -227,7 +275,7 @@ def test_filtro_por_sucursal() -> None:
 
 def test_estado_sunat_desde_el_cache() -> None:
     reader = _Reader([_fila(id_venta=1)])
-    store = _Store({("20101031773", "03", "602", "142702"): {
+    store = _Store({("20101031773", "03", "B602", "142702"): {
         "Estado": "ACEPTADO",
         "FechaConsulta": "2026-10-21 12:45:00",
     }})
@@ -249,7 +297,7 @@ def test_estado_sunat_desde_el_cache() -> None:
 
 def test_sunat_negativo_es_incidencia() -> None:
     reader = _Reader([_fila(id_venta=1)])
-    store = _Store({("20101031773", "03", "602", "142702"): {
+    store = _Store({("20101031773", "03", "B602", "142702"): {
         "Estado": "NO_EXISTE",
         "FechaConsulta": "2026-10-21 12:45:00",
     }})
@@ -314,8 +362,8 @@ def test_nc_sobre_se_queda_exenta() -> None:
 def test_cruce_ambiguo_se_marca_en_las_dos_ventas() -> None:
     reader = _Reader(
         [
-            _fila(id_venta=1, documento="602-00142702"),
-            _fila(id_venta=2, mov_id="602-999999", documento="602-00142702"),
+            _fila(id_venta=1, mov_id="602-142702"),
+            _fila(id_venta=2, mov_id="602-142702"),
         ]
     )
 
@@ -346,3 +394,87 @@ def test_una_factura_y_su_nota_no_son_cruce() -> None:
     for fila in out["rows"]:
         assert "CRUCE AMBIGUO" not in fila["incidencias"]
         assert fila["resultado"] == "CONFORME"
+
+
+class TestDetalle:
+    def test_devuelve_la_venta_y_los_intentos(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+
+        out = detalle_ufe(
+            reader,
+            id_venta=1,
+            sunat_store=_Store(),
+            sunat_ruc="20101031773",
+            now=AHORA,
+        )
+
+        assert out["id_venta"] == 1
+        assert out["venta"]["documento"] == "602-00142702"
+        assert out["venta"]["estado_generacion"] == "generado"
+        assert out["estado_sunat"] == "SUNAT SIN CONSULTA"
+        assert len(out["intentos"]) == 1
+        intento = out["intentos"][0]
+        assert intento["estado"] == "OK"
+        assert intento["etapa"] == "FINALIZADO"
+        assert intento["log_id"] == 22224
+
+    def test_comprobante_inexistente(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+
+        with pytest.raises(NotFoundError):
+            detalle_ufe(reader, id_venta=999, now=AHORA)
+
+
+class TestValidar:
+    def test_consulta_sunat_con_la_identidad_del_documento(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+        validator = _Validator()
+        store = _Store()
+
+        out = validar_ufe(
+            reader,
+            validator,
+            store,
+            id_venta=1,
+            sunat_ruc="20101031773",
+            usuario="dev@example.com",
+            now=AHORA,
+        )
+
+        assert out["estado"] == "ACEPTADO"
+        payload = validator.payloads[0]
+        assert payload["ruc"] == "20101031773"
+        assert payload["tipo"] == "03"
+        assert payload["serie"] == "B602"
+        assert payload["numero"] == "00142702"
+        assert payload["fecha_emision"] == "2026-10-21"
+        assert payload["importe"] == 118.0
+        assert payload["forzar_consulta"] is True
+        # El cache guarda el numero sin ceros (como el lote y las consultas).
+        assert ("20101031773", "03", "B602", "142702") in store.cache
+
+    def test_nota_de_debito_no_admite_consulta(self) -> None:
+        reader = _Reader([_fila(id_venta=1, tipo_documento_pu="08")])
+
+        with pytest.raises(ValueError):
+            validar_ufe(
+                reader,
+                _Validator(),
+                _Store(),
+                id_venta=1,
+                sunat_ruc="20101031773",
+                now=AHORA,
+            )
+
+    def test_sin_ruc_no_hay_validacion(self) -> None:
+        reader = _Reader([_fila(id_venta=1)])
+
+        with pytest.raises(ValueError):
+            validar_ufe(
+                reader,
+                _Validator(),
+                _Store(),
+                id_venta=1,
+                sunat_ruc="",
+                now=AHORA,
+            )

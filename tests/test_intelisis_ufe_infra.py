@@ -201,3 +201,93 @@ def test_el_adaptador_no_pierde_la_fila(monkeypatch) -> None:
     adapter = IntelisisUfeReaderAdapter()
 
     assert adapter.fetch_rows("2026-10-21", "2026-10-21") == [fila]
+
+
+def test_lectura_de_un_comprobante_por_id(monkeypatch) -> None:
+    connection = _install(monkeypatch, [_fila()])
+
+    rows = db_client.fetch_intelisis_ufe_row(7466462)
+
+    assert len(rows) == 1
+    assert rows[0]["IDVenta"] == 7466462
+    sql = connection.cursor_obj.statements[-1]
+    assert "V.ID = ?" in sql
+    assert connection.cursor_obj.params[-1] == (7466462,)
+
+
+def _intento_fila(**overrides) -> tuple:
+    base = {
+        "LogID": 22224,
+        "IDVenta": 7466462,
+        "FechaInicio": datetime(2026, 10, 21, 12, 41, 7),
+        "FechaFin": datetime(2026, 10, 21, 12, 41, 9),
+        "Estado": "OK",
+        "Etapa": "FINALIZADO",
+        "Detalle": None,
+        "TipoDocumentoPU": "03",
+        "TipoMovimiento": "BO",
+        "Documento": "602-00142702",
+        "ArchivoOut": "BO-602-00142702.txt",
+        "Procedimiento": "SPPUFE_UBL21",
+        "DuracionMs": 2100,
+        "ErrorMensaje": None,
+        "AutocorridarolSalida": "abc123",
+        "Sucursal": 602,
+    }
+    base.update(overrides)
+    return tuple(base[column[0]] for column in _INTENTO_COLUMNAS)
+
+
+_INTENTO_COLUMNAS = [
+    ("LogID",),
+    ("IDVenta",),
+    ("FechaInicio",),
+    ("FechaFin",),
+    ("Estado",),
+    ("Etapa",),
+    ("Detalle",),
+    ("TipoDocumentoPU",),
+    ("TipoMovimiento",),
+    ("Documento",),
+    ("ArchivoOut",),
+    ("Procedimiento",),
+    ("DuracionMs",),
+    ("ErrorMensaje",),
+    ("AutocorridarolSalida",),
+    ("Sucursal",),
+]
+
+
+class _CursorIntentos(_Cursor):
+    description = _INTENTO_COLUMNAS
+
+
+class _ConnectionIntentos(_Connection):
+    def __init__(self, rows: list[tuple]) -> None:
+        self.cursor_obj = _CursorIntentos(rows)
+
+
+def test_lectura_de_los_intentos_de_un_comprobante(monkeypatch) -> None:
+    connection = _ConnectionIntentos([_intento_fila()])
+
+    @contextmanager
+    def pooled(_config, _password):
+        yield connection
+
+    monkeypatch.setattr("syner_check.config.get_intelisis_config", lambda: {})
+    monkeypatch.setattr("syner_check.config.get_intelisis_password", lambda: "x")
+    monkeypatch.setattr("syner_check.db_pool.pooled_connection", pooled)
+
+    intentos = db_client.fetch_intelisis_ufe_attempts(7466462)
+
+    assert len(intentos) == 1
+    intento = intentos[0]
+    assert intento["LogID"] == 22224
+    assert intento["Estado"] == "OK"
+    assert intento["Etapa"] == "FINALIZADO"
+    assert intento["Documento"] == "602-00142702"
+    assert intento["HashSalida"] == "abc123"
+    assert intento["FechaInicio"] == "2026-10-21 12:41:07"
+    sql = connection.cursor_obj.statements[-1]
+    assert "FROM dbo.SPPUFE_EjecucionLog" in sql
+    assert connection.cursor_obj.params[-1] == (7466462,)

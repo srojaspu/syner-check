@@ -314,7 +314,12 @@ def fetch_intelisis_headers(
 # (sha256 a9c0cff45abd1a1d08d8ee776930fe519274693b6264c9314588deb1443732dd).
 # Si el SP cambia, hay que actualizar esta copia (runbook, seccion 5).
 
-INTELISIS_UFE_QUERY = """
+INTELISIS_UFE_SCOPE_RANGO = (
+    "V.FechaEmision >= ? AND V.FechaEmision < DATEADD(DAY, 1, ?)"
+)
+INTELISIS_UFE_SCOPE_ID = "V.ID = ?"
+
+_INTELISIS_UFE_BASE = """
 WITH Ufe AS (
     SELECT
         V.ID AS IDVenta,
@@ -343,7 +348,7 @@ WITH Ufe AS (
         ON C.Cliente = V.Cliente
     WHERE V.Empresa = 'PU'
       AND V.Estatus IN ('CONCLUIDO', 'PENDIENTE')
-      AND V.FechaEmision >= ? AND V.FechaEmision < DATEADD(DAY, 1, ?)
+      AND {scope}
       AND V.Mov NOT IN (
             'RECIBO GIFT CARD', 'Reversion N-Credito', 'Reversion Vta',
             'SE-Boleta', 'SE-Factura', 'SE-Nota Credito', 'Recibo')
@@ -421,6 +426,35 @@ LEFT JOIN Conteos C ON C.IDVenta = U.IDVenta
 ORDER BY U.FechaEmision DESC, U.Sucursal, U.MovID
 """
 
+# Listado del periodo.
+INTELISIS_UFE_QUERY = _INTELISIS_UFE_BASE.format(scope=INTELISIS_UFE_SCOPE_RANGO)
+# Un comprobante puntual (detalle y trazabilidad).
+INTELISIS_UFE_ONE_QUERY = _INTELISIS_UFE_BASE.format(scope=INTELISIS_UFE_SCOPE_ID)
+
+# Todos los intentos de un comprobante (la fila mas reciente primero).
+INTELISIS_UFE_ATTEMPTS_QUERY = """
+SELECT
+    LogID,
+    IDVenta,
+    FechaInicio,
+    FechaFin,
+    Estado,
+    Etapa,
+    Detalle,
+    TipoDocumentoPU,
+    TipoMovimiento,
+    Documento,
+    ArchivoOut,
+    Procedimiento,
+    DuracionMs,
+    ErrorMensaje,
+    AutocorridarolSalida,
+    Sucursal
+FROM dbo.SPPUFE_EjecucionLog WITH (NOLOCK)
+WHERE IDVenta = ?
+ORDER BY LogID DESC
+"""
+
 
 def _to_float(value: Any) -> float:
     try:
@@ -464,49 +498,114 @@ def fetch_intelisis_ufe_rows(
     with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
         cursor.execute(INTELISIS_UFE_QUERY, start_date, end_date)
+        return _ufe_rows(cursor)
+
+
+def fetch_intelisis_ufe_row(id_venta: int) -> list[dict[str, Any]]:
+    """Un comprobante del universo UFE con su ultimo intento.
+
+    Lista vacia si el ID no existe o no pertenece al universo UFE.
+    """
+    from .config import get_intelisis_config, get_intelisis_password
+    from .db_pool import pooled_connection
+
+    db_config = get_intelisis_config()
+    password = get_intelisis_password()
+    with pooled_connection(db_config, password) as connection:
+        cursor = connection.cursor()
+        cursor.execute(INTELISIS_UFE_ONE_QUERY, int(id_venta))
+        return _ufe_rows(cursor)
+
+
+def fetch_intelisis_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
+    """Todos los intentos de la bitacora para un comprobante.
+
+    Del mas reciente al mas antiguo (``LogID DESC``), que es el orden en el
+    que el usuario quiere leerlos.
+    """
+    from .config import get_intelisis_config, get_intelisis_password
+    from .db_pool import pooled_connection
+
+    db_config = get_intelisis_config()
+    password = get_intelisis_password()
+    with pooled_connection(db_config, password) as connection:
+        cursor = connection.cursor()
+        cursor.execute(INTELISIS_UFE_ATTEMPTS_QUERY, int(id_venta))
         columns_out = [col[0] for col in cursor.description]
-        rows: list[dict[str, Any]] = []
-        for record in cursor.fetchall():
-            row = dict(zip(columns_out, record))
-            rows.append(
-                {
-                    "IDVenta": _to_int(row.get("IDVenta")),
-                    "Mov": _to_str(row.get("Mov")),
-                    "MovID": _to_str(row.get("MovID")),
-                    "FechaEmision": _to_iso_date(row.get("FechaEmision")),
-                    "Estatus": _to_str(row.get("Estatus")),
-                    "Sucursal": _to_int(row.get("Sucursal")),
-                    "Importe": _to_float(row.get("Importe")),
-                    "Impuestos": _to_float(row.get("Impuestos")),
-                    "Referencia": _to_str(row.get("Referencia")),
-                    "Cliente": _to_str(row.get("Cliente")),
-                    "ServicioSerie": _to_str(row.get("ServicioSerie")),
-                    "TipoDocumentoPU": _to_str(row.get("TipoDocumentoPU")),
-                    "SeriePU": _to_str(row.get("SeriePU")),
-                    "GenerarTxtPeru": bool(row.get("GenerarTxtPeru")),
-                    "SucursalNombre": _to_str(row.get("SucursalNombre")),
-                    "ClienteNombre": _to_str(row.get("ClienteNombre")),
-                    "ClienteRfc": _to_str(row.get("ClienteRfc")),
-                    "LogID": (
-                        _to_int(row.get("LogID")) if row.get("LogID") else None
-                    ),
-                    "EstadoIntento": _to_str(row.get("EstadoIntento")),
-                    "Etapa": _to_str(row.get("Etapa")),
-                    "Documento": _to_str(row.get("Documento")),
-                    "Detalle": _to_str(row.get("Detalle")),
-                    "ErrorMensaje": _to_str(row.get("ErrorMensaje")),
-                    "FechaInicio": _to_iso_datetime(row.get("FechaInicio")),
-                    "FechaFin": _to_iso_datetime(row.get("FechaFin")),
-                    "ArchivoOut": _to_str(row.get("ArchivoOut")),
-                    "Procedimiento": _to_str(row.get("Procedimiento")),
-                    "DuracionMs": (
-                        _to_int(row.get("DuracionMs"))
-                        if row.get("DuracionMs") is not None
-                        else None
-                    ),
-                    "HashSalida": _to_str(row.get("AutocorridarolSalida")),
-                    "Intentos": _to_int(row.get("Intentos")),
-                    "OkRegistrados": _to_int(row.get("OkRegistrados")),
-                }
+        return [
+            {
+                "LogID": _to_int(row.get("LogID")),
+                "IDVenta": _to_int(row.get("IDVenta")),
+                "FechaInicio": _to_iso_datetime(row.get("FechaInicio")),
+                "FechaFin": _to_iso_datetime(row.get("FechaFin")),
+                "Estado": _to_str(row.get("Estado")),
+                "Etapa": _to_str(row.get("Etapa")),
+                "Detalle": _to_str(row.get("Detalle")),
+                "TipoDocumentoPU": _to_str(row.get("TipoDocumentoPU")),
+                "TipoMovimiento": _to_str(row.get("TipoMovimiento")),
+                "Documento": _to_str(row.get("Documento")),
+                "ArchivoOut": _to_str(row.get("ArchivoOut")),
+                "Procedimiento": _to_str(row.get("Procedimiento")),
+                "DuracionMs": (
+                    _to_int(row.get("DuracionMs"))
+                    if row.get("DuracionMs") is not None
+                    else None
+                ),
+                "ErrorMensaje": _to_str(row.get("ErrorMensaje")),
+                "HashSalida": _to_str(row.get("AutocorridarolSalida")),
+                "Sucursal": _to_int(row.get("Sucursal")),
+            }
+            for row in (
+                dict(zip(columns_out, record)) for record in cursor.fetchall()
             )
-        return rows
+        ]
+
+
+def _ufe_rows(cursor) -> list[dict[str, Any]]:
+    """Normaliza las filas del lector UFE (mismo formato para lista y uno)."""
+    columns_out = [col[0] for col in cursor.description]
+    rows: list[dict[str, Any]] = []
+    for record in cursor.fetchall():
+        row = dict(zip(columns_out, record))
+        rows.append(
+            {
+                "IDVenta": _to_int(row.get("IDVenta")),
+                "Mov": _to_str(row.get("Mov")),
+                "MovID": _to_str(row.get("MovID")),
+                "FechaEmision": _to_iso_date(row.get("FechaEmision")),
+                "Estatus": _to_str(row.get("Estatus")),
+                "Sucursal": _to_int(row.get("Sucursal")),
+                "Importe": _to_float(row.get("Importe")),
+                "Impuestos": _to_float(row.get("Impuestos")),
+                "Referencia": _to_str(row.get("Referencia")),
+                "Cliente": _to_str(row.get("Cliente")),
+                "ServicioSerie": _to_str(row.get("ServicioSerie")),
+                "TipoDocumentoPU": _to_str(row.get("TipoDocumentoPU")),
+                "SeriePU": _to_str(row.get("SeriePU")),
+                "GenerarTxtPeru": bool(row.get("GenerarTxtPeru")),
+                "SucursalNombre": _to_str(row.get("SucursalNombre")),
+                "ClienteNombre": _to_str(row.get("ClienteNombre")),
+                "ClienteRfc": _to_str(row.get("ClienteRfc")),
+                "LogID": (
+                    _to_int(row.get("LogID")) if row.get("LogID") else None
+                ),
+                "EstadoIntento": _to_str(row.get("EstadoIntento")),
+                "Etapa": _to_str(row.get("Etapa")),
+                "Documento": _to_str(row.get("Documento")),
+                "Detalle": _to_str(row.get("Detalle")),
+                "ErrorMensaje": _to_str(row.get("ErrorMensaje")),
+                "FechaInicio": _to_iso_datetime(row.get("FechaInicio")),
+                "FechaFin": _to_iso_datetime(row.get("FechaFin")),
+                "ArchivoOut": _to_str(row.get("ArchivoOut")),
+                "Procedimiento": _to_str(row.get("Procedimiento")),
+                "DuracionMs": (
+                    _to_int(row.get("DuracionMs"))
+                    if row.get("DuracionMs") is not None
+                    else None
+                ),
+                "HashSalida": _to_str(row.get("AutocorridarolSalida")),
+                "Intentos": _to_int(row.get("Intentos")),
+                "OkRegistrados": _to_int(row.get("OkRegistrados")),
+            }
+        )
+    return rows

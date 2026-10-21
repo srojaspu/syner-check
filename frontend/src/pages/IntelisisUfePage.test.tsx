@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IntelisisUfeRow } from "../api/types";
 
@@ -14,6 +14,14 @@ const mocks = vi.hoisted(() => ({
     desde: "2026-10-15",
     hasta: "2026-10-21",
     run: vi.fn(),
+    detalle: null as unknown,
+    detalleLoading: false,
+    validando: null as number | null,
+    aviso: null as string | null,
+    errorValidacion: null as string | null,
+    abrirDetalle: vi.fn(),
+    cerrarDetalle: vi.fn(),
+    validar: vi.fn(),
   },
 }));
 
@@ -49,6 +57,7 @@ function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
     documento: "602-00142702",
     documento_estimado: false,
     documento_teorico: "602-00142702",
+    comprobante: "B602-00142702",
     mov: "E-Boleta",
     mov_id: "602-142702",
     fecha_emision: "2026-10-21",
@@ -112,6 +121,13 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.intelisisEnabled = true;
     mocks.ufe.desde = "2026-10-15";
     mocks.ufe.hasta = "2026-10-21";
+    mocks.ufe.detalle = null;
+    mocks.ufe.detalleLoading = false;
+    mocks.ufe.validando = null;
+    mocks.ufe.aviso = null;
+    mocks.ufe.errorValidacion = null;
+    mocks.ufe.abrirDetalle.mockReset();
+    mocks.ufe.validar.mockReset();
   });
 
   it("muestra el encabezado y el resumen del periodo", () => {
@@ -127,10 +143,71 @@ describe("IntelisisUfePage", () => {
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("602-00142702")).toBeTruthy();
+    expect(screen.getByText("B602-00142702")).toBeTruthy();
     expect(screen.getAllByText("OK REGISTRADO").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Aceptado").length).toBeGreaterThan(0);
     expect(screen.getAllByText("CONFORME").length).toBeGreaterThan(0);
+  });
+
+  it("abre la trazabilidad al hacer clic en un comprobante", () => {
+    mocks.ufe.rows = [fila()];
+    const { unmount } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(screen.getByText("B602-00142702"));
+
+    expect(mocks.ufe.abrirDetalle).toHaveBeenCalledWith(7466462);
+    unmount();
+  });
+
+  it("muestra el drawer con los intentos del generador", () => {
+    mocks.ufe.detalle = {
+      id_venta: 7466462,
+      venta: fila(),
+      intentos: [
+        {
+          log_id: 22224,
+          estado: "OK",
+          etapa: "FINALIZADO",
+          documento: "602-00142702",
+          detalle: "",
+          error_mensaje: "",
+          fecha_inicio: "2026-10-21T12:41:07",
+          fecha_fin: "2026-10-21T12:41:09",
+          archivo_out: "BO-602-00142702.txt",
+          procedimiento: "SPPUFE_UBL21",
+          duracion_ms: 2100,
+          hash: "",
+          tipo_movimiento: "BO",
+        },
+      ],
+      sunat: { estado: "ACEPTADO", consultado: "2026-10-21T12:45:00" },
+      estado_sunat: "ACEPTADO",
+    };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(
+      screen.getByText("Intentos del generador (1)"),
+    ).toBeTruthy();
+    expect(screen.getByText("22224")).toBeTruthy();
+  });
+
+  it("valida el comprobante contra SUNAT desde el drawer", () => {
+    mocks.ufe.detalle = {
+      id_venta: 7466462,
+      venta: fila(),
+      intentos: [],
+      sunat: null,
+      estado_sunat: "SUNAT SIN CONSULTA",
+    };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Validar en SUNAT" }),
+    );
+
+    expect(mocks.ufe.validar).toHaveBeenCalledWith(7466462);
   });
 
   it("marca como estimado el documento sin bitacora", () => {

@@ -37,7 +37,9 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
+    intelisis_ufe_detail as clean_intelisis_ufe_detail,
     intelisis_ufe_list as clean_intelisis_ufe_list,
+    intelisis_ufe_validate as clean_intelisis_ufe_validate,
     movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
     summary as clean_summary,
@@ -498,6 +500,47 @@ async def api_intelisis_ufe(
         raise HTTPException(
             502, "No fue posible consultar los comprobantes de Intelisis."
         ) from exc
+
+
+@app.get("/api/intelisis/ufe/{id_venta}")
+async def api_intelisis_ufe_detail(request: Request, id_venta: int):
+    """Trazabilidad de un comprobante: venta, intentos del generador y SUNAT."""
+    protected(request)
+    try:
+        return await run_blocking(clean_intelisis_ufe_detail, id_venta)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE detail failed")
+        raise HTTPException(
+            502, "No fue posible consultar la trazabilidad del comprobante."
+        ) from exc
+
+
+@app.post("/api/intelisis/ufe/validar")
+async def api_intelisis_ufe_validate(request: Request):
+    """Consulta individual en SUNAT y deja el estado en el cache local.
+
+    No escribe en Intelisis.
+    """
+    protected(request)
+    body = await read_json_limited(request, MAX_REQUEST_BYTES)
+    data = body if isinstance(body, dict) else {}
+    try:
+        id_venta = int(data.get("id_venta", 0) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Identificador de comprobante inválido.")
+    if id_venta <= 0:
+        raise HTTPException(400, "Identificador de comprobante inválido.")
+    try:
+        return await run_blocking(
+            clean_intelisis_ufe_validate, id_venta, _actor_email(request)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE validation failed")
+        raise HTTPException(502, "No fue posible validar en SUNAT.") from exc
 
 
 @app.get("/api/document/{tipo}/{oid}")

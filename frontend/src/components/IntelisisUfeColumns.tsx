@@ -83,7 +83,7 @@ export function intelisisUfeColumns(
     {
       id: "documento",
       header: "Comprobante",
-      accessorFn: (doc) => doc.documento,
+      accessorFn: (doc) => doc.comprobante || doc.documento,
       meta: {
         filter: { variant: "text", placeholder: "Documento…" },
         priority: "always",
@@ -93,7 +93,9 @@ export function intelisisUfeColumns(
         return (
           <span className="flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5">
-              <span className="docnum font-medium">{doc.documento}</span>
+              <span className="docnum font-medium">
+                {doc.comprobante || doc.documento}
+              </span>
               {doc.documento_estimado ? (
                 <Badge variant="outline" title="Numero estimado: no hay registro en la bitácora">
                   estimado

@@ -39,6 +39,14 @@ class IntelisisUfeReader(Protocol):
     def fetch_rows(self, start_iso: str, end_iso: str) -> list[dict]:
         ...
 
+    def fetch_row(self, id_venta: int) -> list[dict]:
+        """One document of the UFE universe (empty list if unknown)."""
+        ...
+
+    def fetch_attempts(self, id_venta: int) -> list[dict]:
+        """Every bitacora attempt of one document, newest first."""
+        ...
+
 
 class SunatValidator(Protocol):
     """SUNAT Validator microservice (batch submit + job polling)."""

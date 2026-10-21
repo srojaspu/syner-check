@@ -1753,7 +1753,14 @@ def sunat_revalidate(
     body = validator.validate_single(payload, usuario=usuario, origen="syner-check")
     resultado = body.get("resultado", {}) if isinstance(body, dict) else {}
     estado = _sunat_map_estado(resultado.get("estado"))
-    key = (payload["ruc"], payload["tipo"], payload["serie"], payload["numero"])
+    # La clave del cache va sin ceros a la izquierda (como la del lote y la
+    # de las consultas): el payload conserva el numero tal como se imprimio.
+    key = (
+        payload["ruc"],
+        payload["tipo"],
+        payload["serie"],
+        _norm_numero(payload["numero"]),
+    )
     try:
         previous = store.fetch_many([key]).get(key, {})
         store.upsert(

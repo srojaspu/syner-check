@@ -18,9 +18,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Mapping, Sequence
 
-from src.application.ports import IntelisisUfeReader, SunatCacheStore
-from src.application.use_cases import sunat_cache_key
+from src.application.ports import (
+    IntelisisUfeReader,
+    SunatCacheStore,
+    SunatValidator,
+)
+from src.application.use_cases import sunat_cache_key, sunat_revalidate
 from src.domain import intelisis_ufe as dominio
+from src.domain.errors import NotFoundError
 
 # Tope del periodo: el PHP exige 1..31 dias.
 MAX_DIAS = 31
@@ -68,6 +73,7 @@ def _texto(valor: Any) -> str:
 def _fila(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
     """Arma la fila de la grilla a partir de la lectura y el dominio."""
     tipo_documento_pu = _texto(row.get("TipoDocumentoPU"))
+    referencia = _texto(row.get("Referencia"))
     serie, numero = dominio.identidad_documento(
         row.get("ServicioSerie"),
         int(row.get("Sucursal") or 0),
@@ -79,6 +85,15 @@ def _fila(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
     documento_bitacora = _texto(row.get("Documento"))
     documento = documento_bitacora or documento_teorico
     estimado = not documento_bitacora
+    # Identidad en SUNAT: el TXT lleva el prefijo de tipo ("B710-00004539").
+    comprobante = dominio.comprobante_sunat(
+        tipo_documento_pu,
+        referencia,
+        row.get("ServicioSerie"),
+        int(row.get("Sucursal") or 0),
+        row.get("SeriePU"),
+        row.get("MovID"),
+    )
 
     fecha_emision = _parse_fecha(_texto(row.get("FechaEmision")))
     ultimo = None
@@ -109,6 +124,8 @@ def _fila(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         "documento": documento,
         "documento_estimado": estimado,
         "documento_teorico": documento_teorico,
+        # Identidad SUNAT (prefijo de tipo + serie + correlativo).
+        "comprobante": comprobante,
         "mov": _texto(row.get("Mov")),
         "mov_id": _texto(row.get("MovID")),
         "fecha_emision": fecha_emision.isoformat(),
@@ -205,7 +222,9 @@ def _adjuntar_sunat(
     orden: list[tuple[str, str, str, str] | None] = []
     for fila in filas:
         clave = sunat_cache_key(
-            ruc.strip(), fila.get("tipo_sunat", ""), fila.get("documento", "")
+            ruc.strip(),
+            fila.get("tipo_sunat", ""),
+            fila.get("comprobante", ""),
         )
         orden.append(clave)
         if clave is not None:
@@ -320,13 +339,13 @@ def listar_ufe(
     # documentos distintos (el PHP tambien incluye el tipo en la clave).
     duplicados = dominio.identidades_duplicadas(
         [
-            f"{fila['tipo_documento_pu']}|{fila['documento']}"
+            f"{fila['tipo_documento_pu']}|{fila['comprobante']}"
             for fila in filas
         ]
     )
     if duplicados:
         for fila in filas:
-            identidad = f"{fila['tipo_documento_pu']}|{fila['documento']}"
+            identidad = f"{fila['tipo_documento_pu']}|{fila['comprobante']}"
             if identidad in duplicados:
                 if dominio.INCIDENCIA_CRUCE_AMBIGUO not in fila["incidencias"]:
                     fila["incidencias"].append(dominio.INCIDENCIA_CRUCE_AMBIGUO)
@@ -356,4 +375,111 @@ def listar_ufe(
         "kpis": kpis,
         "filtrados": len(filtradas),
         "rows": filtradas,
+    }
+
+
+def _intento(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Un intento de la bitacora, listo para el drawer de trazabilidad."""
+    return {
+        "log_id": int(row.get("LogID") or 0),
+        "estado": _texto(row.get("Estado")),
+        "etapa": _texto(row.get("Etapa")),
+        "documento": _texto(row.get("Documento")),
+        "detalle": _texto(row.get("Detalle")),
+        "error_mensaje": _texto(row.get("ErrorMensaje")),
+        "fecha_inicio": _texto(row.get("FechaInicio")),
+        "fecha_fin": _texto(row.get("FechaFin")),
+        "archivo_out": _texto(row.get("ArchivoOut")),
+        "procedimiento": _texto(row.get("Procedimiento")),
+        "duracion_ms": row.get("DuracionMs"),
+        "hash": _texto(row.get("HashSalida")),
+        "tipo_movimiento": _texto(row.get("TipoMovimiento")),
+    }
+
+
+def _con_sunat(
+    fila: dict[str, Any],
+    store: SunatCacheStore | None,
+    ruc: str,
+) -> dict[str, Any]:
+    """Adjunta el estado SUNAT del cache a una fila ya clasificada."""
+    _adjuntar_sunat([fila], store, ruc)
+    cacheado = fila.get("sunat") or {}
+    estado_sunat, incidencias_sunat = dominio.clasificar_sunat(
+        cacheado.get("estado")
+    )
+    fila["estado_sunat"] = estado_sunat
+    fila["incidencias"], fila["resultado"] = dominio.combine_incidencias(
+        fila["incidencias"], incidencias_sunat
+    )
+    return fila
+
+
+def detalle_ufe(
+    reader: IntelisisUfeReader,
+    *,
+    id_venta: int,
+    sunat_store: SunatCacheStore | None = None,
+    sunat_ruc: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Trazabilidad de un comprobante: venta, intentos y estado SUNAT."""
+    rows = reader.fetch_row(id_venta)
+    if not rows:
+        raise NotFoundError("Comprobante no encontrado.")
+    momento = now or datetime.now()
+    fila = _con_sunat(_fila(rows[0], momento), sunat_store, sunat_ruc)
+    intentos = [_intento(item) for item in reader.fetch_attempts(id_venta)]
+    return {
+        "id_venta": int(id_venta),
+        "venta": fila,
+        "intentos": intentos,
+        "sunat": fila.get("sunat"),
+        "estado_sunat": fila["estado_sunat"],
+    }
+
+
+def validar_ufe(
+    reader: IntelisisUfeReader,
+    validator: SunatValidator,
+    store: SunatCacheStore,
+    *,
+    id_venta: int,
+    sunat_ruc: str,
+    usuario: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Consulta individual en SUNAT y deja el estado en el cache local.
+
+    No escribe en Intelisis: solo consulta SUNAT y guarda el resultado en
+    la base de syner-check, que es lo que la grilla lee.
+    """
+    if validator is None or store is None or not (sunat_ruc or "").strip():
+        raise ValueError("Validación SUNAT no configurada.")
+    rows = reader.fetch_row(id_venta)
+    if not rows:
+        raise NotFoundError("Comprobante no encontrado.")
+    momento = now or datetime.now()
+    fila = _fila(rows[0], momento)
+    if not fila["tipo_sunat"]:
+        raise ValueError("Este tipo de documento no admite consulta en SUNAT.")
+    if not fila["comprobante"]:
+        raise ValueError("El comprobante no tiene documento para consultar.")
+
+    resultado = sunat_revalidate(
+        validator,
+        store,
+        tipo=fila["tipo_sunat"],
+        number=fila["comprobante"],
+        date_iso=fila["fecha_emision"],
+        importe=fila["total"],
+        usuario=usuario,
+        ruc=sunat_ruc,
+    )
+    return {
+        "id_venta": int(id_venta),
+        "documento": fila["documento"],
+        "comprobante": fila["comprobante"],
+        "estado": resultado.get("estado", ""),
+        "resultado": resultado.get("resultado", {}),
     }

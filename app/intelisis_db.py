@@ -15,7 +15,11 @@ from syner_check.config import (
     get_intelisis_password,
     is_intelisis_configured,
 )
-from syner_check.db_client import fetch_intelisis_ufe_rows
+from syner_check.db_client import (
+    fetch_intelisis_ufe_attempts,
+    fetch_intelisis_ufe_row,
+    fetch_intelisis_ufe_rows,
+)
 from syner_check.db_pool import pooled_connection
 
 
@@ -42,7 +46,37 @@ def fetch_ufe_rows(start_date: str, end_date: str) -> list[dict[str, Any]]:
         ) from exc
 
 
+def fetch_ufe_row(id_venta: int) -> list[dict[str, Any]]:
+    """Un comprobante del universo UFE (vacio si no existe)."""
+    if not is_intelisis_configured():
+        raise UpstreamError("Intelisis no configurado.")
+    try:
+        return fetch_intelisis_ufe_row(id_venta)
+    except UpstreamError:
+        raise
+    except Exception as exc:
+        raise UpstreamError(
+            f"Intelisis read failed: {type(exc).__name__}."
+        ) from exc
+
+
+def fetch_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
+    """Todos los intentos de la bitacora para un comprobante."""
+    if not is_intelisis_configured():
+        raise UpstreamError("Intelisis no configurado.")
+    try:
+        return fetch_intelisis_ufe_attempts(id_venta)
+    except UpstreamError:
+        raise
+    except Exception as exc:
+        raise UpstreamError(
+            f"Intelisis read failed: {type(exc).__name__}."
+        ) from exc
+
+
 __all__ = [
+    "fetch_ufe_attempts",
+    "fetch_ufe_row",
     "fetch_ufe_rows",
     "get_intelisis_config",
     "get_intelisis_password",

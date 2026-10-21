@@ -62,6 +62,39 @@ class TestIdentidad:
         assert (serie, numero) == ("120", "00004210")
 
 
+class TestIdentidadSunat:
+    def test_prefijo_por_tipo(self):
+        assert ufe.prefijo_documento("01") == "F"
+        assert ufe.prefijo_documento("03") == "B"
+        assert ufe.prefijo_documento("07", "E-Boleta 109-85534") == "B"
+        assert ufe.prefijo_documento("07", "E-Factura 710 1-211848") == "F"
+        assert ufe.prefijo_documento("07", "SE-Boleta 104-00038062") == "N"
+
+    def test_serie_sunat_usa_la_regla_del_txt(self):
+        # Sucursal 0 o 1: la serie del punto de venta.
+        assert ufe.serie_sunat("", 1, "710") == "710"
+        assert ufe.serie_sunat("", 1, "") == "001"
+        # Resto: los ultimos 3 digitos de la sucursal.
+        assert ufe.serie_sunat("", 202, "") == "202"
+        assert ufe.serie_sunat("", 202, "710") == "202"
+        # El servicio manda sobre todo.
+        assert ufe.serie_sunat("F001", 202, "710") == "F001"
+
+    def test_comprobante_sunat(self):
+        assert (
+            ufe.comprobante_sunat("03", "", "", 602, "", "602-142702")
+            == "B602-00142702"
+        )
+        assert (
+            ufe.comprobante_sunat("01", "", "", 202, "", "202-2576")
+            == "F202-00002576"
+        )
+        assert (
+            ufe.comprobante_sunat("07", "E-Boleta 109-85534", "", 109, "", "109-2689")
+            == "B109-00002689"
+        )
+
+
 class TestEstadoUltimoIntento:
     def test_ok_finalizado_es_generado(self):
         estado = ufe._estado_ultimo_intento(_intento())

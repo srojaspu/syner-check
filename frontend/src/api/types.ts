@@ -273,6 +273,8 @@ export interface IntelisisUfeRow {
   documento: string;
   documento_estimado: boolean;
   documento_teorico: string;
+  /** Identidad en SUNAT: prefijo de tipo + serie + correlativo. */
+  comprobante: string;
   mov: string;
   mov_id: string;
   fecha_emision: string;
@@ -338,4 +340,44 @@ export interface IntelisisUfeResponse {
   kpis: IntelisisUfeKpis;
   filtrados: number;
   rows: IntelisisUfeRow[];
+}
+
+/** Un intento del generador en la bitacora. */
+export interface IntelisisUfeIntento {
+  log_id: number;
+  estado: string;
+  etapa: string;
+  documento: string;
+  detalle: string;
+  error_mensaje: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  archivo_out: string;
+  procedimiento: string;
+  duracion_ms: number | null;
+  hash: string;
+  tipo_movimiento: string;
+}
+
+/** Trazabilidad de un comprobante (lo que muestra el drawer). */
+export interface IntelisisUfeDetalle {
+  id_venta: number;
+  venta: IntelisisUfeRow;
+  intentos: IntelisisUfeIntento[];
+  sunat: { estado: string; consultado: string } | null;
+  estado_sunat: UfeEstadoSunat;
+}
+
+export interface IntelisisUfeValidacion {
+  id_venta: number;
+  documento: string;
+  comprobante: string;
+  estado: string;
+  resultado: {
+    estado?: string;
+    codigo_sunat?: string;
+    ruc_estado?: string;
+    ruc_condicion?: string;
+    observaciones?: string[];
+  };
 }

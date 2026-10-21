@@ -98,6 +98,20 @@ def _normaliza(texto: Any) -> str:
     return str(texto if texto is not None else "").strip()
 
 
+# Letra de tipo que lleva el comprobante: F (factura), B (boleta), N (nota).
+# Las notas de credito heredan la letra del documento que acreditan.
+PREFIX_TIPO: dict[str, str] = {"01": "F", "03": "B"}
+PREFIX_REFERENCIA: dict[str, str] = {
+    "TICK": "B",
+    "BOLE": "B",
+    "E-BO": "B",
+    "DE-B": "B",
+    "E-FA": "F",
+    "FACT": "F",
+    "DE-F": "F",
+}
+
+
 def serie_documento(
     servicio_serie: Any,
     sucursal: int,
@@ -149,6 +163,61 @@ def identidad_documento(
     return (
         serie_documento(servicio_serie, sucursal, serie_pu, generar_txt),
         numero_documento(mov_id),
+    )
+
+
+def prefijo_documento(tipo_documento_pu: Any, referencia: Any = "") -> str:
+    """Letra de tipo del comprobante: ``F`` factura, ``B`` boleta, ``N`` nota.
+
+    Las notas de credito y de debito heredan la letra del documento que
+    acreditan, con la misma regla que ``PUSP_ControlFac`` y
+    ``SPPUFE_UBL21_NCND`` (``LEFT(Referencia, 4)``).
+    """
+    tipo = _normaliza(tipo_documento_pu).upper()
+    if tipo in PREFIX_TIPO:
+        return PREFIX_TIPO[tipo]
+    return PREFIX_REFERENCIA.get(_normaliza(referencia).upper()[:4], "N")
+
+
+def serie_sunat(
+    servicio_serie: Any,
+    sucursal: int,
+    serie_pu: Any,
+) -> str:
+    """Serie que va en el TXT, es decir, la que registra SUNAT.
+
+    Replica ``@Serie`` de ``spPUEBoletaOFIver3``/``spPUENCNDver4``: el
+    servicio manda; sucursal 0 o 1 usa ``SeriePU``; el resto usa los
+    ultimos 3 digitos de la sucursal.
+    """
+    servicio = _normaliza(servicio_serie)
+    if servicio:
+        return servicio
+    serie = _normaliza(serie_pu)
+    if sucursal in (0, 1):
+        return serie or "001"
+    ultimos_tres = f"{sucursal:03d}"[-3:] if sucursal else "000"
+    return ultimos_tres if ultimos_tres != "000" else (serie or "001")
+
+
+def comprobante_sunat(
+    tipo_documento_pu: Any,
+    referencia: Any,
+    servicio_serie: Any,
+    sucursal: int,
+    serie_pu: Any,
+    mov_id: Any,
+) -> str:
+    """Identidad del comprobante en SUNAT: ``B710-00004539``.
+
+    Es el numero que va en la seccion CAB 04 del TXT que consume Carvajal
+    (``prefijo + serie + '-' + correlativo``). La bitacora guarda el mismo
+    numero sin la letra de tipo (``710-00004539``).
+    """
+    return (
+        f"{prefijo_documento(tipo_documento_pu, referencia)}"
+        f"{serie_sunat(servicio_serie, sucursal, serie_pu)}"
+        f"-{numero_documento(mov_id)}"
     )
 
 
