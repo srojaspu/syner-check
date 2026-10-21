@@ -29,14 +29,14 @@ seller crossTotal createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}
-payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey exchangeRate currency{isoCode isoNumber name symbol}}
+payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey creditNote exchangeRate currency{isoCode isoNumber name symbol}}
 items{note netUnitPrice crossUnitPrice crossPrice uom sku quantity netPrice skuPu description oid idx taxes{amount base factor name} currency{isoCode isoNumber name symbol} lote{oid sku description} promotion{oid label netDiscount name crossDiscount netUnitDiscount crossUnitDiscount description}}
 }}""",
 "FACTURA": """query Invoices($startDate:String!,$endDate:String!){invoices(startDate:$startDate,endDate:$endDate){
 seller netTotalDiscount createdDate netTotal date oid taxNumber crossTotalDiscount number crossTotal
 contact{idNumber idTypeKey idTypeName name email}
 items{quantity idx uom crossUnitPrice description crossPrice note sku skuPu netPrice netUnitPrice promotion{description oid netUnitDiscount crossDiscount name label crossUnitDiscount netDiscount} taxes{amount base factor name} lote{oid sku description} currency{isoCode isoNumber name symbol}}
-payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey exchangeRate currency{isoCode isoNumber name symbol}}
+payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey creditNote exchangeRate currency{isoCode isoNumber name symbol}}
 taxes{amount base factor name} currency{isoCode isoNumber name symbol}
 }}""",
 "NOTA DE CREDITO": """query CreditNotes($startDate:String!,$endDate:String!){creditNotes(startDate:$startDate,endDate:$endDate){
@@ -129,14 +129,14 @@ seller crossTotal createdDate nota contactName oid netTotal date number
 taxes{amount base factor name}
 contact{idNumber idTypeKey idTypeName name email}
 currency{isoCode isoNumber name symbol}
-payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey exchangeRate currency{isoCode isoNumber name symbol}}
+payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey creditNote exchangeRate currency{isoCode isoNumber name symbol}}
 items{note netUnitPrice crossUnitPrice crossPrice uom sku quantity netPrice skuPu description oid idx taxes{amount base factor name} currency{isoCode isoNumber name symbol} lote{oid sku description} promotion{oid label netDiscount name crossDiscount netUnitDiscount crossUnitDiscount description}}
 }}""",
 "FACTURA": """query Invoices($serie:String!){invoices(serie:$serie){
 seller netTotalDiscount createdDate netTotal date oid taxNumber crossTotalDiscount number crossTotal
 contact{idNumber idTypeKey idTypeName name email}
 items{quantity idx uom crossUnitPrice description crossPrice note sku skuPu netPrice netUnitPrice promotion{description oid netUnitDiscount crossDiscount name label crossUnitDiscount netDiscount} taxes{amount base factor name} lote{oid sku description} currency{isoCode isoNumber name symbol}}
-payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey exchangeRate currency{isoCode isoNumber name symbol}}
+payments{merchantId medio type name cardProvider authorization message panMask serviceProvider amount transactionId pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPaymentTypeKey creditNote exchangeRate currency{isoCode isoNumber name symbol}}
 taxes{amount base factor name} currency{isoCode isoNumber name symbol}
 }}"""
 }

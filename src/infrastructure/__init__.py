@@ -7,10 +7,12 @@ from .adapters import (
     SunatCacheStoreAdapter,
     SunatValidatorAdapter,
 )
+from .movsynerpos import MovSynerPosWriterAdapter
 
 __all__ = [
     "GraphqlGatewayAdapter",
     "IntelisisReaderAdapter",
+    "MovSynerPosWriterAdapter",
     "SqlReaderAdapter",
     "SunatCacheStoreAdapter",
     "SunatValidatorAdapter",

@@ -1,0 +1,24 @@
+{
+  "oid": "nota-credito-sintetica-001",
+  "number": "FC01-00000234",
+  "date": "2026-10-20",
+  "crossTotal": 45,
+  "docRef": "B004-00001234",
+  "contact": {
+    "idNumber": "00000000",
+    "name": "CLIENTE PRUEBA",
+    "email": "cliente@example.test"
+  },
+  "currency": { "isoCode": "PEN" },
+  "payments": [],
+  "items": [
+    {
+      "idx": 1,
+      "sku": "SKU-001",
+      "quantity": 1,
+      "crossUnitPrice": 45,
+      "crossPrice": 45,
+      "lote": { "sku": "LOTE-001" }
+    }
+  ]
+}

@@ -24,6 +24,7 @@ from .security import (
     read_json_limited,
 )
 from src.application import (
+    MOVSYNERPOS_MAX_DOCUMENTOS,
     SUNAT_REQUEST_MAX,
     SUNAT_SCOPE_NO_ACEPTADOS,
     SUNAT_SCOPES,
@@ -36,6 +37,7 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
+    movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
     summary as clean_summary,
     sunat_reconcile as clean_sunat_reconcile,
@@ -450,6 +452,42 @@ def _actor_email(request: Request) -> str:
     if isinstance(user, dict):
         return str(user.get("email", ""))
     return ""
+
+
+# The browser only sends document identity; 64 KB is plenty for 25 documents.
+MOVSYNERPOS_REQUEST_BYTES = 64 * 1024
+
+
+@app.post("/api/movsynerpos/enviar")
+async def api_movsynerpos_send(request: Request):
+    """Manual, INSERT-only resend of SynerCom documents to ``dbo.MovSynerPos``.
+
+    The backend re-queries each document detail from GraphQL, so amounts and
+    lines sent by the browser are never trusted. Writes are disabled unless
+    ``MOVSYNERPOS_WRITE_ENABLED=true`` (503 otherwise).
+    """
+    protected(request)
+    body = await read_json_limited(
+        request, min(MAX_REQUEST_BYTES, MOVSYNERPOS_REQUEST_BYTES)
+    )
+    documentos = body.get("documentos", []) if isinstance(body, dict) else []
+    if not isinstance(documentos, list):
+        raise HTTPException(400, "El campo 'documentos' debe ser una lista.")
+    if not documentos:
+        raise HTTPException(400, "Sin documentos para enviar.")
+    if len(documentos) > MOVSYNERPOS_MAX_DOCUMENTOS:
+        raise HTTPException(
+            400,
+            f"Límite por solicitud: {MOVSYNERPOS_MAX_DOCUMENTOS} documentos.",
+        )
+    reparar = bool(body.get("reparar", False)) if isinstance(body, dict) else False
+    return await run_blocking(
+        clean_movsynerpos_send,
+        documentos,
+        reparar,
+        _actor_email(request),
+        request_id_var.get(),
+    )
 
 
 @app.post("/api/sunat/lotes", status_code=202)

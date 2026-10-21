@@ -1,0 +1,58 @@
+{
+  "oid": "boleta-sintetica-001",
+  "number": "B004-00001234",
+  "date": "2026-10-20",
+  "createdDate": "2026-10-20T10:15:00Z",
+  "seller": "VENDEDOR PRUEBA",
+  "crossTotal": 120.5,
+  "nota": null,
+  "contact": {
+    "idNumber": "00000000",
+    "name": "CLIENTE PRUEBA",
+    "email": "cliente@example.test"
+  },
+  "currency": { "isoCode": "PEN" },
+  "payments": [
+    { "type": "Efectivo - Pago", "amount": 10 },
+    {
+      "type": "Tarjeta - Cobranza",
+      "cardProvider": "VISA",
+      "message": "AUTORIZACION SINTETICA",
+      "panMask": "411111******1111",
+      "amount": 60,
+      "creditNote": "B004-00000999"
+    },
+    {
+      "type": "Pago con puntos",
+      "pointsPaymentTypeKey": "ABONO_CUENTA",
+      "pointsPaymentTypeValue": "ABONO_CUENTA",
+      "message": "ABONO BCP SINTETICO",
+      "transactionId": "TX-001",
+      "pointsAmount": 500,
+      "amount": 30.5
+    }
+  ],
+  "items": [
+    {
+      "idx": 1,
+      "sku": "SKU-001",
+      "quantity": 2,
+      "crossUnitPrice": 10,
+      "crossPrice": 14.5,
+      "lote": { "sku": "LOTE-001" },
+      "promotion": {
+        "name": "PROMO PRUEBA",
+        "crossDiscount": 5.5
+      }
+    },
+    {
+      "idx": 2,
+      "sku": "SKU-002",
+      "quantity": 1,
+      "crossUnitPrice": 90,
+      "crossPrice": 90,
+      "lote": null,
+      "promotion": null
+    }
+  ]
+}

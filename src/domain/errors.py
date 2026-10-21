@@ -19,6 +19,10 @@ class UnauthorizedError(PermissionError):
     """Raised when an identity is not allowed."""
 
 
+class MovSynerPosValidationError(DomainError):
+    """Raised when a document cannot be mapped to dbo.MovSynerPos safely."""
+
+
 class NotFoundError(LookupError):
     """Raised when a document is not found."""
 

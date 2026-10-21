@@ -84,6 +84,24 @@ class SunatCacheStore(Protocol):
         ...
 
 
+class MovSynerPosWriter(Protocol):
+    """Escritura idempotente en dbo.MovSynerPos (solo SELECT + INSERT)."""
+
+    def existing_lines(self, oid: str, tipo: str) -> dict[int, str]:
+        """``Idx`` existentes para el documento -> ``SerieNumero``."""
+        ...
+
+    def serie_conflicts(
+        self, tipo: str, serie: str, idxs: Sequence[int]
+    ) -> dict[int, str]:
+        """``Idx`` que ya existen con la misma serie/tipo y otro ``IDSynerPos``."""
+        ...
+
+    def insert_lines(self, documento: object, lineas: Sequence[dict]) -> int:
+        """Inserta las líneas en una transacción; devuelve cuántas insertó."""
+        ...
+
+
 class GraphqlGateway(Protocol):
     def detail(
         self,

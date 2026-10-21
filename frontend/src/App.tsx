@@ -19,11 +19,14 @@ import { Account, AppShell, LoginCard, Tabs, TopBar } from "./components/AppShel
 import { DataTable } from "./components/DataTable";
 import { DetailDrawer } from "./components/DetailDrawer";
 import { FlowBar } from "./components/FlowBar";
+import { MovSynerPosConfirmDialog } from "./components/MovSynerPosConfirmDialog";
+import { MovSynerPosProgress } from "./components/MovSynerPosProgress";
 import { NumberPanel, RangePanel } from "./components/SearchPanels";
 import { SunatConfirmDialog } from "./components/SunatConfirmDialog";
 import { SunatProgress } from "./components/SunatProgress";
 import { voucherColumns } from "./components/columns";
 import { useDocument } from "./hooks/useDocument";
+import { useMovSynerPos } from "./hooks/useMovSynerPos";
 import { useSession } from "./hooks/useSession";
 import { useSunat } from "./hooks/useSunat";
 import { useVouchers, type SearchMode } from "./hooks/useVouchers";
@@ -41,9 +44,12 @@ function Workspace() {
   const vouchers = useVouchers(onAuthFailure);
   const detail = useDocument(onAuthFailure);
   const sunat = useSunat(onAuthFailure);
+  const movsynerpos = useMovSynerPos(onAuthFailure);
   const [mode, setMode] = useState<SearchMode>("range");
   const [copied, setCopied] = useState(false);
   const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
+  const [movSynerPosDialogOpen, setMovSynerPosDialogOpen] = useState(false);
+  const [movSynerPosReparar, setMovSynerPosReparar] = useState(false);
   const [flowSelection, setFlowSelection] = useState<FlowSelection | null>(
     null,
   );
@@ -166,6 +172,12 @@ function Workspace() {
     sunat.busy ||
     sunat.refreshing;
 
+  const movSynerPosDisabled =
+    !effectiveRows.length ||
+    vouchers.loading ||
+    movsynerpos.busy ||
+    movsynerpos.refreshing;
+
   return (
     <AppShell topbar={<TopBar actions={<Account user={user} />} />}>
       <div className="flex flex-col gap-6">
@@ -179,7 +191,9 @@ function Workspace() {
                 setLastRange({ start, end, types });
                 setLastNumber(null);
                 sunat.reset();
+                movsynerpos.reset();
                 setSunatDialogOpen(false);
+                setMovSynerPosDialogOpen(false);
                 setFlowSelection(null);
                 setFilteredRows(null);
                 void vouchers.runRange(start, end, types);
@@ -192,7 +206,9 @@ function Workspace() {
                 setLastNumber(number);
                 setLastRange(null);
                 sunat.reset();
+                movsynerpos.reset();
                 setSunatDialogOpen(false);
+                setMovSynerPosDialogOpen(false);
                 setFlowSelection(null);
                 setFilteredRows(null);
                 void vouchers.runNumber(number);
@@ -259,6 +275,29 @@ function Workspace() {
               </Button>
               <Button
                 type="button"
+                variant="outline"
+                disabled={movSynerPosDisabled}
+                onClick={() => setMovSynerPosDialogOpen(true)}
+                title={
+                  isFiltered
+                    ? `Envía a MovSynerPos solo las ${effectiveRows.length} filas filtradas`
+                    : "Envía los documentos mostrados a MovSynerPos"
+                }
+              >
+                {movsynerpos.busy ? (
+                  <HugeiconsIcon
+                    icon={Loading02Icon}
+                    size={16}
+                    strokeWidth={2}
+                    className="animate-spin"
+                    aria-hidden
+                  />
+                ) : null}{" "}
+                Enviar a MovSynerPos
+                {effectiveRows.length ? ` (${effectiveRows.length})` : ""}
+              </Button>
+              <Button
+                type="button"
                 variant="secondary"
                 disabled={!effectiveRows.length}
                 onClick={() => void exportExcel(effectiveRows)}
@@ -319,6 +358,23 @@ function Workspace() {
                 />
               </div>
             ) : null}
+            {movsynerpos.progress ||
+            movsynerpos.notice ||
+            movsynerpos.warning ||
+            movsynerpos.error ? (
+              <div className="mb-4">
+                <MovSynerPosProgress
+                  progress={movsynerpos.progress}
+                  notice={movsynerpos.notice}
+                  warning={movsynerpos.warning}
+                  error={movsynerpos.error}
+                  failedCount={movsynerpos.failed.length}
+                  onRetry={() =>
+                    void movsynerpos.retry(refreshRows, movSynerPosReparar)
+                  }
+                />
+              </div>
+            ) : null}
             <DataTable.Root
               key={
                 flowSelection
@@ -353,6 +409,16 @@ function Workspace() {
           rows={effectiveRows}
           onConfirm={(scope) => {
             void sunat.runBatch(effectiveRows, refreshRows, scope);
+          }}
+        />
+
+        <MovSynerPosConfirmDialog
+          open={movSynerPosDialogOpen}
+          onOpenChange={setMovSynerPosDialogOpen}
+          rows={effectiveRows}
+          onConfirm={(reparar) => {
+            setMovSynerPosReparar(reparar);
+            void movsynerpos.run(effectiveRows, refreshRows, reparar);
           }}
         />
       </div>

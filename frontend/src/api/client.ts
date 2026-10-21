@@ -1,5 +1,7 @@
 import type {
   DocumentResponse,
+  MovSynerPosRequestDocumento,
+  MovSynerPosResponse,
   SearchResponse,
   SessionUser,
   SummaryResponse,
@@ -43,6 +45,8 @@ const SUNAT_STATUS_TIMEOUT_MS = 60_000;
 /** Queueing is fast now; the long work happens in the server background task. */
 const SUNAT_SUBMIT_TIMEOUT_MS = 30_000;
 const SUNAT_SUBMISSION_TIMEOUT_MS = 30_000;
+/** A MovSynerPos batch re-queries GraphQL and inserts per document. */
+const MOVSYNERPOS_TIMEOUT_MS = 180_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -184,5 +188,29 @@ export function sunatJobStatus(
     `/api/sunat/lotes/${trabajoId}`,
     { signal },
     SUNAT_STATUS_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Manual SynerCom -> dbo.MovSynerPos resend.
+ *
+ * Only document identity is sent; the backend re-queries each detail from
+ * GraphQL. ``reparar`` inserts missing lines of documents that already have
+ * some rows (never updates or deletes).
+ */
+export function sendMovSynerPos(
+  documentos: MovSynerPosRequestDocumento[],
+  reparar: boolean,
+  signal?: AbortSignal,
+): Promise<MovSynerPosResponse> {
+  return api(
+    "/api/movsynerpos/enviar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentos, reparar }),
+      signal,
+    },
+    MOVSYNERPOS_TIMEOUT_MS,
   );
 }

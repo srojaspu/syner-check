@@ -195,3 +195,41 @@ export interface SunatJobResponse {
 export interface DocumentResponse {
   document: Voucher;
 }
+
+/** Manual resend to dbo.MovSynerPos (INSERT-only, backend re-queries detail). */
+export type MovSynerPosEstado =
+  | "insertado"
+  | "reparado"
+  | "sin_cambios"
+  | "conflicto"
+  | "error";
+
+/** Only identity leaves the browser; amounts and lines are never trusted. */
+export interface MovSynerPosRequestDocumento {
+  tipo: TipoDocumento;
+  oid: string;
+  number?: string;
+  date?: string;
+}
+
+export interface MovSynerPosDetalle {
+  tipo: TipoDocumento | string;
+  oid: string;
+  number: string;
+  estado: MovSynerPosEstado;
+  lineas_insertadas: number;
+  lineas_existentes: number;
+  lineas_faltantes: number;
+  error: string | null;
+}
+
+export interface MovSynerPosResponse {
+  solicitud_id: string;
+  total: number;
+  insertados: number;
+  reparados: number;
+  sin_cambios: number;
+  conflictos: number;
+  errores: number;
+  detalle: MovSynerPosDetalle[];
+}

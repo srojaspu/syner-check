@@ -14,6 +14,7 @@ from src.application import (
     get_detail,
     reconcile_pending_sunat_jobs,
     search_by_number,
+    send_movsynerpos,
     submit_sunat_batch,
     summarize,
     sunat_job_status,
@@ -29,6 +30,7 @@ from src.domain.errors import (
 from src.infrastructure import (
     GraphqlGatewayAdapter,
     IntelisisReaderAdapter,
+    MovSynerPosWriterAdapter,
     SqlReaderAdapter,
     SunatCacheStoreAdapter,
     SunatValidatorAdapter,
@@ -248,3 +250,38 @@ def document_detail(
     except UpstreamError:
         logger.exception("Document detail upstream failure")
         raise HTTPException(502, "No fue posible cargar el detalle.")
+
+
+def movsynerpos_send(
+    documentos: list[dict],
+    reparar: bool,
+    actor: str,
+    correlation_id: str = "",
+) -> dict:
+    """Blocking manual resend to dbo.MovSynerPos (real production write)."""
+    from syner_check import config as cfg
+
+    if not cfg.movsynerpos_enabled():
+        raise HTTPException(503, "El reenvío a SynerPOS está deshabilitado.")
+    if not cfg.is_movsynerpos_configured():
+        raise HTTPException(503, "Reenvío a SynerPOS no configurado.")
+
+    try:
+        return send_movsynerpos(
+            GraphqlGatewayAdapter(),
+            MovSynerPosWriterAdapter(),
+            documentos=documentos,
+            reparar=bool(reparar),
+            actor=actor or "",
+            correlation_id=correlation_id or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) if str(exc) else "Solicitud inválida.")
+    except UpstreamError:
+        logger.exception("MovSynerPos upstream failure")
+        raise HTTPException(502, "No fue posible reenviar los documentos.")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("MovSynerPos unexpected failure")
+        raise HTTPException(500, "No se pudo reenviar a SynerPOS.")

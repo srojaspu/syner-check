@@ -216,6 +216,50 @@ def get_sunat_db_password() -> str:
     return os.getenv("SUNAT_DB_PASSWORD", "")
 
 
+# --- MovSynerPos (reenvío manual SynerCom -> SynerPOS) --------------------
+# No hay variables de conexión nuevas: el writer deriva su conexión de DB_*
+# (misma host/base/login que las lecturas) y fuerza application_intent_read_only
+# a False solo en su propia conexión. La única variable nueva es el kill switch.
+
+MOVSYNERPOS_TABLE = "dbo.MovSynerPos"
+MOVSYNERPOS_TABLE_NAMES = ("movsynerpos", "dbo.movsynerpos")
+
+
+def movsynerpos_enabled() -> bool:
+    """Kill switch de escritura: apagado por defecto."""
+    import os
+
+    return _is_truthy(os.getenv("MOVSYNERPOS_WRITE_ENABLED", "false"))
+
+
+def get_movsynerpos_config() -> dict:
+    """Config del writer derivada de ``get_db_config()``.
+
+    Valida que ``TABLE_NAME`` apunte a MovSynerPos (falla cerrado) y fuerza
+    la conexión de escritura (sin ApplicationIntent=ReadOnly).
+    """
+    config = get_db_config()
+    table = str(config.get("table", "")).strip().lower()
+    if table not in MOVSYNERPOS_TABLE_NAMES:
+        raise RuntimeError(
+            "TABLE_NAME debe ser MovSynerPos para habilitar el reenvío a SynerPOS."
+        )
+    return {
+        **config,
+        "table": MOVSYNERPOS_TABLE,
+        "application_intent_read_only": False,
+    }
+
+
+def is_movsynerpos_configured() -> bool:
+    """True cuando el writer tiene config y password (sin leer secretos)."""
+    try:
+        get_movsynerpos_config()
+    except RuntimeError:
+        return False
+    return bool(get_db_password())
+
+
 def is_intelisis_configured() -> bool:
     """True when the Punidas/Intelisis connection is fully configured.
 

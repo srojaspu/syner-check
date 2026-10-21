@@ -1,0 +1,44 @@
+{
+  "oid": "factura-sintetica-001",
+  "number": "F001-00005678",
+  "date": "2026-10-20",
+  "createdDate": "2026-10-20T11:30:00",
+  "seller": "VENDEDOR PRUEBA",
+  "crossTotal": 80.25,
+  "nota": "NO SE USA EN FACTURA",
+  "contact": {
+    "idNumber": "00000000",
+    "name": "CLIENTE PRUEBA",
+    "email": "cliente@example.test"
+  },
+  "currency": { "isoCode": "USD" },
+  "payments": [
+    {
+      "type": "Efectivo - Cobranza",
+      "cardProvider": null,
+      "currency": { "isoCode": "USD" },
+      "amount": 50
+    },
+    {
+      "type": "Tarjeta - Cobranza",
+      "cardProvider": "MASTERCARD",
+      "message": "AUTORIZACION SINTETICA",
+      "panMask": "555555******4444",
+      "amount": 30.25
+    }
+  ],
+  "items": [
+    {
+      "idx": 1,
+      "sku": "SKU-010",
+      "quantity": 3,
+      "crossUnitPrice": 20.1,
+      "crossPrice": 60.3,
+      "lote": { "sku": "LOTE-010" },
+      "promotion": {
+        "name": "PROMO FACTURA",
+        "crossDiscount": 0.15
+      }
+    }
+  ]
+}
