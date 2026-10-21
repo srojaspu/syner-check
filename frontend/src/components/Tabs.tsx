@@ -9,8 +9,8 @@ import {
  * comprobante").
  *
  * Compartido por las dos pantallas: comprobantes de SynerPOS y
- * comprobantes Intelisis UFE. Los valores internos de cada modo pueden
- * ser distintos; las etiquetas son las mismas.
+ * comprobantes Intelisis UFE. Los valores internos de cada modo son los
+ * mismos ("range" / "number"), asi que las etiquetas tambien lo son.
  */
 export function Tabs<T extends string>({
   mode,

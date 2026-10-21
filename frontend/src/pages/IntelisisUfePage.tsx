@@ -62,7 +62,7 @@ export default function IntelisisUfePage({
 }) {
   const ufe = useIntelisisUfe(onAuthFailure);
   const sunat = useSunat(onAuthFailure);
-  const [modo, setModo] = useState<"periodo" | "comprobante">("periodo");
+  const [modo, setModo] = useState<"range" | "number">("range");
   const [range, setRange] = useState<DateRange | undefined>(() => {
     // Arranca en hoy, igual que la pantalla de comprobantes.
     const hoy = new Date();
@@ -151,7 +151,7 @@ export default function IntelisisUfePage({
   const filas = useMemo(
     () =>
       filtraUfeFilas(
-        modo === "periodo" ? ufe.rows : (ufe.busqueda?.rows ?? []),
+        modo === "range" ? ufe.rows : (ufe.busqueda?.rows ?? []),
         borrador,
       ),
     [modo, ufe.rows, ufe.busqueda, borrador],
@@ -176,19 +176,19 @@ export default function IntelisisUfePage({
   );
 
   const refrescar = useCallback(async () => {
-    if (modo === "periodo" && consulta) {
+    if (modo === "range" && consulta) {
       setConsulta({ ...consulta });
     }
   }, [modo, consulta]);
 
   const hayConsulta =
-    modo === "periodo" ? Boolean(consulta) : Boolean(ufe.busqueda);
+    modo === "range" ? Boolean(consulta) : Boolean(ufe.busqueda);
 
   return (
     <div className="flex flex-col gap-6">
       <Tabs mode={modo} onChange={setModo} />
 
-      {modo === "periodo" ? (
+      {modo === "range" ? (
         <PeriodoPanel
           range={range}
           onRange={setRange}
@@ -241,7 +241,7 @@ export default function IntelisisUfePage({
         </Alert>
       ) : null}
 
-      {modo === "periodo" && kpis ? (
+      {modo === "range" && kpis ? (
         <IntelisisUfeKpis
           kpis={kpis}
           filtros={borrador}
@@ -272,7 +272,7 @@ export default function IntelisisUfePage({
         />
       ) : null}
 
-      {modo === "periodo" && kpis?.por_dia?.length ? (
+      {modo === "range" && kpis?.por_dia?.length ? (
         <IntelisisUfeCobertura dias={kpis.por_dia} />
       ) : null}
 
@@ -284,7 +284,7 @@ export default function IntelisisUfePage({
               <span className="text-sm text-muted-foreground" aria-live="polite">
                 {hayConsulta
                   ? `${visibles.length} documentos${
-                      modo === "periodo" && ufe.desde
+                      modo === "range" && ufe.desde
                         ? ` · ${ufe.desde} a ${ufe.hasta}`
                         : ""
                     }`
@@ -357,7 +357,7 @@ export default function IntelisisUfePage({
                 </EmptyMedia>
                 <EmptyTitle>Aun no hay consulta</EmptyTitle>
                 <EmptyDescription>
-                  {modo === "periodo" ? (
+                  {modo === "range" ? (
                     <>
                       Elige el periodo y pulsa <b>Consultar</b>. No se
                       consulta nada hasta que lo pidas.
@@ -409,4 +409,5 @@ export default function IntelisisUfePage({
     </div>
   );
 }
+
 

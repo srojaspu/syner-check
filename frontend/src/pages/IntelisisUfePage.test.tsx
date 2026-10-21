@@ -369,6 +369,29 @@ describe("IntelisisUfePage", () => {
     expect(screen.getAllByText("21/10/2026").length).toBeGreaterThan(0);
   });
 
+  it("cambia entre rango de fechas y numero de comprobante", () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    // Arranca en el modo rango, con la pestaña marcada.
+    expect(
+      screen.getByRole("tab", { name: "Rango de fechas" }).getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    expect(screen.getByLabelText("Elegir rango de fechas")).toBeTruthy();
+    expect(screen.queryByLabelText("Numero de comprobante")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Número de comprobante" }),
+    );
+    expect(screen.getByLabelText("Numero de comprobante")).toBeTruthy();
+    expect(screen.queryByLabelText("Elegir rango de fechas")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Rango de fechas" }));
+    expect(screen.getByLabelText("Elegir rango de fechas")).toBeTruthy();
+    expect(screen.queryByLabelText("Numero de comprobante")).toBeNull();
+  });
+
   it("permite buscar por numero de comprobante", () => {
     mocks.ufe.buscar = vi.fn();
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
