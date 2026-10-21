@@ -74,8 +74,15 @@ def test_js_number_str_drops_trailing_zero_for_integers():
     assert js_number_str(0.2481) == "0.2481"
 
 
-def test_to_money_quantizes_to_four_places():
-    assert to_money("10.55555") == Decimal("10.5556")
+def test_to_money_matches_the_node_driver_scaling():
+    # El driver de Node (mssql/tedious) escala float64 * 10000 y trunca, así
+    # que 593.31 se guarda como 593.3099 en producción. Replicarlo mantiene
+    # las filas del reenvío idénticas a las del POS.
+    assert to_money(593.31) == Decimal("593.3099")
+    assert to_money(21.99) == Decimal("21.9899")
+    assert to_money(135.69) == Decimal("135.6900")
+    assert to_money(60.45) == Decimal("60.4500")
+    assert to_money("10.55555") == Decimal("10.5555")
     assert to_money(None) is None
 
 
@@ -95,8 +102,9 @@ def test_to_datetime_normalizes_z_and_plain_dates():
 
 def test_to_utc_datetime_converts_offset_to_utc():
     # SynerCom manda createdDate con offset -05:00; SynerPOS lo guarda en UTC.
+    # Se trunca a milisegundos como el Date de JS (sin microsegundos).
     assert to_utc_datetime("2026-10-20T22:22:10.723148-05:00") == datetime(
-        2026, 10, 21, 3, 22, 10, 723148
+        2026, 10, 21, 3, 22, 10, 723000
     )
     assert to_utc_datetime("2026-10-20T10:15:00Z") == datetime(2026, 10, 20, 10, 15)
     # Sin offset se toma tal cual (no hay zona que convertir).

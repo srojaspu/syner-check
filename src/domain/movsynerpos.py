@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal
 import math
 from typing import Any, Iterable, Sequence
 
@@ -83,9 +83,6 @@ MAX_LENGTHS: dict[str, int] = {
     "PorcentajeDescuento": 10,
 }
 
-_MONEY = Decimal("0.0001")
-
-
 # --- Helpers con semántica de JavaScript ---------------------------------
 
 
@@ -145,16 +142,27 @@ def to_number(value: Any, default: float = 0.0) -> float:
 
 
 def to_money(value: Any, default: Decimal | None = None) -> Decimal | None:
-    """Money con 4 decimales (escala real de la columna)."""
+    """Money escalado exactamente como lo escribe el POS.
+
+    Producción es Node: el driver (mssql/tedious) convierte el float64 a
+    ``money`` multiplicando por 10000 y **truncando**
+    (``593.31 * 10000 = 5933099.999999999`` -> ``593.3099``). Replicarlo es lo
+    que hace que las filas del reenvío sean idénticas a las del POS.
+
+    Verificado 2026-10-21 contra 322.428 filas de producción: 4.456 filas con
+    ``Monto1``, 4.086 con ``CrossTotal`` y 3.153 con ``crossPrice`` terminan en
+    ``99`` por este motivo (p. ej. ``2711.9899``, ``21.9899``).
+    """
     if value is None or value == "":
         return default
     try:
-        number = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+        number = float(value)
+    except (TypeError, ValueError):
         return default
-    if not number.is_finite():
+    if not math.isfinite(number):
         return default
-    return number.quantize(_MONEY, rounding=ROUND_HALF_UP)
+    # int() trunca hacia cero, igual que la codificación del driver.
+    return Decimal(int(number * 10000)).scaleb(-4)
 
 
 def r_js(value: float, digits: int) -> float:
@@ -203,6 +211,17 @@ def _parse_iso(value: Any) -> datetime | None:
             return None
 
 
+def _truncate_ms(value: datetime) -> datetime:
+    """Deja milisegundos: JS ``Date`` no guarda microsegundos.
+
+    SynerCom manda hasta 6 decimales; el POS parsea con ``new Date`` y el
+    driver envía al servidor solo milisegundos. Truncar aquí evita que un
+    microsegundo cruce el redondeo de 1/300 s de ``datetime`` y produzca una
+    diferencia de 3 ms frente a la fila del POS.
+    """
+    return value.replace(microsecond=(value.microsecond // 1000) * 1000)
+
+
 def to_datetime(value: Any) -> datetime | None:
     """ISO date/datetime -> datetime naive; ``None`` si falta o es inválido.
 
@@ -212,7 +231,8 @@ def to_datetime(value: Any) -> datetime | None:
     parsed = _parse_iso(value)
     if parsed is None:
         return None
-    return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    naive = parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    return _truncate_ms(naive)
 
 
 def to_utc_datetime(value: Any) -> datetime | None:
@@ -227,8 +247,8 @@ def to_utc_datetime(value: Any) -> datetime | None:
     if parsed is None:
         return None
     if parsed.tzinfo is None:
-        return parsed
-    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return _truncate_ms(parsed)
+    return _truncate_ms(parsed.astimezone(timezone.utc).replace(tzinfo=None))
 
 
 def normalize_date_iso(value: Any) -> str:
