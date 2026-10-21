@@ -92,6 +92,10 @@ async def listar_ufe(
         raise HTTPException(400, "Resultado invalido.")
     if tipo and tipo.upper() not in UFE_TIPOS:
         raise HTTPException(400, "Tipo de documento invalido.")
+    tipos = [item.strip().upper() for item in tipo.split(",") if item.strip()]
+    invalid_tipos = [item for item in tipos if item not in UFE_TIPOS]
+    if invalid_tipos:
+        raise HTTPException(400, "Tipo de documento invalido.")
     if generador and generador.upper() not in UFE_GENERADORES:
         raise HTTPException(400, "Generador invalido.")
     if sunat and sunat.upper() not in UFE_SUNAT:
@@ -104,7 +108,8 @@ async def listar_ufe(
             resultado=resultado.upper(),
             estados=estados,
             incidencia=incidencia,
-            tipo=tipo.upper(),
+            tipo="",
+            tipos=tipos,
             generador=generador.upper(),
             sunat=sunat.upper(),
             sucursal=sucursal,

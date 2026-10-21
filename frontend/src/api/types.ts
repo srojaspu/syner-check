@@ -365,6 +365,8 @@ export interface IntelisisUfeFiltros {
   estado?: string;
   incidencia?: string;
   tipo?: string;
+  /** Tipos de documento marcados (multi): FA, BO, NC, ND. */
+  tipos?: string[];
   generador?: string;
   sunat?: string;
   sucursal?: number;

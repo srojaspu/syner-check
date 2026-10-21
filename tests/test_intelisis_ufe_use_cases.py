@@ -429,6 +429,25 @@ class TestListadoServidor:
 
         assert out["filtrados"] == 1
 
+    def test_filtra_por_lista_de_tipos(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, mov_id="602-142702", tipo_documento_pu="03"),
+                _fila(id_venta=2, mov_id="602-142703", tipo_documento_pu="01"),
+            ]
+        )
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+            tipos=["BO"],
+        )
+
+        assert out["filtrados"] == 1
+        assert out["rows"][0]["tipo"] == "BO"
+
     def test_recorta_el_listado_y_lo_avisa(self) -> None:
         filas = [
             _fila(id_venta=index, mov_id=f"602-{142702 + index}")

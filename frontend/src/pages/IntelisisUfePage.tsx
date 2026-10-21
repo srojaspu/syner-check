@@ -27,6 +27,7 @@ import { creaRenderFiltro, filtraUfeFilas } from "@/components/IntelisisUfeFiltr
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
+import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { SunatProgress } from "@/components/SunatProgress";
 import { Tabs } from "@/components/Tabs";
@@ -41,6 +42,14 @@ import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 import { useSunat } from "../hooks/useSunat";
 
 const MAX_DIAS = 31;
+
+/** Los chips usan el vocabulario del dominio; el filtro usa el de Intelisis. */
+const TIPO_UFE: Record<string, string> = {
+  FACTURA: "FA",
+  BOLETA: "BO",
+  "NOTA DE CREDITO": "NC",
+  "NOTA DE DEBITO": "ND",
+};
 
 /**
  * Pantalla Intelisis UFE: comprobantes de origen Intelisis y el estado del
@@ -70,6 +79,8 @@ export default function IntelisisUfePage({
   });
   /** Periodo y filtros en borrador: todavia no consultados. */
   const [borrador, setBorrador] = useState<IntelisisUfeFiltros>({});
+  /** Tipos de documento marcados en el panel (vocabulario del dominio). */
+  const [tipos, setTipos] = useState<string[]>([...ALL_TIPOS_UFE]);
   /** Consulta aplicada (null = todavia no se consulto nada). */
   const [consulta, setConsulta] = useState<{
     desde: string;
@@ -199,6 +210,25 @@ export default function IntelisisUfePage({
             <span className="text-xs text-muted-foreground" aria-live="polite">
               El periodo cambio: la tabla sigue mostrando el consultado
             </span>
+          }
+          extra={
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Tipo de documento</span>
+              <TypeChips
+                values={tipos}
+                onChange={(values) => {
+                  setTipos(values);
+                  const codigos = values
+                    .map((tipo) => TIPO_UFE[tipo])
+                    .filter(Boolean);
+                  setBorrador((prev) => ({
+                    ...prev,
+                    tipos: codigos.length === ALL_TIPOS_UFE.length ? [] : codigos,
+                  }));
+                }}
+                tipos={ALL_TIPOS_UFE}
+              />
+            </div>
           }
         />
       ) : (

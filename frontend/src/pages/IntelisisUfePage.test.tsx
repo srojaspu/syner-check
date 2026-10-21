@@ -369,6 +369,35 @@ describe("IntelisisUfePage", () => {
     expect(screen.getAllByText("21/10/2026").length).toBeGreaterThan(0);
   });
 
+  it("ofrece los cuatro tipos de documento y filtra al instante", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, tipo: "BO", comprobante: "B602-00000001" }),
+      fila({ id_venta: 2, tipo: "FA", comprobante: "F602-00000002" }),
+    ];
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    expect(screen.getByRole("checkbox", { name: "Factura" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Boleta" })).toBeTruthy();
+    expect(
+      screen.getByRole("checkbox", { name: "Nota de crédito" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("checkbox", { name: "Nota de débito" }),
+    ).toBeTruthy();
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+    expect(screen.getByText("F602-00000002")).toBeTruthy();
+
+    // Desmarcar Factura oculta las facturas, al instante.
+    await user.click(screen.getByRole("checkbox", { name: "Factura" }));
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+    expect(screen.queryByText("F602-00000002")).toBeNull();
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
+  });
+
   it("cambia entre rango de fechas y numero de comprobante", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 

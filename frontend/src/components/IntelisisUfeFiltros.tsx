@@ -115,6 +115,9 @@ export function filtraUfeFilas(
       return false;
     }
     if (filtros.tipo && fila.tipo !== filtros.tipo) return false;
+    if (filtros.tipos?.length && !filtros.tipos.includes(fila.tipo)) {
+      return false;
+    }
     if (filtros.generador && fila.generador !== filtros.generador) {
       return false;
     }

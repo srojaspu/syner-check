@@ -200,6 +200,7 @@ def aplica_filtros(
     estados: Sequence[str] = (),
     incidencia: str = "",
     tipo: str = "",
+    tipos: Sequence[str] = (),
     generador: str = "",
     sunat: str = "",
     sucursal: int | None = None,
@@ -218,6 +219,10 @@ def aplica_filtros(
         ):
             return False
     if tipo and texto(fila.get("tipo")).upper() != tipo.upper():
+        return False
+    if tipos and texto(fila.get("tipo")).upper() not in {
+        texto(item).upper() for item in tipos
+    }:
         return False
     if generador and texto(fila.get("generador")).upper() != generador.upper():
         return False

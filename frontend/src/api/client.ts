@@ -162,6 +162,7 @@ export function getIntelisisUfe(
     estado?: string;
     incidencia?: string;
     tipo?: string;
+    tipos?: string[];
     generador?: string;
     sunat?: string;
     sucursal?: number;
@@ -176,6 +177,7 @@ export function getIntelisisUfe(
   if (params.estado) qs.set("estado", params.estado);
   if (params.incidencia) qs.set("incidencia", params.incidencia);
   if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.tipos?.length) qs.set("tipo", params.tipos.join(","));
   if (params.generador) qs.set("generador", params.generador);
   if (params.sunat) qs.set("sunat", params.sunat);
   if (params.sucursal !== undefined) qs.set("sucursal", String(params.sucursal));
