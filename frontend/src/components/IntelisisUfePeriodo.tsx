@@ -5,16 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateRangePicker } from "@/components/search/DateRangePicker";
 
-const PRESETS = [
-  { etiqueta: "Hoy", dias: 0 },
-  { etiqueta: "7 dias", dias: 6 },
-  { etiqueta: "30 dias", dias: 29 },
-];
-
 /**
- * Panel de periodo: rango, periodos rapidos y el boton "Consultar".
+ * Panel de periodo: rango y el boton "Consultar".
  *
  * La consulta solo sale de aqui: entrar en la pantalla no golpea el ERP.
+ * Arranca en el dia de hoy, igual que la pantalla de comprobantes.
  */
 export function IntelisisUfePeriodo({
   range,
@@ -34,29 +29,6 @@ export function IntelisisUfePeriodo({
     <Card>
       <CardContent className="flex flex-wrap items-end gap-4">
         <DateRangePicker value={range} onChange={onRange} label="Periodo" />
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">
-            Periodos rapidos
-          </span>
-          <div className="flex items-center gap-1">
-            {PRESETS.map((preset) => (
-              <Button
-                key={preset.etiqueta}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const hoy = new Date();
-                  const desde = new Date(hoy);
-                  desde.setDate(hoy.getDate() - preset.dias);
-                  onRange({ from: desde, to: hoy });
-                }}
-              >
-                {preset.etiqueta}
-              </Button>
-            ))}
-          </div>
-        </div>
         <Button
           type="button"
           onClick={onConsultar}

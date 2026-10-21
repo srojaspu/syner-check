@@ -68,10 +68,9 @@ export default function IntelisisUfePage({
   const sunat = useSunat(onAuthFailure);
   const [modo, setModo] = useState<"periodo" | "comprobante">("periodo");
   const [range, setRange] = useState<DateRange | undefined>(() => {
+    // Arranca en hoy, igual que la pantalla de comprobantes.
     const hoy = new Date();
-    const desde = new Date(hoy);
-    desde.setDate(hoy.getDate() - 6);
-    return { from: desde, to: hoy };
+    return { from: hoy, to: hoy };
   });
   /** Periodo y filtros en borrador: todavia no consultados. */
   const [borrador, setBorrador] = useState<IntelisisUfeFiltros>({});
