@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     hasta: "2026-10-21",
     truncado: false,
     maxFilas: 5000,
+    filtradosTotal: 0,
     run: vi.fn(),
     detalle: null as unknown,
     detalleLoading: false,
@@ -134,6 +135,7 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.errorValidacion = null;
     mocks.ufe.truncado = false;
     mocks.ufe.maxFilas = 5000;
+    mocks.ufe.filtradosTotal = 0;
     mocks.ufe.run.mockReset();
     mocks.ufe.abrirDetalle.mockReset();
     mocks.ufe.validar.mockReset();
@@ -270,10 +272,13 @@ describe("IntelisisUfePage", () => {
 
   it("avisa cuando el listado viene recortado", () => {
     mocks.ufe.truncado = true;
+    mocks.ufe.maxFilas = 5000;
+    mocks.ufe.filtradosTotal = 17976;
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     expect(screen.getByText("Listado recortado")).toBeTruthy();
+    expect(screen.getByText(/17,976/)).toBeTruthy();
   });
 
   it("ofrece la cobertura por dia", () => {

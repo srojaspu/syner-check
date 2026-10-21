@@ -25,6 +25,8 @@ interface UfeState {
   /** El listado se recorto por el tope de filas del servidor. */
   truncado: boolean;
   maxFilas: number;
+  /** Filas que pasan el filtro, antes del recorte. */
+  filtradosTotal: number;
 }
 
 const EMPTY: UfeState = {
@@ -38,13 +40,15 @@ const EMPTY: UfeState = {
   hasta: "",
   truncado: false,
   maxFilas: 0,
+  filtradosTotal: 0,
 };
 
 interface DetalleState {
   detalle: IntelisisUfeDetalle | null;
   /** Carga de la trazabilidad (distinta de la carga del listado). */
   detalleLoading: boolean;
-  error: string | null;
+  /** Error de la trazabilidad (distinto del error del listado). */
+  detalleError: string | null;
   /** Documento que se esta validando en SUNAT (id). */
   validando: number | null;
   /** Ultimo resultado de la validacion, para el aviso en pantalla. */
@@ -55,7 +59,7 @@ interface DetalleState {
 const EMPTY_DETALLE: DetalleState = {
   detalle: null,
   detalleLoading: false,
-  error: null,
+  detalleError: null,
   validando: null,
   aviso: null,
   errorValidacion: null,
@@ -113,6 +117,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
           hasta: data.hasta ?? hasta,
           truncado: Boolean(data.truncado),
           maxFilas: Number(data.max_filas ?? 0),
+          filtradosTotal: Number(data.filtrados_total ?? data.rows?.length ?? 0),
         });
       } catch (error: unknown) {
         if (error instanceof RequestAbortedError || !isCurrent(id)) return;
@@ -140,7 +145,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
         ...prev,
         detalle: null,
         detalleLoading: true,
-        error: null,
+        detalleError: null,
         aviso: null,
         errorValidacion: null,
       }));
@@ -150,7 +155,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
           ...prev,
           detalle: data,
           detalleLoading: false,
-          error: null,
+          detalleError: null,
         }));
       } catch (error: unknown) {
         if (error instanceof AuthError) {
@@ -160,7 +165,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
         setDetalleState((prev) => ({
           ...prev,
           detalleLoading: false,
-          error:
+          detalleError:
             error instanceof Error
               ? error.message
               : "No fue posible consultar la trazabilidad.",

@@ -283,6 +283,7 @@ def intelisis_ufe_list(
     sunat: str = "",
     sucursal: int | None = None,
     q: str = "",
+    correlation_id: str = "",
 ) -> dict:
     """Comprobantes del universo UFE con su estado de generacion y SUNAT."""
     reader = _intelisis_ufe_reader()
@@ -328,6 +329,7 @@ def intelisis_ufe_list(
             sunat=sunat,
             sucursal=sucursal,
             q=q,
+            correlation_id=correlation_id,
         )
     except RangoInvalidoError as exc:
         raise HTTPException(400, str(exc) or "Periodo invalido.")
@@ -338,7 +340,7 @@ def intelisis_ufe_list(
         )
 
 
-def intelisis_ufe_detail(id_venta: int) -> dict:
+def intelisis_ufe_detail(id_venta: int, correlation_id: str = "") -> dict:
     """Trazabilidad de un comprobante UFE (venta, intentos, SUNAT)."""
     reader = _intelisis_ufe_reader()
     if reader is None:
@@ -350,6 +352,7 @@ def intelisis_ufe_detail(id_venta: int) -> dict:
             id_venta=int(id_venta),
             sunat_store=sunat_store,
             sunat_ruc=sunat_ruc,
+            correlation_id=correlation_id,
         )
     except NotFoundError:
         raise HTTPException(404, "Comprobante no encontrado.")
@@ -360,7 +363,9 @@ def intelisis_ufe_detail(id_venta: int) -> dict:
         )
 
 
-def intelisis_ufe_validate(id_venta: int, usuario: str) -> dict:
+def intelisis_ufe_validate(
+    id_venta: int, usuario: str, correlation_id: str = ""
+) -> dict:
     """Consulta individual en SUNAT (no escribe en Intelisis)."""
     reader = _intelisis_ufe_reader()
     if reader is None:
@@ -376,6 +381,7 @@ def intelisis_ufe_validate(id_venta: int, usuario: str) -> dict:
             id_venta=int(id_venta),
             sunat_ruc=ruc,
             usuario=usuario or "",
+            correlation_id=correlation_id,
         )
     except NotFoundError:
         raise HTTPException(404, "Comprobante no encontrado.")

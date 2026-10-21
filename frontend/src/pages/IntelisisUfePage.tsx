@@ -319,6 +319,38 @@ export default function IntelisisUfePage({
       <Card>
         <CardContent className="flex flex-wrap items-end gap-4">
           <DateRangePicker value={range} onChange={setRange} label="Periodo" />
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Periodos rapidos
+            </span>
+            <div className="flex items-center gap-1">
+              {[
+                { etiqueta: "Hoy", dias: 0 },
+                { etiqueta: "7 dias", dias: 6 },
+                { etiqueta: "30 dias", dias: 29 },
+              ].map((preset) => (
+                <Button
+                  key={preset.etiqueta}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const hoy = new Date();
+                    const desde = new Date(hoy);
+                    desde.setDate(hoy.getDate() - preset.dias);
+                    setRange({ from: desde, to: hoy });
+                    setFormError(null);
+                    setPeriodo({
+                      desde: toISODate(desde),
+                      hasta: toISODate(hoy),
+                    });
+                  }}
+                >
+                  {preset.etiqueta}
+                </Button>
+              ))}
+            </div>
+          </div>
           <Button
             type="button"
             onClick={consultar}
@@ -413,9 +445,10 @@ export default function IntelisisUfePage({
           <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
           <AlertTitle>Listado recortado</AlertTitle>
           <AlertDescription>
-            Se muestran las primeras {ufe.maxFilas.toLocaleString("es-PE")}{" "}
-            filas que pasan el filtro. Afina el periodo o usa los filtros
-            (resultado, generador, tipo) para ver el resto.
+            Se muestran {ufe.maxFilas.toLocaleString("es-PE")} de{" "}
+            {ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan
+            el filtro. Afina el periodo o usa los filtros (resultado,
+            generador, tipo) para ver el resto.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -484,6 +517,21 @@ export default function IntelisisUfePage({
                 { value: "SUNAT SIN CONSULTA", label: "Sin consulta" },
               ]}
               onChange={(value) => alternar("sunat", value)}
+            />
+            <FiltroSelect
+              label="Estado"
+              value={filtros.estado ?? ""}
+              placeholder="Todos"
+              options={[
+                { value: "generado", label: "Generado" },
+                { value: "error_validacion", label: "Error de validación" },
+                { value: "omitido_validacion", label: "Omitido en validación" },
+                { value: "sin_bloque", label: "Sin bloque de tipo" },
+                { value: "en_proceso", label: "En proceso" },
+                { value: "sin_registro", label: "Sin registro" },
+                { value: "fuera_de_bitacora", label: "Fuera de bitácora" },
+              ]}
+              onChange={(value) => alternar("estado", value)}
             />
             <FiltroSelect
               label="Sucursal"
@@ -650,8 +698,17 @@ export default function IntelisisUfePage({
               type="button"
               variant="secondary"
               disabled={!visibles.length}
-              onClick={() => void exportIntelisisUfeExcel(visibles)}
-              title="Exporta los documentos mostrados"
+              onClick={() =>
+                void exportIntelisisUfeExcel(visibles, {
+                  truncado: ufe.truncado,
+                  filtradosTotal: ufe.filtradosTotal,
+                })
+              }
+              title={
+                ufe.truncado
+                  ? "El listado esta recortado: el archivo lo deja constancia"
+                  : "Exporta los documentos mostrados"
+              }
             >
               <HugeiconsIcon
                 icon={FileDownIcon}
@@ -683,7 +740,7 @@ export default function IntelisisUfePage({
         open={Boolean(ufe.detalle) || ufe.detalleLoading}
         detalle={ufe.detalle}
         loading={ufe.detalleLoading}
-        error={ufe.error}
+        error={ufe.detalleError}
         validando={ufe.validando}
         aviso={ufe.aviso}
         errorValidacion={ufe.errorValidacion}

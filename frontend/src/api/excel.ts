@@ -84,9 +84,15 @@ export function formatMoneyCell(value: unknown, currency?: string): string {
   return formatMoney(value, currency ?? "PEN");
 }
 
-/** Excel export de la grilla Intelisis UFE (mismas columnas que la pantalla). */
+/**
+ * Excel export de la grilla Intelisis UFE (mismas columnas que la pantalla).
+ *
+ * Si el listado vino recortado (tope de filas del servidor), el archivo lo
+ * dice: un Excel parcial sin aviso es peor que no exportarlo.
+ */
 export async function exportIntelisisUfeExcel(
   rows: IntelisisUfeRow[],
+  opciones: { truncado?: boolean; filtradosTotal?: number } = {},
 ): Promise<void> {
   const XLSX = await import("xlsx/dist/xlsx.mini.min.js");
   const sheet = XLSX.utils.json_to_sheet(
@@ -114,6 +120,15 @@ export async function exportIntelisisUfeExcel(
       "ID ERP": row.id_venta,
     })),
   );
+  if (opciones.truncado) {
+    // La ultima fila deja constancia de que el archivo esta incompleto.
+    const total = opciones.filtradosTotal ?? rows.length;
+    XLSX.utils.sheet_add_aoa(sheet, [
+      [
+        `LISTADO RECORTADO: ${rows.length} de ${total} documentos que pasan el filtro`,
+      ],
+    ]);
+  }
   sheet["!cols"] = [
     { wch: 20 },
     { wch: 20 },

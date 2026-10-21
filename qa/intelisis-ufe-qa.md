@@ -119,7 +119,7 @@ listado de 31 días devolvía **17,7 MB**.
 - [x] Clasificación con paridad o con diferencias explicadas (D13, D14, D19, D21, D25).
 - [x] Validación individual contra SUNAT con resultado real.
 - [x] Payload del listado acotado: 31 días sin filtro 3,2 MB (antes 17,7 MB), filtrado 0,19 MB.
-- [x] 257 tests Python + 80 vitest en verde; `tsc` limpio; build de producción OK.
+- [x] 281 tests Python + 86 vitest en verde; `tsc` limpio; build de producción OK.
 - [x] 252 tests Python + 77 vitest en verde; `tsc` limpio; build de producción OK.
 - [ ] Contraste visual contra la pantalla PHP para un mismo día (requiere que César
       abra la pestaña FE con el mismo período).

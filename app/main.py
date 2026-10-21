@@ -508,6 +508,7 @@ async def api_intelisis_ufe(
             sunat=sunat.upper(),
             sucursal=sucursal,
             q=q,
+            correlation_id=request_id_var.get(),
         )
     except HTTPException:
         raise
@@ -523,7 +524,9 @@ async def api_intelisis_ufe_detail(request: Request, id_venta: int):
     """Trazabilidad de un comprobante: venta, intentos del generador y SUNAT."""
     protected(request)
     try:
-        return await run_blocking(clean_intelisis_ufe_detail, id_venta)
+        return await run_blocking(
+            clean_intelisis_ufe_detail, id_venta, request_id_var.get()
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -550,7 +553,10 @@ async def api_intelisis_ufe_validate(request: Request):
         raise HTTPException(400, "Identificador de comprobante inválido.")
     try:
         return await run_blocking(
-            clean_intelisis_ufe_validate, id_venta, _actor_email(request)
+            clean_intelisis_ufe_validate,
+            id_venta,
+            _actor_email(request),
+            request_id_var.get(),
         )
     except HTTPException:
         raise

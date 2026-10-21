@@ -15,6 +15,12 @@ from src.domain.entities import FechaRango, TipoDocumento
 from src.domain.errors import InvalidRangeError, NotFoundError, UpstreamError
 
 from .key_lock import StripedLock
+from .sunat_identidad import (
+    norm_numero,
+    sunat_cache_key as sunat_cache_key_impl,
+    sunat_doc_payload,
+    sunat_map_estado,
+)
 from .ports import (
     GraphqlGateway,
     IntelisisReader,
@@ -651,32 +657,17 @@ _SUNAT_KNOWN = (
 def _norm_numero(raw: object) -> str:
     """Cache-key numero: leading zeros are insignificant ('00000152'='152').
 
-    The API payload keeps the original string (spec recommends preserving
-    zeros); only the local cache key is normalized so validator echoes
-    (which may come back stripped) hit the same row.
+    Delegado a ``src.application.sunat_identidad`` (modulo compartido con el
+    flujo Intelisis UFE).
     """
-    text = str(raw or "").strip()
-    return text.lstrip("0") or "0" if text else ""
+    return norm_numero(raw)
 
 
 def _sunat_key(
     ruc: str, tipo_value: str, number: str
 ) -> tuple[str, str, str, str] | None:
     """SUNAT identity key (ruc, tipo_code, serie, numero), or None if bad."""
-    code = _SUNAT_TIPO_CODES.get(str(tipo_value or "").strip().upper(), "")
-    text = str(number or "").strip().upper()
-    if not code or "-" not in text:
-        return None
-    serie, _, numero = text.rpartition("-")
-    serie = serie.strip()
-    if not serie or len(serie) > 20 or not numero.strip().isdigit():
-        return None
-    if len(numero.strip()) > 20:
-        return None
-    numero = _norm_numero(numero)
-    if not serie or not numero:
-        return None
-    return (ruc, code, serie, numero)
+    return sunat_cache_key_impl(ruc, tipo_value, number)
 
 
 def sunat_cache_key(
@@ -684,46 +675,17 @@ def sunat_cache_key(
 ) -> tuple[str, str, str, str] | None:
     """Clave del cache SUNAT ``(ruc, tipo, serie, numero)`` o None.
 
-    Wrapper publico sobre la clave interna: la usan los flujos que no
-    manejan un ``Voucher`` (p.ej. comprobantes de origen Intelisis, que
-    bring su propia identidad ``serie-numero``).
+    Ver ``src.application.sunat_identidad`` (modulo compartido con el flujo
+    Intelisis UFE, que arma la identidad desde el documento oficial).
     """
-    return _sunat_key(ruc, tipo_value, number)
+    return sunat_cache_key_impl(ruc, tipo_value, number)
 
 
 def _sunat_doc_payload(
     ruc: str, tipo_value: str, number: str, date_iso: str, importe: object
 ) -> dict[str, Any]:
     """Validator payload for one voucher; raises ValueError when invalid."""
-    clean_ruc = str(ruc or "").strip()
-    if not clean_ruc.isdigit() or len(clean_ruc) != 11:
-        raise ValueError(f"RUC emisor inválido para SUNAT: {ruc!r}.")
-    key = _sunat_key(clean_ruc, tipo_value, number)
-    if key is None:
-        raise ValueError(f"Número/tipo no válido para SUNAT: {number!r}.")
-    try:
-        day = date.fromisoformat(str(date_iso or "")[:10])
-    except ValueError as exc:
-        raise ValueError(f"Fecha no válida para SUNAT: {date_iso!r}.") from exc
-    try:
-        amount = round(float(importe), 2)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Importe no válido para SUNAT: {importe!r}.") from exc
-    if not math.isfinite(amount) or amount < 0:
-        raise ValueError(f"Importe no válido para SUNAT: {importe!r}.")
-    _, code, serie, _normalized = key
-    # The cache key drops leading zeros for matching, but the payload must
-    # preserve the voucher number exactly as printed: SUNAT identifies the
-    # document by serie + correlativo, and the PDF keeps ``numero`` as string.
-    numero = str(number or "").strip().upper().rpartition("-")[2].strip()
-    return {
-        "ruc": clean_ruc,
-        "tipo": code,
-        "serie": serie,
-        "numero": numero,
-        "fecha_emision": day.isoformat(),
-        "importe": amount,
-    }
+    return sunat_doc_payload(ruc, tipo_value, number, date_iso, importe)
 
 
 def _sunat_estado(row: dict | None) -> str:
@@ -1401,8 +1363,8 @@ def submit_sunat_batch(
 
 
 def _sunat_map_estado(raw: object) -> str:
-    token = str(raw or "").strip().upper()
-    return token if token in _SUNAT_KNOWN else "DESCONOCIDO"
+    """Estado del validador normalizado (delegado, ver sunat_identidad)."""
+    return sunat_map_estado(raw)
 
 
 def _sunat_error_text(item: dict) -> str:

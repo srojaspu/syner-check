@@ -15,6 +15,8 @@ SUNAT reemplaza al portal de Carvajal (D15).
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import date, datetime
 from typing import Any, Mapping, Sequence
 
@@ -23,9 +25,12 @@ from src.application.ports import (
     SunatCacheStore,
     SunatValidator,
 )
-from src.application.use_cases import sunat_cache_key, sunat_revalidate
+from src.application.sunat_identidad import sunat_cache_key
+from src.application.use_cases import sunat_revalidate
 from src.domain import intelisis_ufe as dominio
 from src.domain.errors import NotFoundError
+
+logger = logging.getLogger("syner_check.intelisis_ufe")
 
 # Tope del periodo: el PHP exige 1..31 dias.
 MAX_DIAS = 31
@@ -378,6 +383,7 @@ def listar_ufe(
     sunat: str = "",
     sucursal: int | None = None,
     q: str = "",
+    correlation_id: str = "",
 ) -> dict[str, Any]:
     """Lista los comprobantes del universo UFE del periodo, con su estado.
 
@@ -387,6 +393,7 @@ def listar_ufe(
     """
     inicio, fin = validar_rango(start_iso, end_iso)
     momento = now or datetime.now()
+    started = time.perf_counter()
 
     filas = [
         _fila(row, momento)
@@ -447,9 +454,22 @@ def listar_ufe(
     ]
 
     # El navegador no puede con 18.000 filas: se recorta y se avisa.
-    truncado = len(filtradas) > MAX_FILAS_LISTADO
+    total_filtrado = len(filtradas)
+    truncado = total_filtrado > MAX_FILAS_LISTADO
     if truncado:
         filtradas = filtradas[:MAX_FILAS_LISTADO]
+
+    logger.info(
+        "Intelisis UFE list correlation_id=%s desde=%s hasta=%s filas=%d "
+        "filtrados=%d truncado=%s duracion_ms=%d",
+        correlation_id,
+        inicio.isoformat(),
+        fin.isoformat(),
+        kpis["total"],
+        len(filtradas),
+        truncado,
+        int((time.perf_counter() - started) * 1000),
+    )
 
     return {
         "desde": inicio.isoformat(),
@@ -458,6 +478,7 @@ def listar_ufe(
         "intelisis_enabled": True,
         "kpis": kpis,
         "filtrados": len(filtradas),
+        "filtrados_total": total_filtrado,
         "truncado": truncado,
         "max_filas": MAX_FILAS_LISTADO,
         "rows": [
@@ -511,6 +532,7 @@ def detalle_ufe(
     sunat_store: SunatCacheStore | None = None,
     sunat_ruc: str = "",
     now: datetime | None = None,
+    correlation_id: str = "",
 ) -> dict[str, Any]:
     """Trazabilidad de un comprobante: venta, intentos y estado SUNAT."""
     rows = reader.fetch_row(id_venta)
@@ -519,6 +541,13 @@ def detalle_ufe(
     momento = now or datetime.now()
     fila = _con_sunat(_fila(rows[0], momento), sunat_store, sunat_ruc)
     intentos = [_intento(item) for item in reader.fetch_attempts(id_venta)]
+    logger.info(
+        "Intelisis UFE detail correlation_id=%s id_venta=%d documento=%s intentos=%d",
+        correlation_id,
+        int(id_venta),
+        fila["comprobante"],
+        len(intentos),
+    )
     return {
         "id_venta": int(id_venta),
         "venta": fila,
@@ -537,11 +566,15 @@ def validar_ufe(
     sunat_ruc: str,
     usuario: str = "",
     now: datetime | None = None,
+    correlation_id: str = "",
 ) -> dict[str, Any]:
     """Consulta individual en SUNAT y deja el estado en el cache local.
 
     No escribe en Intelisis: solo consulta SUNAT y guarda el resultado en
     la base de syner-check, que es lo que la grilla lee.
+
+    Gasta cuota del validador, asi que queda auditada (actor, documento,
+    estado y duracion).
     """
     if validator is None or store is None or not (sunat_ruc or "").strip():
         raise ValueError("Validación SUNAT no configurada.")
@@ -555,6 +588,15 @@ def validar_ufe(
     if not fila["comprobante"]:
         raise ValueError("El comprobante no tiene documento para consultar.")
 
+    started = time.perf_counter()
+    logger.info(
+        "Intelisis UFE validate start correlation_id=%s actor=%s id_venta=%d "
+        "documento=%s",
+        correlation_id,
+        usuario,
+        int(id_venta),
+        fila["comprobante"],
+    )
     resultado = sunat_revalidate(
         validator,
         store,
@@ -564,6 +606,15 @@ def validar_ufe(
         importe=fila["total"],
         usuario=usuario,
         ruc=sunat_ruc,
+    )
+    logger.info(
+        "Intelisis UFE validate done correlation_id=%s actor=%s id_venta=%d "
+        "estado=%s duracion_ms=%d",
+        correlation_id,
+        usuario,
+        int(id_venta),
+        resultado.get("estado", ""),
+        int((time.perf_counter() - started) * 1000),
     )
     return {
         "id_venta": int(id_venta),

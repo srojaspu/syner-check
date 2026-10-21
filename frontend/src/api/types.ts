@@ -359,7 +359,10 @@ export interface IntelisisUfeResponse {
   bitacora_desde: string;
   intelisis_enabled: boolean;
   kpis: IntelisisUfeKpis;
+  /** Filas que vuelve el listado (ya recortadas, si aplica). */
   filtrados: number;
+  /** Filas que pasan el filtro, antes del recorte. */
+  filtrados_total?: number;
   /** True cuando el listado se recorto por el tope de filas. */
   truncado?: boolean;
   max_filas?: number;
