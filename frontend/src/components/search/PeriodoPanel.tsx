@@ -12,6 +12,10 @@ import { DateRangePicker } from "./DateRangePicker";
  * Compartido por las dos pantallas (comprobantes de SynerPOS y comprobantes
  * Intelisis UFE). La diferencia entre ellas son los filtros extra: aca la
  * de SynerPOS anade el tipo de documento.
+ *
+ * Los filtros extra son **parametros de la consulta**: se aplican al pulsar
+ * "Consultar", no filtran la tabla por si solos (como en la pantalla de
+ * comprobantes).
  */
 export function PeriodoPanel({
   range,
@@ -20,8 +24,6 @@ export function PeriodoPanel({
   loading = false,
   disabled = false,
   extra,
-  periodoDistinto = false,
-  aviso,
 }: {
   range: DateRange | undefined;
   onRange: (range: DateRange | undefined) => void;
@@ -30,10 +32,6 @@ export function PeriodoPanel({
   disabled?: boolean;
   /** Filtros extra entre el rango y el boton (tipo de documento). */
   extra?: ReactNode;
-  /** El periodo elegido es distinto del que se consulto. */
-  periodoDistinto?: boolean;
-  /** Aviso al lado del boton (por que hay algo pendiente). */
-  aviso?: ReactNode;
 }) {
   return (
     <Card>
@@ -62,14 +60,7 @@ export function PeriodoPanel({
             />
           ) : null}{" "}
           Consultar
-          {periodoDistinto && !loading ? (
-            <span
-              className="ml-1 size-1.5 rounded-full bg-current"
-              aria-hidden
-            />
-          ) : null}
         </Button>
-        {periodoDistinto && !loading ? aviso : null}
       </CardContent>
     </Card>
   );

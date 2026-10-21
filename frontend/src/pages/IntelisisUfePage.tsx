@@ -117,9 +117,14 @@ export default function IntelisisUfePage({
     setConsulta({
       desde: toISODate(range.from),
       hasta: toISODate(range.to),
-      filtros: borrador,
+      // El tipo de documento es parametro de la consulta, no filtro de la
+      // tabla (igual que en la pantalla de comprobantes).
+      filtros: {
+        ...borrador,
+        tipos: tipos.map((tipo) => TIPO_UFE[tipo]).filter(Boolean),
+      },
     });
-  }, [range, borrador]);
+  }, [range, borrador, tipos]);
 
   const alternar = useCallback(
     (clave: "resultado" | "generador" | "sunat", valor: string) => {
@@ -136,18 +141,6 @@ export default function IntelisisUfePage({
     },
     [],
   );
-
-  /**
-   * El periodo es lo unico que pide una consulta al ERP: los filtros se
-   * aplican al instante sobre lo ya cargado. Si el periodo cambio, el
-   * boton avisa de que la tabla sigue mostrando el anterior.
-   */
-  const periodoDistinto = useMemo(() => {
-    if (!consulta) return false;
-    const desde = range?.from ? toISODate(range.from) : "";
-    const hasta = range?.to ? toISODate(range.to) : "";
-    return desde !== consulta.desde || hasta !== consulta.hasta;
-  }, [consulta, range]);
 
   const renderFiltro = useMemo(
     () => creaRenderFiltro(borrador, setBorrador, ufe.kpis),
@@ -205,27 +198,12 @@ export default function IntelisisUfePage({
           onRange={setRange}
           onConsultar={consultarPeriodo}
           loading={ufe.loading}
-          periodoDistinto={periodoDistinto}
-          aviso={
-            <span className="text-xs text-muted-foreground" aria-live="polite">
-              El periodo cambio: la tabla sigue mostrando el consultado
-            </span>
-          }
           extra={
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">Tipo de documento</span>
               <TypeChips
                 values={tipos}
-                onChange={(values) => {
-                  setTipos(values);
-                  const codigos = values
-                    .map((tipo) => TIPO_UFE[tipo])
-                    .filter(Boolean);
-                  setBorrador((prev) => ({
-                    ...prev,
-                    tipos: codigos.length === ALL_TIPOS_UFE.length ? [] : codigos,
-                  }));
-                }}
+                onChange={setTipos}
                 tipos={ALL_TIPOS_UFE}
               />
             </div>

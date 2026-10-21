@@ -98,9 +98,9 @@ const OPCIONES_ESTADO = [
 /**
  * Filtra las filas cargadas en el navegador (al instante).
  *
- * Los filtros se aplican en las dos pantallas: en el servidor cuando se
- * pulsa "Consultar" (periodo + filtros) y aqui sobre las filas ya
- * cargadas, para que el filtro responda sin esperar al ERP.
+ * Son los filtros de la fila de la tabla. El tipo de documento del panel de
+ * periodo NO esta aqui: ese acota la consulta al servidor, como en la
+ * pantalla de comprobantes.
  */
 export function filtraUfeFilas(
   filas: IntelisisUfeRow[],
@@ -115,9 +115,6 @@ export function filtraUfeFilas(
       return false;
     }
     if (filtros.tipo && fila.tipo !== filtros.tipo) return false;
-    if (filtros.tipos?.length && !filtros.tipos.includes(fila.tipo)) {
-      return false;
-    }
     if (filtros.generador && fila.generador !== filtros.generador) {
       return false;
     }

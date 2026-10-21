@@ -278,7 +278,9 @@ describe("IntelisisUfePage", () => {
 
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
-    expect(ultima?.[2]).toEqual({ resultado: "REVISAR" });
+    // El filtro del KPI viaja en la consulta; los tipos van aparte como
+    // parametro de la consulta (por defecto, los cuatro).
+    expect(ultima?.[2]).toMatchObject({ resultado: "REVISAR" });
   });
 
   it("no consulta nada al entrar en la seccion", () => {
@@ -369,7 +371,7 @@ describe("IntelisisUfePage", () => {
     expect(screen.getAllByText("21/10/2026").length).toBeGreaterThan(0);
   });
 
-  it("ofrece los cuatro tipos de documento y filtra al instante", async () => {
+  it("ofrece los cuatro tipos de documento como parametro de consulta", async () => {
     const user = userEvent.setup();
     mocks.ufe.rows = [
       fila({ id_venta: 1, tipo: "BO", comprobante: "B602-00000001" }),
@@ -387,15 +389,17 @@ describe("IntelisisUfePage", () => {
       screen.getByRole("checkbox", { name: "Nota de débito" }),
     ).toBeTruthy();
 
+    // Desmarcar Factura NO filtra la tabla: es un parametro de la consulta.
+    await user.click(screen.getByRole("checkbox", { name: "Factura" }));
     expect(screen.getByText("B602-00000001")).toBeTruthy();
     expect(screen.getByText("F602-00000002")).toBeTruthy();
-
-    // Desmarcar Factura oculta las facturas, al instante.
-    await user.click(screen.getByRole("checkbox", { name: "Factura" }));
-
-    expect(screen.getByText("B602-00000001")).toBeTruthy();
-    expect(screen.queryByText("F602-00000002")).toBeNull();
     expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
+
+    // Al consultar, el tipo viaja al servidor sin la factura (FA).
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    const llamadas = mocks.ufe.run.mock.calls;
+    const ultima = llamadas[llamadas.length - 1];
+    expect(ultima?.[2]?.tipos).toEqual(["BO", "NC", "ND"]);
   });
 
   it("cambia entre rango de fechas y numero de comprobante", () => {
