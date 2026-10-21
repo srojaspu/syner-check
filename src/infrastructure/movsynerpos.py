@@ -1,4 +1,4 @@
-"""Adaptador pyodbc para dbo.MovSynerPos (solo SELECT + INSERT).
+"""Adaptador pyodbc para dbo.MovSynerPos / dbo.MovSynerPosQA (SELECT + INSERT).
 
 Fuente de la conexión: ``get_movsynerpos_config()`` (deriva de DB_* y fuerza
 ``application_intent_read_only=False``). Nunca se reutiliza el pool de lectura:
@@ -50,8 +50,14 @@ class MovSynerPosWriterAdapter:
         if "." not in table:
             table = f"dbo.{table}"
         quoted = quote_table_name(table)
-        if quoted.lower() != "[dbo].[movsynerpos]":
-            raise ValueError("MovSynerPos writer only accepts dbo.MovSynerPos.")
+        if quoted.lower() not in (
+            "[dbo].[movsynerpos]",
+            "[dbo].[movsynerposqa]",
+        ):
+            raise ValueError(
+                "MovSynerPos writer only accepts dbo.MovSynerPos or "
+                "dbo.MovSynerPosQA."
+            )
         return quoted
 
     def _connect(self):

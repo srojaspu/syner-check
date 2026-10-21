@@ -222,7 +222,14 @@ def get_sunat_db_password() -> str:
 # a False solo en su propia conexión. La única variable nueva es el kill switch.
 
 MOVSYNERPOS_TABLE = "dbo.MovSynerPos"
-MOVSYNERPOS_TABLE_NAMES = ("movsynerpos", "dbo.movsynerpos")
+# Allowlist del writer: producción y QA (misma base, mismo esquema + creditnote).
+MOVSYNERPOS_TABLES = {
+    "movsynerpos": "MovSynerPos",
+    "dbo.movsynerpos": "MovSynerPos",
+    "movsynerposqa": "MovSynerPosQA",
+    "dbo.movsynerposqa": "MovSynerPosQA",
+}
+MOVSYNERPOS_TABLE_NAMES = tuple(MOVSYNERPOS_TABLES)
 
 
 def movsynerpos_enabled() -> bool:
@@ -232,21 +239,38 @@ def movsynerpos_enabled() -> bool:
     return _is_truthy(os.getenv("MOVSYNERPOS_WRITE_ENABLED", "false"))
 
 
+def _movsynerpos_write_table(config: dict) -> str:
+    """Tabla destino del reenvío: ``MOVSYNERPOS_WRITE_TABLE`` o ``TABLE_NAME``.
+
+    Falla cerrado ante cualquier tabla fuera de la allowlist. Devuelve el
+    nombre calificado con ``dbo.`` (el adaptador lo vuelve a validar).
+    """
+    import os
+
+    requested = (
+        os.getenv("MOVSYNERPOS_WRITE_TABLE") or config.get("table") or ""
+    ).strip()
+    canonical = MOVSYNERPOS_TABLES.get(requested.lower())
+    if not canonical:
+        raise RuntimeError(
+            "TABLE_NAME/MOVSYNERPOS_WRITE_TABLE debe ser MovSynerPos o "
+            "MovSynerPosQA para habilitar el reenvío a SynerPOS."
+        )
+    return f"dbo.{canonical}"
+
+
 def get_movsynerpos_config() -> dict:
     """Config del writer derivada de ``get_db_config()``.
 
-    Valida que ``TABLE_NAME`` apunte a MovSynerPos (falla cerrado) y fuerza
-    la conexión de escritura (sin ApplicationIntent=ReadOnly).
+    Valida que la tabla destino esté en la allowlist (MovSynerPos o
+    MovSynerPosQA; falla cerrado) y fuerza la conexión de escritura (sin
+    ApplicationIntent=ReadOnly).
     """
     config = get_db_config()
-    table = str(config.get("table", "")).strip().lower()
-    if table not in MOVSYNERPOS_TABLE_NAMES:
-        raise RuntimeError(
-            "TABLE_NAME debe ser MovSynerPos para habilitar el reenvío a SynerPOS."
-        )
+    table = _movsynerpos_write_table(config)
     return {
         **config,
-        "table": MOVSYNERPOS_TABLE,
+        "table": table,
         "application_intent_read_only": False,
     }
 
