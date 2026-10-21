@@ -118,7 +118,7 @@ export function MovSynerPosProgress({
         </Alert>
       ) : null}
 
-      {notice ? (
+      {notice && !progress ? (
         <Alert>
           <AlertDescription>{notice}</AlertDescription>
         </Alert>

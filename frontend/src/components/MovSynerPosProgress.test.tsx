@@ -41,7 +41,7 @@ describe("MovSynerPosProgress", () => {
     ).toBeTruthy();
   });
 
-  it("shows the final summary and the retry action only for failures", () => {
+  it("does not duplicate the summary when the progress card is shown", () => {
     const onRetry = vi.fn();
     render(
       <MovSynerPosProgress
@@ -54,8 +54,24 @@ describe("MovSynerPosProgress", () => {
       />,
     );
 
-    expect(screen.getByText("MovSynerPos: 10 insertados.")).toBeTruthy();
+    // Los contadores de la tarjeta ya dicen "10 insertados".
+    expect(screen.getByText("10 insertados")).toBeTruthy();
+    expect(screen.queryByText("MovSynerPos: 10 insertados.")).toBeNull();
     expect(screen.queryByText(/Reintentar solo los/)).toBeNull();
+  });
+
+  it("falls back to the summary when there is no progress card", () => {
+    render(
+      <MovSynerPosProgress
+        progress={null}
+        notice="MovSynerPos: 10 insertados."
+        warning={null}
+        error={null}
+        failedCount={0}
+      />,
+    );
+
+    expect(screen.getByText("MovSynerPos: 10 insertados.")).toBeTruthy();
   });
 
   it("offers retry only for the failed documents", () => {
