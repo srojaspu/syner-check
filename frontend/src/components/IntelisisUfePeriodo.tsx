@@ -21,13 +21,14 @@ export function IntelisisUfePeriodo({
   onRange,
   onConsultar,
   loading,
-  pendiente,
+  periodoDistinto,
 }: {
   range: DateRange | undefined;
   onRange: (range: DateRange | undefined) => void;
   onConsultar: () => void;
   loading: boolean;
-  pendiente: boolean;
+  /** El periodo elegido es distinto del que se consulto. */
+  periodoDistinto: boolean;
 }) {
   return (
     <Card>
@@ -72,16 +73,16 @@ export function IntelisisUfePeriodo({
             />
           ) : null}{" "}
           Consultar
-          {pendiente && !loading ? (
+          {periodoDistinto && !loading ? (
             <span
               className="ml-1 size-1.5 rounded-full bg-current"
               aria-hidden
             />
           ) : null}
         </Button>
-        {pendiente && !loading ? (
+        {periodoDistinto && !loading ? (
           <span className="text-xs text-muted-foreground" aria-live="polite">
-            Hay cambios sin consultar
+            El periodo cambio: la tabla sigue mostrando el consultado
           </span>
         ) : null}
       </CardContent>

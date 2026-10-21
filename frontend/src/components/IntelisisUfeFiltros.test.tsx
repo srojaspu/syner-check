@@ -1,0 +1,130 @@
+// @vitest-environment jsdom
+import { describe, expect, it } from "vitest";
+import { filtraUfeFilas } from "./IntelisisUfeFiltros";
+import type { IntelisisUfeRow } from "../api/types";
+
+function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
+  return {
+    id_venta: 1,
+    tipo: "BO",
+    tipo_documento_pu: "03",
+    documento: "602-00142702",
+    documento_estimado: false,
+    documento_teorico: "602-00142702",
+    comprobante: "B602-00142702",
+    mov: "E-Boleta",
+    mov_id: "602-142702",
+    fecha_emision: "2026-10-21",
+    sucursal: 602,
+    sucursal_nombre: "Tienda Central",
+    cliente: "CLIENTE DE PRUEBA",
+    cliente_codigo: "1000000082",
+    ruc: "20101031773",
+    importe: 100,
+    impuestos: 18,
+    total: 118,
+    estatus_erp: "CONCLUIDO",
+    referencia: "",
+    estado_generacion: "generado",
+    generador: "OK REGISTRADO",
+    incidencias: [],
+    resultado: "CONFORME",
+    detalle_incidencia: null,
+    en_espera: false,
+    exento_generador: false,
+    fuera_de_bitacora: false,
+    etapa: "FINALIZADO",
+    intentos: 1,
+    ok_registrados: 1,
+    ultimo_intento: "2026-10-21 12:41:07",
+    hash: "",
+    archivo_out: "",
+    procedimiento: "SPPUFE_UBL21",
+    tipo_sunat: "BOLETA",
+    sunat: null,
+    estado_sunat: "SUNAT SIN CONSULTA",
+    reenvio: null,
+    ...overrides,
+  };
+}
+
+const FILAS = [
+  fila({ id_venta: 1 }),
+  fila({
+    id_venta: 2,
+    comprobante: "F202-00002576",
+    documento: "202-00002576",
+    documento_teorico: "202-00002576",
+    mov_id: "202-2576",
+    tipo: "FA",
+    resultado: "REVISAR",
+    estado_generacion: "sin_registro",
+    generador: "SIN TRAZA",
+    incidencias: ["SIN TRAZA"],
+    sucursal: 202,
+    sucursal_nombre: "Tienda Miraflores",
+    cliente: "OTRO CLIENTE",
+  }),
+];
+
+describe("filtraUfeFilas", () => {
+  it("sin filtros devuelve todo", () => {
+    expect(filtraUfeFilas(FILAS, {})).toHaveLength(2);
+  });
+
+  it("filtra por resultado", () => {
+    const out = filtraUfeFilas(FILAS, { resultado: "REVISAR" });
+    expect(out).toHaveLength(1);
+    expect(out[0].id_venta).toBe(2);
+  });
+
+  it("filtra por generador", () => {
+    const out = filtraUfeFilas(FILAS, { generador: "SIN TRAZA" });
+    expect(out.map((f) => f.id_venta)).toEqual([2]);
+  });
+
+  it("filtra por tipo", () => {
+    const out = filtraUfeFilas(FILAS, { tipo: "FA" });
+    expect(out.map((f) => f.id_venta)).toEqual([2]);
+  });
+
+  it("filtra por estado tecnico", () => {
+    const out = filtraUfeFilas(FILAS, { estado: "generado" });
+    expect(out.map((f) => f.id_venta)).toEqual([1]);
+  });
+
+  it("filtra por incidencia, aunque el documento tenga varias", () => {
+    const out = filtraUfeFilas(FILAS, { incidencia: "sin traza" });
+    expect(out.map((f) => f.id_venta)).toEqual([2]);
+  });
+
+  it("filtra por sucursal", () => {
+    const out = filtraUfeFilas(FILAS, { sucursal: 202 });
+    expect(out.map((f) => f.id_venta)).toEqual([2]);
+  });
+
+  it("filtra por estado SUNAT", () => {
+    const out = filtraUfeFilas(FILAS, { sunat: "SUNAT SIN CONSULTA" });
+    expect(out).toHaveLength(2);
+  });
+
+  it("busca por documento, cliente o id", () => {
+    expect(filtraUfeFilas(FILAS, { q: "F202" })).toHaveLength(1);
+    expect(filtraUfeFilas(FILAS, { q: "otro cliente" })).toHaveLength(1);
+    expect(filtraUfeFilas(FILAS, { q: "142702" })).toHaveLength(1);
+    expect(filtraUfeFilas(FILAS, { q: "no-existe" })).toHaveLength(0);
+  });
+
+  it("combina filtros", () => {
+    const out = filtraUfeFilas(FILAS, {
+      resultado: "REVISAR",
+      generador: "SIN TRAZA",
+    });
+    expect(out).toHaveLength(1);
+    const ninguno = filtraUfeFilas(FILAS, {
+      resultado: "REVISAR",
+      generador: "OK REGISTRADO",
+    });
+    expect(ninguno).toHaveLength(0);
+  });
+});

@@ -96,6 +96,58 @@ const OPCIONES_ESTADO = [
 ];
 
 /**
+ * Filtra las filas cargadas en el navegador (al instante).
+ *
+ * Los filtros se aplican en las dos pantallas: en el servidor cuando se
+ * pulsa "Consultar" (periodo + filtros) y aqui sobre las filas ya
+ * cargadas, para que el filtro responda sin esperar al ERP.
+ */
+export function filtraUfeFilas(
+  filas: IntelisisUfeRow[],
+  filtros: IntelisisUfeFiltros,
+): IntelisisUfeRow[] {
+  const texto = (valor: unknown) => String(valor ?? "").trim();
+  const aguja = (filtros.q ?? "").trim().toLowerCase();
+
+  return filas.filter((fila) => {
+    if (filtros.resultado && fila.resultado !== filtros.resultado) return false;
+    if (filtros.estado && fila.estado_generacion !== filtros.estado) {
+      return false;
+    }
+    if (filtros.tipo && fila.tipo !== filtros.tipo) return false;
+    if (filtros.generador && fila.generador !== filtros.generador) {
+      return false;
+    }
+    if (filtros.sunat && fila.estado_sunat !== filtros.sunat) return false;
+    if (filtros.incidencia) {
+      const existe = (fila.incidencias ?? []).some(
+        (item) => item.toUpperCase() === filtros.incidencia!.toUpperCase(),
+      );
+      if (!existe) return false;
+    }
+    if (filtros.sucursal !== undefined && fila.sucursal !== filtros.sucursal) {
+      return false;
+    }
+    if (aguja) {
+      const campos = [
+        fila.comprobante,
+        fila.documento,
+        fila.cliente,
+        fila.mov_id,
+        fila.mov,
+        fila.sucursal_nombre,
+        fila.cliente_codigo,
+        String(fila.id_venta),
+      ].map(texto);
+      if (!campos.some((campo) => campo.toLowerCase().includes(aguja))) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
  * Fila de filtros de la tabla (la misma de la pantalla de comprobantes).
  *
  * Los filtros se aplican en el servidor, asi que viven en el borrador de

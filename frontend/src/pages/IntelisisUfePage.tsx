@@ -23,7 +23,7 @@ import { DataTable } from "@/components/DataTable";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
 import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
-import { creaRenderFiltro } from "@/components/IntelisisUfeFiltros";
+import { creaRenderFiltro, filtraUfeFilas } from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
 import { IntelisisUfePeriodo } from "@/components/IntelisisUfePeriodo";
 import { NumberPanel } from "@/components/SearchPanels";
@@ -45,23 +45,6 @@ const MODOS = [
   { value: "periodo" as const, label: "Periodo" },
   { value: "comprobante" as const, label: "Comprobante" },
 ];
-
-/** Compara filtros sin depender del orden de las claves. */
-function mismosFiltros(
-  a: IntelisisUfeFiltros,
-  b: IntelisisUfeFiltros,
-): boolean {
-  const claves = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const clave of claves) {
-    if (
-      String(a[clave as keyof IntelisisUfeFiltros] ?? "") !==
-      String(b[clave as keyof IntelisisUfeFiltros] ?? "")
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
 /**
  * Pantalla Intelisis UFE: comprobantes de origen Intelisis y el estado del
@@ -148,22 +131,36 @@ export default function IntelisisUfePage({
     [],
   );
 
-  // Hay cambios sin consultar: el boton lo avisa.
-  const pendiente = useMemo(() => {
-    if (!consulta) return true;
+  /**
+   * El periodo es lo unico que pide una consulta al ERP: los filtros se
+   * aplican al instante sobre lo ya cargado. Si el periodo cambio, el
+   * boton avisa de que la tabla sigue mostrando el anterior.
+   */
+  const periodoDistinto = useMemo(() => {
+    if (!consulta) return false;
     const desde = range?.from ? toISODate(range.from) : "";
     const hasta = range?.to ? toISODate(range.to) : "";
-    if (desde !== consulta.desde || hasta !== consulta.hasta) return true;
-    return !mismosFiltros(borrador, consulta.filtros);
-  }, [consulta, range, borrador]);
+    return desde !== consulta.desde || hasta !== consulta.hasta;
+  }, [consulta, range]);
 
   const renderFiltro = useMemo(
     () => creaRenderFiltro(borrador, setBorrador, ufe.kpis),
     [borrador, ufe.kpis],
   );
 
-  const filas =
-    modo === "periodo" ? ufe.rows : (ufe.busqueda?.rows ?? []);
+  /**
+   * Filas que se muestran: las cargadas, filtradas al instante en el
+   * navegador (como en la pantalla de comprobantes). El mismo filtro se
+   * envia al servidor al pulsar "Consultar".
+   */
+  const filas = useMemo(
+    () =>
+      filtraUfeFilas(
+        modo === "periodo" ? ufe.rows : (ufe.busqueda?.rows ?? []),
+        borrador,
+      ),
+    [modo, ufe.rows, ufe.busqueda, borrador],
+  );
   const columns = useMemo(() => intelisisUfeColumns(), []);
   const kpis = ufe.kpis;
   const visibles = filteredRows ?? filas;
@@ -218,7 +215,7 @@ export default function IntelisisUfePage({
           onRange={setRange}
           onConsultar={consultarPeriodo}
           loading={ufe.loading}
-          pendiente={pendiente}
+          periodoDistinto={periodoDistinto}
         />
       ) : (
         <NumberPanel

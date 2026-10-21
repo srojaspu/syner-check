@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IntelisisUfeRow } from "../api/types";
 
@@ -304,10 +305,47 @@ describe("IntelisisUfePage", () => {
     expect(ultima?.[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("avisa cuando hay cambios sin consultar", () => {
+  it("avisa cuando el periodo cambio sin consultar", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("Hay cambios sin consultar")).toBeTruthy();
+    // Sin consulta previa no hay periodo aplicado que contrastar.
+    expect(
+      screen.queryByText(/El periodo cambio/),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    expect(
+      screen.queryByText(/El periodo cambio/),
+    ).toBeNull();
+  });
+
+  it("filtra las filas al instante sin volver a consultar", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        resultado: "REVISAR",
+        estado_generacion: "sin_registro",
+        generador: "SIN TRAZA",
+        incidencias: ["SIN TRAZA"],
+      }),
+    ];
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+    expect(screen.getByText("B602-00000002")).toBeTruthy();
+
+    // El filtro "Resultado = Revisar" oculta la fila conforme, al instante.
+    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
+    await user.click(screen.getByRole("option", { name: "Revisar" }));
+
+    expect(screen.queryByText("B602-00000001")).toBeNull();
+    expect(screen.getByText("B602-00000002")).toBeTruthy();
+    // No se vuelve a consultar el ERP.
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
   });
 
   it("avisa cuando el listado viene recortado", () => {
