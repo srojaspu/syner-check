@@ -6,7 +6,6 @@ from datetime import datetime
 
 import pytest
 
-from src.application import intelisis_ufe as IntelisisUfe
 from src.application.intelisis_ufe_filas import CAMPOS_LISTA, MAX_FILAS_LISTADO
 from src.application.intelisis_ufe import (
     RangoInvalidoError,

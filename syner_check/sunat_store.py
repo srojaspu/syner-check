@@ -121,7 +121,7 @@ def fetch_many(
             out.update({key: filas[key] for key in wanted if key in filas})
         return out
     from .db_client import _to_iso_date  # reuse date normalization
-    from .db_pool import pooled_connection
+    from .db_pool import FETCH_BATCH, pooled_connection
 
     table = _table()
     cols = ", ".join(f"[{c}]" for c in CACHE_COLUMNS)
@@ -129,6 +129,7 @@ def fetch_many(
     cfg, password = _connection_args()
     with pooled_connection(cfg, password) as cn:
         cur = cn.cursor()
+        cur.arraysize = FETCH_BATCH
         for pos in range(0, len(wanted), _CHUNK):
             batch = wanted[pos : pos + _CHUNK]
             where = " OR ".join(
@@ -174,7 +175,7 @@ def fetch_by_series(
     if not wanted:
         return {}
     from .db_client import _to_iso_date  # reuse date normalization
-    from .db_pool import pooled_connection
+    from .db_pool import FETCH_BATCH, pooled_connection
 
     table = _table()
     cols = ", ".join(f"[{c}]" for c in CACHE_COLUMNS)
@@ -183,6 +184,7 @@ def fetch_by_series(
     ruc_value = str(ruc).strip()
     with pooled_connection(cfg, password) as cn:
         cur = cn.cursor()
+        cur.arraysize = FETCH_BATCH
         for pos in range(0, len(wanted), _SERIE_CHUNK):
             batch = wanted[pos : pos + _SERIE_CHUNK]
             placeholders = ", ".join("?" for _ in batch)

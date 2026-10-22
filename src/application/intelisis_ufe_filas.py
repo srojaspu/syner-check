@@ -199,7 +199,6 @@ def aplica_filtros(
     resultado: str = "",
     estados: Sequence[str] = (),
     incidencia: str = "",
-    tipo: str = "",
     tipos: Sequence[str] = (),
     generador: str = "",
     sunat: str = "",
@@ -218,8 +217,6 @@ def aplica_filtros(
             for item in fila.get("incidencias") or []
         ):
             return False
-    if tipo and texto(fila.get("tipo")).upper() != tipo.upper():
-        return False
     if tipos and texto(fila.get("tipo")).upper() not in {
         texto(item).upper() for item in tipos
     }:

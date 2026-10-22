@@ -106,7 +106,6 @@ async def listar_ufe(
             resultado=resultado.upper(),
             estados=estados,
             incidencia=incidencia,
-            tipo="",
             tipos=tipos,
             generador=generador.upper(),
             sunat=sunat.upper(),

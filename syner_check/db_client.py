@@ -62,9 +62,9 @@ def qualified_table_name(table: str) -> str:
     """``quote_table_name`` con esquema ``dbo`` cuando falta.
 
     Lecturas y escrituras deben resolver la misma tabla a partir del mismo
-    ``TABLE_NAME``. Sin esquema explícito la resolución depende del esquema
-    por defecto del login, así que un ``TABLE_NAME=MovSynerPosQA`` podría
-    apuntar a tablas distintas según la cuenta.
+    ``TABLE_NAME``. Sin esquema explÃ­cito la resoluciÃ³n depende del esquema
+    por defecto del login, asÃ­ que un ``TABLE_NAME=MovSynerPosQA`` podrÃ­a
+    apuntar a tablas distintas segÃºn la cuenta.
 
     Acepta ``tabla``, ``esquema.tabla`` y ``base.esquema.tabla``.
     """
@@ -159,7 +159,7 @@ def fetch_sql_documents(
     with values normalized to str, except FechaDocumento as ISO date string.
     """
     from .config import get_db_config, get_db_password
-    from .db_pool import pooled_connection
+    from .db_pool import FETCH_BATCH, pooled_connection
 
     wanted = [t for t in (tipos or ALLOWED_TIPOS) if t in ALLOWED_TIPOS]
     if not wanted:
@@ -177,6 +177,7 @@ def fetch_sql_documents(
     )
     with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
+        cursor.arraysize = FETCH_BATCH
         cursor.execute(query, start_date, end_date, *wanted)
         columns_out = [col[0] for col in cursor.description]
         rows: list[dict[str, Any]] = []
@@ -261,12 +262,13 @@ def fetch_intelisis_headers(
     FechaEmision normalized to ISO date string.
     """
     from .config import get_intelisis_config, get_intelisis_password
-    from .db_pool import pooled_connection
+    from .db_pool import FETCH_BATCH, pooled_connection
 
     db_config = get_intelisis_config()
     password = get_intelisis_password()
     with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
+        cursor.arraysize = FETCH_BATCH
         cursor.execute(INTELISIS_HEADERS_QUERY, start_date, end_date)
         columns_out = [col[0] for col in cursor.description]
         rows: list[dict[str, Any]] = []

@@ -123,22 +123,27 @@ def _adjuntar_sunat(
         }
 
 
-def _con_sunat(
-    fila: dict[str, Any],
+def _clasificar_sunat(
+    filas: list[dict[str, Any]],
     store: SunatCacheStore | None,
     ruc: str,
-) -> dict[str, Any]:
-    """Adjunta el estado SUNAT del cache a una fila ya clasificada."""
-    _adjuntar_sunat([fila], store, ruc)
-    cacheado = fila.get("sunat") or {}
-    estado_sunat, incidencias_sunat = dominio.clasificar_sunat(
-        cacheado.get("estado")
-    )
-    fila["estado_sunat"] = estado_sunat
-    fila["incidencias"], fila["resultado"] = dominio.combine_incidencias(
-        fila["incidencias"], incidencias_sunat
-    )
-    return fila
+) -> None:
+    """Adjunta el estado SUNAT del cache y recalcula incidencias y resultado.
+
+    Una sola pasada para las tres pantallas que lo necesitan (listado,
+    busqueda y detalle). El cache es un extra: si falla, la pantalla sigue
+    mostrando lo del generador.
+    """
+    _adjuntar_sunat(filas, store, ruc)
+    for fila in filas:
+        cacheado = fila.get("sunat") or {}
+        estado_sunat, incidencias_sunat = dominio.clasificar_sunat(
+            cacheado.get("estado")
+        )
+        fila["estado_sunat"] = estado_sunat
+        fila["incidencias"], fila["resultado"] = dominio.combine_incidencias(
+            fila["incidencias"], incidencias_sunat
+        )
 
 
 def listar_ufe(
@@ -152,7 +157,6 @@ def listar_ufe(
     resultado: str = "",
     estados: Sequence[str] = (),
     incidencia: str = "",
-    tipo: str = "",
     tipos: Sequence[str] = (),
     generador: str = "",
     sunat: str = "",
@@ -181,16 +185,7 @@ def listar_ufe(
         )
 
     # SUNAT: solo lectura del cache local (cero llamadas al validador).
-    _adjuntar_sunat(filas, sunat_store, sunat_ruc)
-    for fila in filas:
-        cacheado = fila.get("sunat") or {}
-        estado_sunat, incidencias_sunat = dominio.clasificar_sunat(
-            cacheado.get("estado")
-        )
-        fila["estado_sunat"] = estado_sunat
-        fila["incidencias"], fila["resultado"] = dominio.combine_incidencias(
-            fila["incidencias"], incidencias_sunat
-        )
+    _clasificar_sunat(filas, sunat_store, sunat_ruc)
 
     # Cruces: dos ventas con el mismo documento del mismo tipo. Una factura
     # y su nota de credito comparten serie y correlativo, pero son
@@ -220,7 +215,6 @@ def listar_ufe(
             resultado=resultado,
             estados=estados,
             incidencia=incidencia,
-            tipo=tipo,
             tipos=tipos,
             generador=generador,
             sunat=sunat,
@@ -296,16 +290,7 @@ def buscar_ufe(
             filas.append(fila)
 
     if filas:
-        _adjuntar_sunat(filas, sunat_store, sunat_ruc)
-        for fila in filas:
-            cacheado = fila.get("sunat") or {}
-            estado_sunat, incidencias_sunat = dominio.clasificar_sunat(
-                cacheado.get("estado")
-            )
-            fila["estado_sunat"] = estado_sunat
-            fila["incidencias"], fila["resultado"] = dominio.combine_incidencias(
-                fila["incidencias"], incidencias_sunat
-            )
+        _clasificar_sunat(filas, sunat_store, sunat_ruc)
 
     logger.info(
         "Intelisis UFE search correlation_id=%s documento=%s candidatos=%d "
@@ -338,7 +323,8 @@ def detalle_ufe(
     if not rows:
         raise NotFoundError("Comprobante no encontrado.")
     momento = now or datetime.now()
-    fila = _con_sunat(fila_documento(rows[0], momento), sunat_store, sunat_ruc)
+    fila = fila_documento(rows[0], momento)
+    _clasificar_sunat([fila], sunat_store, sunat_ruc)
     intentos = [fila_intento(item) for item in reader.fetch_attempts(id_venta)]
     logger.info(
         "Intelisis UFE detail correlation_id=%s id_venta=%d documento=%s intentos=%d",

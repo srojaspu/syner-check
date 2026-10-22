@@ -80,6 +80,8 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
   );
   const abortRef = useRef<AbortController | null>(null);
   const seq = useRef(0);
+  /** Carrera propia del drawer: una ficha nueva no cancela una busqueda. */
+  const detalleSeq = useRef(0);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -181,7 +183,10 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
   );
 
   /** Abre el drawer de trazabilidad de un comprobante. */
-  const abrirDetalle = useCallback(    async (idVenta: number) => {
+  const abrirDetalle = useCallback(
+    async (idVenta: number) => {
+      detalleSeq.current += 1;
+      const actual = detalleSeq.current;
       setDetalleState((prev) => ({
         ...prev,
         detalle: null,
@@ -192,6 +197,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
       }));
       try {
         const data = await getIntelisisUfeDetalle(idVenta);
+        if (actual !== detalleSeq.current) return;
         setDetalleState((prev) => ({
           ...prev,
           detalle: data,
@@ -199,6 +205,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
           detalleError: null,
         }));
       } catch (error: unknown) {
+        if (actual !== detalleSeq.current) return;
         if (error instanceof AuthError) {
           onAuthFailure();
           return;
@@ -217,6 +224,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
   );
 
   const cerrarDetalle = useCallback(() => {
+    detalleSeq.current += 1;
     setDetalleState(EMPTY_DETALLE);
   }, []);
 
@@ -236,24 +244,29 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
       }));
       try {
         const data = await validarIntelisisUfe(idVenta);
+        const actualizada = (row: IntelisisUfeRow): IntelisisUfeRow =>
+          row.id_venta === idVenta
+            ? {
+                ...row,
+                estado_sunat: (data.estado ||
+                  row.estado_sunat) as IntelisisUfeRow["estado_sunat"],
+                sunat: {
+                  estado: data.estado || "",
+                  consultado: new Date().toISOString(),
+                },
+              }
+            : row;
         setState((prev) => ({
           ...prev,
-          rows: prev.rows.map((row) =>
-            row.id_venta === idVenta
-              ? {
-                  ...row,
-                  estado_sunat: (data.estado ||
-                    row.estado_sunat) as IntelisisUfeRow["estado_sunat"],
-                  sunat: {
-                    estado: data.estado || "",
-                    consultado: new Date().toISOString(),
-                  },
-                }
-              : row,
-          ),
+          rows: prev.rows.map(actualizada),
         }));
         setDetalleState((prev) => ({
           ...prev,
+          // En modo numero la tabla se alimenta de la busqueda: sin esto el
+          // estado SUNAT recien validado no se veia en la grilla.
+          busqueda: prev.busqueda
+            ? { ...prev.busqueda, rows: prev.busqueda.rows.map(actualizada) }
+            : prev.busqueda,
           validando: null,
           aviso: `SUNAT: ${data.estado || "sin respuesta"}.`,
           detalle: prev.detalle

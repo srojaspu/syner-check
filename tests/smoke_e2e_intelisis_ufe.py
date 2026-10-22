@@ -81,9 +81,12 @@ def huella_intelisis() -> dict:
     cursor.execute(
         """SELECT
              PuedeActualizarVenta = HAS_PERMS_BY_NAME('dbo.Venta', 'OBJECT', 'UPDATE'),
-             PuedeInsertarBitacora = HAS_PERMS_BY_NAME('dbo.SPPUFE_EjecucionLog', 'OBJECT', 'INSERT'),
-             PuedeEjecutarGenerador = HAS_PERMS_BY_NAME('dbo.SPPUFE_UBL21', 'OBJECT', 'EXECUTE'),
-             PuedeEjecutarGeneradorNC = HAS_PERMS_BY_NAME('dbo.SPPUFE_UBL21_NCND', 'OBJECT', 'EXECUTE')"""
+             PuedeInsertarBitacora =
+                 HAS_PERMS_BY_NAME('dbo.SPPUFE_EjecucionLog', 'OBJECT', 'INSERT'),
+             PuedeEjecutarGenerador =
+                 HAS_PERMS_BY_NAME('dbo.SPPUFE_UBL21', 'OBJECT', 'EXECUTE'),
+             PuedeEjecutarGeneradorNC =
+                 HAS_PERMS_BY_NAME('dbo.SPPUFE_UBL21_NCND', 'OBJECT', 'EXECUTE')"""
     )
     permisos = dict(
         zip(
@@ -182,7 +185,8 @@ def main() -> None:
             if ultimo:
                 verificar(
                     ultimo["documento"].endswith(objetivo["comprobante"][-8:]),
-                    f"el ultimo intento de la bitacora corresponde al documento ({ultimo['documento']})",
+                    "el ultimo intento de la bitacora corresponde al documento "
+                    f"({ultimo['documento']})",
                 )
                 verificar(
                     ultimo["estado"] == objetivo["estado_generacion"].upper()

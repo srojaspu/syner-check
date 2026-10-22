@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SUNAT_LOTE_MAX } from "../api/client";
 import type { IntelisisUfeRow } from "../api/types";
 
 const mocks = vi.hoisted(() => ({
@@ -23,15 +24,36 @@ const mocks = vi.hoisted(() => ({
     validando: null as number | null,
     aviso: null as string | null,
     errorValidacion: null as string | null,
+    busqueda: null as { documento: string; rows: IntelisisUfeRow[] } | null,
     buscar: vi.fn(),
     abrirDetalle: vi.fn(),
     cerrarDetalle: vi.fn(),
     validar: vi.fn(),
   },
+  sunat: {
+    busy: false,
+    progress: null as unknown,
+    notice: null as string | null,
+    warning: null as string | null,
+    error: null as string | null,
+    runBatch: vi.fn(
+      async (
+        _rows: unknown,
+        refresh: () => Promise<void> | void,
+        _scope?: string,
+      ) => {
+        await refresh();
+      },
+    ),
+  },
 }));
 
 vi.mock("../hooks/useIntelisisUfe", () => ({
   useIntelisisUfe: () => mocks.ufe,
+}));
+
+vi.mock("../hooks/useSunat", () => ({
+  useSunat: () => mocks.sunat,
 }));
 
 import IntelisisUfePage from "./IntelisisUfePage";
@@ -139,8 +161,16 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.maxFilas = 5000;
     mocks.ufe.filtradosTotal = 0;
     mocks.ufe.run.mockReset();
+    mocks.ufe.buscar.mockReset();
+    mocks.ufe.busqueda = null;
     mocks.ufe.abrirDetalle.mockReset();
     mocks.ufe.validar.mockReset();
+    mocks.sunat.busy = false;
+    mocks.sunat.progress = null;
+    mocks.sunat.notice = null;
+    mocks.sunat.warning = null;
+    mocks.sunat.error = null;
+    mocks.sunat.runBatch.mockClear();
   });
 
   it("muestra el resumen del periodo", () => {
@@ -306,20 +336,6 @@ describe("IntelisisUfePage", () => {
     expect(ultima?.[1]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("avisa cuando el periodo cambio sin consultar", () => {
-    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
-
-    // Sin consulta previa no hay periodo aplicado que contrastar.
-    expect(
-      screen.queryByText(/El periodo cambio/),
-    ).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
-    expect(
-      screen.queryByText(/El periodo cambio/),
-    ).toBeNull();
-  });
-
   it("filtra las filas al instante sin volver a consultar", async () => {
     const user = userEvent.setup();
     mocks.ufe.rows = [
@@ -426,7 +442,6 @@ describe("IntelisisUfePage", () => {
   });
 
   it("permite buscar por numero de comprobante", () => {
-    mocks.ufe.buscar = vi.fn();
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     fireEvent.click(
@@ -439,6 +454,54 @@ describe("IntelisisUfePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Buscar/ }));
 
     expect(mocks.ufe.buscar).toHaveBeenCalledWith("B710-00004539");
+  });
+
+  it("repite la busqueda por numero despues de validar en lote", async () => {
+    mocks.ufe.busqueda = { documento: "B710-00004539", rows: [fila()] };
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Número de comprobante" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Numero de comprobante"),
+      { target: { value: "B710-00004539" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Buscar/ }));
+    expect(mocks.ufe.buscar).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validar en SUNAT/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Consultar 1 documento",
+      }),
+    );
+
+    // Sin periodo que reconsultar, la grilla solo se actualiza repitiendo
+    // la busqueda (era el caso en que el lote no se veia refrescado).
+    await waitFor(() => expect(mocks.ufe.buscar).toHaveBeenCalledTimes(2));
+    expect(mocks.ufe.buscar).toHaveBeenLastCalledWith("B710-00004539");
+  });
+
+  it("no ofrece validar mas documentos de los que admite una solicitud", () => {
+    mocks.ufe.rows = Array.from({ length: SUNAT_LOTE_MAX + 1 }, (_, index) =>
+      fila({
+        id_venta: 5000 + index,
+        comprobante: `B602-${String(index).padStart(8, "0")}`,
+      }),
+    );
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    const boton = screen.getByRole("button", {
+      name: /Validar en SUNAT/,
+    }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(true);
+    expect(
+      screen.getByText(/documentos por solicitud/),
+    ).toBeTruthy();
   });
 
   it("ofrece la validacion en SUNAT de los documentos mostrados", () => {

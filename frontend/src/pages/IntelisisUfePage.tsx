@@ -40,6 +40,7 @@ import type {
 } from "../api/types";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 import { useSunat } from "../hooks/useSunat";
+import { SUNAT_LOTE_MAX } from "../api/client";
 
 const MAX_DIAS = 31;
 
@@ -89,6 +90,8 @@ export default function IntelisisUfePage({
   } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
+  /** Ultimo numero buscado: el refresco tras validar repite esa busqueda. */
+  const [documentoBuscado, setDocumentoBuscado] = useState("");
   const [filteredRows, setFilteredRows] = useState<IntelisisUfeRow[] | null>(
     null,
   );
@@ -180,13 +183,20 @@ export default function IntelisisUfePage({
   );
 
   const refrescar = useCallback(async () => {
-    if (modo === "range" && consulta) {
-      setConsulta({ ...consulta });
+    if (modo === "range") {
+      if (consulta) setConsulta({ ...consulta });
+      return;
     }
-  }, [modo, consulta]);
+    // En modo numero la tabla sale de la busqueda: repetirla es lo unico
+    // que trae el estado SUNAT nuevo (antes el lote no se veia refrescado).
+    if (documentoBuscado) await ufe.buscar(documentoBuscado);
+  }, [modo, consulta, documentoBuscado, ufe.buscar]);
 
   const hayConsulta =
     modo === "range" ? Boolean(consulta) : Boolean(ufe.busqueda);
+
+  /** El servidor rechaza el lote entero por encima de este tope. */
+  const loteExcedido = consultables.length > SUNAT_LOTE_MAX;
 
   return (
     <div className="flex flex-col gap-6">
@@ -217,6 +227,7 @@ export default function IntelisisUfePage({
           hint="Busca el comprobante por su numero oficial (prefijo de tipo, serie y correlativo), sin periodo."
           onSearch={(documento) => {
             setFormError(null);
+            setDocumentoBuscado(documento);
             void ufe.buscar(documento);
           }}
         />
@@ -308,14 +319,26 @@ export default function IntelisisUfePage({
                 ))}
               </div>
             ) : null}
+            {loteExcedido ? (
+              <p className="text-xs text-muted-foreground" role="status">
+                La validacion SUNAT admite {SUNAT_LOTE_MAX.toLocaleString("es-PE")}{" "}
+                documentos por solicitud y hay{" "}
+                {consultables.length.toLocaleString("es-PE")}: filtra la tabla
+                (resultado, generador o tipo) para dejar menos.
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2 sm:justify-self-end">
             <Button
               type="button"
               variant="outline"
-              disabled={!consultables.length || sunat.busy}
+              disabled={!consultables.length || sunat.busy || loteExcedido}
               onClick={() => setSunatDialogOpen(true)}
-              title="Consulta en SUNAT los documentos mostrados"
+              title={
+                loteExcedido
+                  ? `El tope por solicitud es de ${SUNAT_LOTE_MAX} documentos`
+                  : "Consulta en SUNAT los documentos mostrados"
+              }
             >
               {sunat.busy ? (
                 <HugeiconsIcon

@@ -10,7 +10,7 @@ Solo lectura: nunca ejecuta procedimientos almacenados.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from .db_client import _to_iso_date, _to_str
@@ -306,26 +306,35 @@ def _to_iso_datetime(value: Any) -> str:
     return text[:19] if text else ""
 
 
+# Filas por viaje a la base. El valor por defecto de pyodbc (1) pide una
+# fila por ida y vuelta: con 31 dias (~18.000 filas) eso son segundos de
+# espera que no tienen nada que ver con la consulta.
+def _query_rows(sql: str, *params: Any) -> list[dict[str, Any]]:
+    """Ejecuta una consulta del lector UFE y normaliza sus filas."""
+    from .config import get_intelisis_config, get_intelisis_password
+    from .db_pool import FETCH_BATCH, pooled_connection
+
+    with pooled_connection(
+        get_intelisis_config(), get_intelisis_password()
+    ) as connection:
+        cursor = connection.cursor()
+        cursor.arraysize = FETCH_BATCH
+        cursor.execute(sql, *params)
+        return _ufe_rows(cursor)
+
+
 def fetch_intelisis_ufe_rows(
     start_date: str,
     end_date: str,
 ) -> list[dict[str, Any]]:
-    """Comprueba del universo UFE con el ultimo intento de la bitacora.
+    """Comprobantes del universo UFE con el ultimo intento de la bitacora.
 
     Mismo universo que ``dbo.PUSP_ControlFac`` pero en una sola consulta para
     todo el rango (el SP obliga a un EXEC por dia). El ultimo intento sale
     de ``dbo.SPPUFE_EjecucionLog`` por ``IDVenta`` desempateado con
     ``FechaInicio DESC, LogID DESC``.
     """
-    from .config import get_intelisis_config, get_intelisis_password
-    from .db_pool import pooled_connection
-
-    db_config = get_intelisis_config()
-    password = get_intelisis_password()
-    with pooled_connection(db_config, password) as connection:
-        cursor = connection.cursor()
-        cursor.execute(INTELISIS_UFE_QUERY, start_date, end_date)
-        return _ufe_rows(cursor)
+    return _query_rows(INTELISIS_UFE_QUERY, start_date, end_date)
 
 
 def fetch_intelisis_ufe_row(id_venta: int) -> list[dict[str, Any]]:
@@ -333,15 +342,7 @@ def fetch_intelisis_ufe_row(id_venta: int) -> list[dict[str, Any]]:
 
     Lista vacia si el ID no existe o no pertenece al universo UFE.
     """
-    from .config import get_intelisis_config, get_intelisis_password
-    from .db_pool import pooled_connection
-
-    db_config = get_intelisis_config()
-    password = get_intelisis_password()
-    with pooled_connection(db_config, password) as connection:
-        cursor = connection.cursor()
-        cursor.execute(INTELISIS_UFE_ONE_QUERY, int(id_venta))
-        return _ufe_rows(cursor)
+    return _query_rows(INTELISIS_UFE_ONE_QUERY, int(id_venta))
 
 
 def fetch_intelisis_ufe_documento(
@@ -352,18 +353,8 @@ def fetch_intelisis_ufe_documento(
     La identidad exacta (serie con prefijo de tipo) la calcula el dominio:
     aca solo se acotan los candidatos.
     """
-    from .config import get_intelisis_config, get_intelisis_password
-    from .db_pool import pooled_connection
-
-    db_config = get_intelisis_config()
-    password = get_intelisis_password()
     patron = f"%-{correlativo}"
-    with pooled_connection(db_config, password) as connection:
-        cursor = connection.cursor()
-        cursor.execute(
-            INTELISIS_UFE_DOCUMENTO_QUERY, patron, correlativo
-        )
-        return _ufe_rows(cursor)
+    return _query_rows(INTELISIS_UFE_DOCUMENTO_QUERY, patron, correlativo)
 
 
 def fetch_intelisis_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
@@ -373,12 +364,13 @@ def fetch_intelisis_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
     que el usuario quiere leerlos.
     """
     from .config import get_intelisis_config, get_intelisis_password
-    from .db_pool import pooled_connection
+    from .db_pool import FETCH_BATCH, pooled_connection
 
     db_config = get_intelisis_config()
     password = get_intelisis_password()
     with pooled_connection(db_config, password) as connection:
         cursor = connection.cursor()
+        cursor.arraysize = FETCH_BATCH
         cursor.execute(INTELISIS_UFE_ATTEMPTS_QUERY, int(id_venta))
         columns_out = [col[0] for col in cursor.description]
         return [
@@ -410,51 +402,128 @@ def fetch_intelisis_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
         ]
 
 
+# Columnas que devuelven las tres consultas del universo (mismo orden). Se
+# leen por posicion: el dict intermedio y 31 ``.get`` por fila se notaban
+# con 18.000 filas.
+_COLUMNAS_UFE: tuple[str, ...] = (
+    "IDVenta",
+    "Mov",
+    "MovID",
+    "FechaEmision",
+    "Estatus",
+    "Sucursal",
+    "Importe",
+    "Impuestos",
+    "Referencia",
+    "Cliente",
+    "ServicioSerie",
+    "TipoDocumentoPU",
+    "SeriePU",
+    "GenerarTxtPeru",
+    "SucursalNombre",
+    "ClienteNombre",
+    "ClienteRfc",
+    "LogID",
+    "EstadoIntento",
+    "Etapa",
+    "Documento",
+    "Detalle",
+    "ErrorMensaje",
+    "FechaInicio",
+    "FechaFin",
+    "ArchivoOut",
+    "Procedimiento",
+    "DuracionMs",
+    "AutocorridarolSalida",
+    "Intentos",
+    "OkRegistrados",
+)
+
+
 def _ufe_rows(cursor) -> list[dict[str, Any]]:
-    """Normaliza las filas del lector UFE (mismo formato para lista y uno)."""
-    columns_out = [col[0] for col in cursor.description]
+    """Normaliza las filas del lector UFE (mismo formato para lista y uno).
+
+    Si una consulta deja de devolver las columnas esperadas se avisa aqui,
+    en vez de fallar tres capas mas arriba con un valor corrido de lugar.
+    """
+    columnas = tuple(col[0] for col in cursor.description)
+    if columnas != _COLUMNAS_UFE:
+        faltan = [name for name in _COLUMNAS_UFE if name not in columnas]
+        sobran = [name for name in columnas if name not in _COLUMNAS_UFE]
+        raise RuntimeError(
+            "El lector UFE devolvio columnas distintas de las esperadas: "
+            f"faltan={faltan} sobran={sobran}"
+        )
     rows: list[dict[str, Any]] = []
     for record in cursor.fetchall():
-        row = dict(zip(columns_out, record))
+        (
+            id_venta,
+            mov,
+            mov_id,
+            fecha_emision,
+            estatus,
+            sucursal,
+            importe,
+            impuestos,
+            referencia,
+            cliente,
+            servicio_serie,
+            tipo_documento_pu,
+            serie_pu,
+            generar_txt,
+            sucursal_nombre,
+            cliente_nombre,
+            cliente_rfc,
+            log_id,
+            estado_intento,
+            etapa,
+            documento,
+            detalle,
+            error_mensaje,
+            fecha_inicio,
+            fecha_fin,
+            archivo_out,
+            procedimiento,
+            duracion_ms,
+            hash_salida,
+            intentos,
+            ok_registrados,
+        ) = record
         rows.append(
             {
-                "IDVenta": _to_int(row.get("IDVenta")),
-                "Mov": _to_str(row.get("Mov")),
-                "MovID": _to_str(row.get("MovID")),
-                "FechaEmision": _to_iso_date(row.get("FechaEmision")),
-                "Estatus": _to_str(row.get("Estatus")),
-                "Sucursal": _to_int(row.get("Sucursal")),
-                "Importe": _to_float(row.get("Importe")),
-                "Impuestos": _to_float(row.get("Impuestos")),
-                "Referencia": _to_str(row.get("Referencia")),
-                "Cliente": _to_str(row.get("Cliente")),
-                "ServicioSerie": _to_str(row.get("ServicioSerie")),
-                "TipoDocumentoPU": _to_str(row.get("TipoDocumentoPU")),
-                "SeriePU": _to_str(row.get("SeriePU")),
-                "GenerarTxtPeru": bool(row.get("GenerarTxtPeru")),
-                "SucursalNombre": _to_str(row.get("SucursalNombre")),
-                "ClienteNombre": _to_str(row.get("ClienteNombre")),
-                "ClienteRfc": _to_str(row.get("ClienteRfc")),
-                "LogID": (
-                    _to_int(row.get("LogID")) if row.get("LogID") else None
-                ),
-                "EstadoIntento": _to_str(row.get("EstadoIntento")),
-                "Etapa": _to_str(row.get("Etapa")),
-                "Documento": _to_str(row.get("Documento")),
-                "Detalle": _to_str(row.get("Detalle")),
-                "ErrorMensaje": _to_str(row.get("ErrorMensaje")),
-                "FechaInicio": _to_iso_datetime(row.get("FechaInicio")),
-                "FechaFin": _to_iso_datetime(row.get("FechaFin")),
-                "ArchivoOut": _to_str(row.get("ArchivoOut")),
-                "Procedimiento": _to_str(row.get("Procedimiento")),
+                "IDVenta": _to_int(id_venta),
+                "Mov": _to_str(mov),
+                "MovID": _to_str(mov_id),
+                "FechaEmision": _to_iso_date(fecha_emision),
+                "Estatus": _to_str(estatus),
+                "Sucursal": _to_int(sucursal),
+                "Importe": _to_float(importe),
+                "Impuestos": _to_float(impuestos),
+                "Referencia": _to_str(referencia),
+                "Cliente": _to_str(cliente),
+                "ServicioSerie": _to_str(servicio_serie),
+                "TipoDocumentoPU": _to_str(tipo_documento_pu),
+                "SeriePU": _to_str(serie_pu),
+                "GenerarTxtPeru": bool(generar_txt),
+                "SucursalNombre": _to_str(sucursal_nombre),
+                "ClienteNombre": _to_str(cliente_nombre),
+                "ClienteRfc": _to_str(cliente_rfc),
+                "LogID": _to_int(log_id) if log_id else None,
+                "EstadoIntento": _to_str(estado_intento),
+                "Etapa": _to_str(etapa),
+                "Documento": _to_str(documento),
+                "Detalle": _to_str(detalle),
+                "ErrorMensaje": _to_str(error_mensaje),
+                "FechaInicio": _to_iso_datetime(fecha_inicio),
+                "FechaFin": _to_iso_datetime(fecha_fin),
+                "ArchivoOut": _to_str(archivo_out),
+                "Procedimiento": _to_str(procedimiento),
                 "DuracionMs": (
-                    _to_int(row.get("DuracionMs"))
-                    if row.get("DuracionMs") is not None
-                    else None
+                    _to_int(duracion_ms) if duracion_ms is not None else None
                 ),
-                "HashSalida": _to_str(row.get("AutocorridarolSalida")),
-                "Intentos": _to_int(row.get("Intentos")),
-                "OkRegistrados": _to_int(row.get("OkRegistrados")),
+                "HashSalida": _to_str(hash_salida),
+                "Intentos": _to_int(intentos),
+                "OkRegistrados": _to_int(ok_registrados),
             }
         )
     return rows

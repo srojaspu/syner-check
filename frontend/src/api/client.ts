@@ -52,6 +52,14 @@ const SUNAT_SUBMISSION_TIMEOUT_MS = 30_000;
 /** A MovSynerPos batch re-queries GraphQL and inserts per document. */
 const MOVSYNERPOS_TIMEOUT_MS = 180_000;
 
+/**
+ * Tope de documentos por solicitud SUNAT (lo impone el servidor).
+ *
+ * La pantalla Intelisis UFE puede tener miles de filas en tabla y las
+ * manda todas; por encima de este tope la peticion se rechaza entera.
+ */
+export const SUNAT_LOTE_MAX = 2000;
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
@@ -170,7 +178,7 @@ export function getIntelisisUfe(
     resultado?: string;
     estado?: string;
     incidencia?: string;
-    tipo?: string;
+    /** Tipos de documento de la consulta (los chips del panel). */
     tipos?: string[];
     generador?: string;
     sunat?: string;
@@ -185,7 +193,8 @@ export function getIntelisisUfe(
   if (params.resultado) qs.set("resultado", params.resultado);
   if (params.estado) qs.set("estado", params.estado);
   if (params.incidencia) qs.set("incidencia", params.incidencia);
-  if (params.tipo) qs.set("tipo", params.tipo);
+  // El tipo de documento es una lista: los filtros de la fila de la tabla
+  // (incluido el Tipo por columna) se aplican en el navegador y no viajan.
   if (params.tipos?.length) qs.set("tipo", params.tipos.join(","));
   if (params.generador) qs.set("generador", params.generador);
   if (params.sunat) qs.set("sunat", params.sunat);

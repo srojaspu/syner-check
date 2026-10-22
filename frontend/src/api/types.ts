@@ -359,13 +359,19 @@ export interface IntelisisUfeKpis {
   por_dia?: IntelisisUfeDia[];
 }
 
-/** Filtros del listado: se aplican en el servidor. */
+/**
+ * Filtros de la pantalla.
+ *
+ * Los de la fila de la tabla (`tipo` incluido) se aplican al instante en el
+ * navegador; los KPIs y `tipos` viajan en la consulta al servidor.
+ */
 export interface IntelisisUfeFiltros {
   resultado?: string;
   estado?: string;
   incidencia?: string;
+  /** Tipo de la fila de filtros de la tabla: no viaja al servidor. */
   tipo?: string;
-  /** Tipos de documento marcados (multi): FA, BO, NC, ND. */
+  /** Tipos de documento de la consulta (chips del panel): FA, BO, NC, ND. */
   tipos?: string[];
   generador?: string;
   sunat?: string;

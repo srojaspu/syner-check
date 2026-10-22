@@ -22,6 +22,11 @@ from .db_client import connect
 
 logger = logging.getLogger("syner_check.db_pool")
 
+# Filas por viaje al leer resultados. El valor por defecto de pyodbc (1)
+# pide una fila por ida y vuelta: en un periodo con miles de comprobantes
+# eso agrega segundos que no tienen que ver con la consulta.
+FETCH_BATCH = 100
+
 _IDLE_SECONDS = 300.0
 _MAX_IDLE = 4
 

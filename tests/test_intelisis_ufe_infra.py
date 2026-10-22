@@ -15,7 +15,8 @@ import pytest
 from app import intelisis_db
 from src.domain.errors import UpstreamError
 from src.infrastructure.intelisis_ufe import IntelisisUfeReaderAdapter
-from syner_check import db_client, intelisis_ufe_client
+from syner_check import intelisis_ufe_client
+from syner_check.db_pool import FETCH_BATCH
 
 _COLUMNAS = [
     ("IDVenta",),
@@ -180,6 +181,23 @@ def test_sin_bitacora_deja_los_contadores_en_cero(monkeypatch) -> None:
     assert row["Documento"] == ""
     assert row["Intentos"] == 0
     assert row["OkRegistrados"] == 0
+
+
+def test_lee_en_lotes_y_avisa_si_las_columnas_cambian(monkeypatch) -> None:
+    connection = _install(monkeypatch, [_fila()])
+
+    intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")
+
+    # Sin esto pyodbc pide una fila por viaje a la base (ver FETCH_BATCH).
+    assert connection.cursor_obj.arraysize == FETCH_BATCH
+
+
+def test_falla_claro_si_la_consulta_cambia_de_columnas(monkeypatch) -> None:
+    connection = _install(monkeypatch, [_fila()])
+    connection.cursor_obj.description = list(_COLUMNAS[:-1])
+
+    with pytest.raises(RuntimeError, match="columnas"):
+        intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")
 
 
 def test_el_adaptador_traduce_errores(monkeypatch) -> None:
