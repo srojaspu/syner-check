@@ -72,12 +72,6 @@ describe("filtraUfeFilas", () => {
     expect(filtraUfeFilas(FILAS, {})).toHaveLength(2);
   });
 
-  it("filtra por resultado", () => {
-    const out = filtraUfeFilas(FILAS, { resultado: "REVISAR" });
-    expect(out).toHaveLength(1);
-    expect(out[0].id_venta).toBe(2);
-  });
-
   it("filtra por generador", () => {
     const out = filtraUfeFilas(FILAS, { generador: "SIN TRAZA" });
     expect(out.map((f) => f.id_venta)).toEqual([2]);
@@ -91,11 +85,6 @@ describe("filtraUfeFilas", () => {
   it("filtra por estado tecnico", () => {
     const out = filtraUfeFilas(FILAS, { estado: "generado" });
     expect(out.map((f) => f.id_venta)).toEqual([1]);
-  });
-
-  it("filtra por incidencia, aunque el documento tenga varias", () => {
-    const out = filtraUfeFilas(FILAS, { incidencia: "sin traza" });
-    expect(out.map((f) => f.id_venta)).toEqual([2]);
   });
 
   it("filtra por sucursal", () => {
@@ -117,13 +106,13 @@ describe("filtraUfeFilas", () => {
 
   it("combina filtros", () => {
     const out = filtraUfeFilas(FILAS, {
-      resultado: "REVISAR",
       generador: "SIN TRAZA",
+      tipo: "FA",
     });
     expect(out).toHaveLength(1);
     const ninguno = filtraUfeFilas(FILAS, {
-      resultado: "REVISAR",
-      generador: "OK REGISTRADO",
+      generador: "SIN TRAZA",
+      tipo: "BO",
     });
     expect(ninguno).toHaveLength(0);
   });

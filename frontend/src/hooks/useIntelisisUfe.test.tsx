@@ -104,12 +104,12 @@ describe("useIntelisisUfe", () => {
 
     await act(async () => {
       await result.current.run("2026-10-15", "2026-10-21", {
-        resultado: "REVISAR",
+        generador: "SIN TRAZA",
       });
     });
 
     expect(getMock).toHaveBeenCalledWith(
-      { desde: "2026-10-15", hasta: "2026-10-21", resultado: "REVISAR" },
+      { desde: "2026-10-15", hasta: "2026-10-21", generador: "SIN TRAZA" },
       expect.anything(),
     );
     expect(result.current.rows).toHaveLength(1);

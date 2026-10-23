@@ -376,7 +376,7 @@ describe("IntelisisUfePage", () => {
   it("filtra en el servidor al pulsar un KPI", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Con incidencia/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Sin traza/ }));
 
     // El filtro queda en borrador: todavia no se consulta.
     expect(mocks.ufe.run).not.toHaveBeenCalled();
@@ -389,7 +389,7 @@ describe("IntelisisUfePage", () => {
     const ultima = llamadas[llamadas.length - 1];
     // El filtro del KPI viaja en la consulta; los tipos van aparte como
     // parametro de la consulta (por defecto, los cuatro).
-    expect(ultima?.[2]).toMatchObject({ resultado: "REVISAR" });
+    expect(ultima?.[2]).toMatchObject({ generador: "SIN TRAZA" });
   });
 
   it("no consulta nada al entrar en la seccion", () => {
@@ -444,32 +444,23 @@ describe("IntelisisUfePage", () => {
     expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
   });
 
-  it("los filtros de resultado viven en la barra, no en una columna", async () => {
+  it("no ofrece filtros de resultado ni de incidencia", async () => {
     const user = userEvent.setup();
-    mocks.ufe.rows = [
-      fila({ id_venta: 1, comprobante: "B602-00000001" }),
-      fila({
-        id_venta: 2,
-        comprobante: "B602-00000002",
-        resultado: "REVISAR",
-        estado_generacion: "sin_registro",
-        generador: "SIN TRAZA",
-        incidencias: ["SIN TRAZA"],
-      }),
-    ];
+    mocks.ufe.rows = [fila({ id_venta: 1, comprobante: "B602-00000001" })];
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
-    // Generador vuelve a tener un solo control en su celda de filtro.
+    expect(screen.queryByRole("combobox", { name: "Resultado" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Incidencia" })).toBeNull();
+    // Generador conserva su unico filtro de columna.
     expect(
       screen.getAllByRole("combobox", { name: "Generador" }),
     ).toHaveLength(1);
 
-    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
-    await user.click(await screen.findByRole("option", { name: "Revisar" }));
-
-    expect(screen.queryByText("B602-00000001")).toBeNull();
-    expect(screen.getByText("B602-00000002")).toBeTruthy();
+    await user.click(screen.getByRole("combobox", { name: "SUNAT" }));
+    expect(
+      await screen.findByRole("option", { name: "No encontrado" }),
+    ).toBeTruthy();
   });
 
   it("avisa cuando el listado viene recortado", () => {

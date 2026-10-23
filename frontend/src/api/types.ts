@@ -366,9 +366,7 @@ export interface IntelisisUfeKpis {
  * navegador; los KPIs y `tipos` viajan en la consulta al servidor.
  */
 export interface IntelisisUfeFiltros {
-  resultado?: string;
   estado?: string;
-  incidencia?: string;
   /** Tipo de la fila de filtros de la tabla: no viaja al servidor. */
   tipo?: string;
   /** Tipos de documento de la consulta (chips del panel): FA, BO, NC, ND. */

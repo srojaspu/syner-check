@@ -60,8 +60,11 @@ export function KpiTile({
 }
 
 /**
- * Resumen del periodo. Las cifras son filtros: al pulsarlas dejan el
- * filtro preparado (se aplica al pulsar "Consultar").
+ * Resumen del periodo.
+ *
+ * Las cifras de Generador y SUNAT son filtros. "Conformes" y "Con incidencia"
+ * son solo metricas: su valor se deduce de Generador y SUNAT, y filtrar por un
+ * agregado duplicaria esos dos filtros.
  */
 export function IntelisisUfeKpis({
   kpis,
@@ -71,9 +74,17 @@ export function IntelisisUfeKpis({
 }: {
   kpis: IntelisisUfeKpis;
   filtros: IntelisisUfeFiltros;
-  onAlternar: (clave: "resultado" | "generador" | "sunat", valor: string) => void;
+  onAlternar: (clave: "generador" | "sunat", valor: string) => void;
   onLimpiar: () => void;
 }) {
+  const sinFiltros =
+    !filtros.generador &&
+    !filtros.sunat &&
+    !filtros.tipo &&
+    !filtros.estado &&
+    !filtros.q &&
+    filtros.sucursal === undefined;
+
   return (
     <section
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
@@ -82,22 +93,18 @@ export function IntelisisUfeKpis({
       <KpiTile
         label="Emitidos"
         value={kpis.total}
-        active={!filtros.resultado && !filtros.generador}
+        active={sinFiltros}
         onClick={onLimpiar}
       />
       <KpiTile
         label="Conformes"
         value={kpis.conformes}
         hint={`${kpis.con_incidencia} por revisar`}
-        active={filtros.resultado === "CONFORME"}
-        onClick={() => onAlternar("resultado", "CONFORME")}
       />
       <KpiTile
         label="Con incidencia"
         value={kpis.con_incidencia}
         tone="alert"
-        active={filtros.resultado === "REVISAR"}
-        onClick={() => onAlternar("resultado", "REVISAR")}
       />
       <KpiTile
         label="Sin traza"

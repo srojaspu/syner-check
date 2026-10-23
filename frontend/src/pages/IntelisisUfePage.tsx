@@ -12,7 +12,6 @@ import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import {
   creaRenderFiltro,
   filtraUfeFilas,
-  IntelisisUfeRevisionFiltros,
 } from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
 import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
@@ -141,7 +140,7 @@ export default function IntelisisUfePage({
   }, [range, borrador, tipos]);
 
   const alternar = useCallback(
-    (clave: "resultado" | "generador" | "sunat", valor: string) => {
+    (clave: "generador" | "sunat", valor: string) => {
       setBorrador((prev) => {
         const esIgual = String(prev[clave] ?? "") === valor;
         const siguiente = { ...prev };
@@ -393,13 +392,6 @@ export default function IntelisisUfePage({
         periodo={{ desde: ufe.desde, hasta: ufe.hasta }}
         visibles={visibles.length}
         incidencias={kpis?.por_incidencia ?? []}
-        toolbarAction={
-          <IntelisisUfeRevisionFiltros
-            filtros={borrador}
-            onCambio={setBorrador}
-            kpis={kpis}
-          />
-        }
         seleccionados={seleccionadas.length}
         filtros={{
           activos: filtrosActivos,

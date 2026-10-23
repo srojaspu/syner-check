@@ -59,11 +59,6 @@ export function FiltroSelect({
   );
 }
 
-const OPCIONES_RESULTADO = [
-  { value: "CONFORME", label: "Conforme" },
-  { value: "REVISAR", label: "Revisar" },
-];
-
 const OPCIONES_GENERADOR = [
   { value: "OK REGISTRADO", label: "OK registrado" },
   { value: "SIN OK", label: "Sin OK" },
@@ -110,7 +105,6 @@ export function filtraUfeFilas(
   const aguja = (filtros.q ?? "").trim().toLowerCase();
 
   return filas.filter((fila) => {
-    if (filtros.resultado && fila.resultado !== filtros.resultado) return false;
     if (filtros.estado && fila.estado_generacion !== filtros.estado) {
       return false;
     }
@@ -119,12 +113,6 @@ export function filtraUfeFilas(
       return false;
     }
     if (filtros.sunat && fila.estado_sunat !== filtros.sunat) return false;
-    if (filtros.incidencia) {
-      const existe = (fila.incidencias ?? []).some(
-        (item) => item.toUpperCase() === filtros.incidencia!.toUpperCase(),
-      );
-      if (!existe) return false;
-    }
     if (filtros.sucursal !== undefined && fila.sucursal !== filtros.sucursal) {
       return false;
     }
@@ -253,57 +241,4 @@ export function creaRenderFiltro(
         return null;
     }
   };
-}
-
-/**
- * Filtros semánticos de la tabla: no pertenecen a una columna, así que no van
- * en la fila de filtros por columna sino en la barra de la tabla.
- *
- * - **Resultado** es un agregado (Generador + SUNAT + cruce ambiguo).
- * - **Incidencia** es la lista derivada de motivos.
- *
- * Se mantienen fuera de la celda de una columna para no romper el patrón
- * "un filtro por columna" ni ocultar controles detrás de una columna que
- * puede plegarse según el ancho.
- */
-export function IntelisisUfeRevisionFiltros({
-  filtros,
-  onCambio,
-  kpis,
-}: {
-  filtros: IntelisisUfeFiltros;
-  onCambio: (filtros: IntelisisUfeFiltros) => void;
-  kpis: IntelisisUfeKpis | null;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">Resultado</span>
-        <FiltroSelect
-          label="Resultado"
-          value={filtros.resultado ?? ""}
-          placeholder="Todos"
-          options={OPCIONES_RESULTADO}
-          onChange={(valor) =>
-            onCambio(aplicaFiltro(filtros, "resultado", valor))
-          }
-        />
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">Incidencia</span>
-        <FiltroSelect
-          label="Incidencia"
-          value={filtros.incidencia ?? ""}
-          placeholder="Todas"
-          options={(kpis?.por_incidencia ?? []).map((item) => ({
-            value: item.key,
-            label: `${item.key} (${item.count})`,
-          }))}
-          onChange={(valor) =>
-            onCambio(aplicaFiltro(filtros, "incidencia", valor))
-          }
-        />
-      </div>
-    </div>
-  );
 }
