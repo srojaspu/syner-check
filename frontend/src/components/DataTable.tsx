@@ -298,20 +298,31 @@ function useResetPageOnDataChange<T>(
   }, [data, setPagination]);
 }
 
-function Toolbar({ action }: { action?: ReactNode }) {
+function Toolbar({
+  action,
+  active,
+  onClear,
+}: {
+  action?: ReactNode;
+  /** Filtros activos cuando el estado no vive en TanStack (filtros externos). */
+  active?: number;
+  /** Como limpiarlos cuando no son column filters de la tabla. */
+  onClear?: () => void;
+}) {
   const table = useTableInstance();
-  const active = table.getState().columnFilters.length;
-  if (!action && active === 0) return null;
+  const count = active ?? table.getState().columnFilters.length;
+  const clear = onClear ?? (() => table.resetColumnFilters());
+  if (!action && count === 0) return null;
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
-      {active > 0 ? (
+      {count > 0 ? (
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => table.resetColumnFilters()}
+          onClick={clear}
         >
-          <HugeiconsIcon icon={FilterRemoveIcon} size={15} strokeWidth={2} aria-hidden /> Limpiar filtros ({active})
+          <HugeiconsIcon icon={FilterRemoveIcon} size={15} strokeWidth={2} aria-hidden /> Limpiar filtros ({count})
         </Button>
       ) : (
         <span />

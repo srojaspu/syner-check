@@ -4,12 +4,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CalendarDaysIcon,
   FileDownIcon,
-  FilterRemoveIcon,
   Loading02Icon,
 } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -18,6 +16,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { DataTable } from "@/components/DataTable";
+import { ResultsCard } from "@/components/ResultsCard";
 import type { IntelisisUfeRow } from "../api/types";
 
 interface IncidenciaCount {
@@ -88,21 +87,19 @@ export function IntelisisUfeResultados({
         : "Consulta en SUNAT los documentos mostrados";
 
   return (
-    <Card>
-      <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 className="text-base font-medium">Comprobantes</h2>
-            <span className="text-sm text-muted-foreground" aria-live="polite">
-              {hayConsulta
-                ? `${visibles} documentos${
-                    modo === "range" && periodo.desde
-                      ? ` · ${periodo.desde} a ${periodo.hasta}`
-                      : ""
-                  }`
-                : "Selecciona un periodo para comenzar."}
-            </span>
-          </div>
+    <ResultsCard
+      title="Comprobantes"
+      summary={
+        hayConsulta
+          ? `${visibles} documentos${
+              modo === "range" && periodo.desde
+                ? ` · ${periodo.desde} a ${periodo.hasta}`
+                : ""
+            }`
+          : "Selecciona un periodo para comenzar."
+      }
+      details={
+        <>
           {incidencias.length ? (
             <div className="flex flex-wrap items-center gap-1.5">
               {incidencias.map((item) => (
@@ -111,29 +108,6 @@ export function IntelisisUfeResultados({
                 </Badge>
               ))}
             </div>
-          ) : null}
-          {filtros.activos ? (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                {filtros.activos} filtro{filtros.activos === 1 ? "" : "s"} de la
-                tabla
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={filtros.onLimpiar}
-              >
-                <HugeiconsIcon
-                  icon={FilterRemoveIcon}
-                  size={14}
-                  strokeWidth={2}
-                  aria-hidden
-                />
-                Limpiar filtros
-              </Button>
-            </p>
           ) : null}
           {sunat.excedido ? (
             <p className="text-xs text-muted-foreground" role="status">
@@ -158,8 +132,10 @@ export function IntelisisUfeResultados({
               </Button>
             </p>
           ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-self-end">
+        </>
+      }
+      actions={
+        <>
           {reenvio.habilitado ? (
             <Button
               type="button"
@@ -207,9 +183,10 @@ export function IntelisisUfeResultados({
             />{" "}
             Exportar Excel{exportar.total ? ` (${exportar.total})` : ""}
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
+        </>
+      }
+    >
+      <>
         {!hayConsulta ? (
           <Empty>
             <EmptyHeader>
@@ -240,11 +217,15 @@ export function IntelisisUfeResultados({
             onRowClick={onRowClick}
             onFilteredRowsChange={onFilteredRowsChange}
           >
+            <DataTable.Toolbar
+              active={filtros.activos}
+              onClear={filtros.onLimpiar}
+            />
             <DataTable.View<IntelisisUfeRow> loading={loading} />
             <DataTable.Pagination loading={loading} />
           </DataTable.Root>
         )}
-      </CardContent>
-    </Card>
+      </>
+    </ResultsCard>
   );
 }

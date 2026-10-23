@@ -116,6 +116,23 @@ describe("DataTable interactions", () => {
     expect(screen.getByText("F001-00001")).toBeTruthy();
   });
 
+  it("clears filters that live outside the table", async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    render(
+      <DataTable.Root data={makeRows(3)} columns={voucherColumns()}>
+        <DataTable.Toolbar active={2} onClear={onClear} />
+        <DataTable.View<Voucher> />
+      </DataTable.Root>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Limpiar filtros (2)" }),
+    );
+
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
   it("opens a row with the keyboard", async () => {
     const user = userEvent.setup();
     const onRowClick = vi.fn();

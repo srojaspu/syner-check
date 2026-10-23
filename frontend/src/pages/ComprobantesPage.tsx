@@ -2,13 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FileDownIcon, Loading02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { exportExcel } from "../api/excel";
 import { formatMoney } from "../api/format";
 import type { FlowStageKey, Voucher } from "../api/types";
@@ -18,6 +11,7 @@ import { FlowBar } from "@/components/FlowBar";
 import { MovSynerPosConfirmDialog } from "@/components/MovSynerPosConfirmDialog";
 import { MovSynerPosProgress } from "@/components/MovSynerPosProgress";
 import { NumberPanel, RangePanel } from "@/components/SearchPanels";
+import { ResultsCard } from "@/components/ResultsCard";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { SunatProgress } from "@/components/SunatProgress";
 import { Tabs } from "@/components/Tabs";
@@ -211,25 +205,21 @@ export default function ComprobantesPage({
         />
       ) : null}
 
-      <Card>
-        <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <CardTitle>Resultados</CardTitle>
-              <CardDescription>
-                {vouchers.error ?? resultsSubtitle}
-              </CardDescription>
-            </div>
-            {vouchers.searched ? (
-              <p className="text-sm text-muted-foreground">
-                Total mostrado:{" "}
-                <span className="font-semibold tabular-nums text-foreground">
-                  {formatMoney(resultsTotal, resultsCurrency)}
-                </span>
-              </p>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2 sm:justify-self-end">
+      <ResultsCard
+        title="Resultados"
+        summary={vouchers.error ?? resultsSubtitle}
+        details={
+          vouchers.searched ? (
+            <p className="text-sm text-muted-foreground">
+              Total mostrado:{" "}
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatMoney(resultsTotal, resultsCurrency)}
+              </span>
+            </p>
+          ) : null
+        }
+        actions={
+          <>
             <Button
               type="button"
               variant="outline"
@@ -300,10 +290,10 @@ export default function ComprobantesPage({
                 {sunat.refreshing ? "Actualizando resultados…" : "Consultando…"}
               </span>
             ) : null}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {flowSelection ? (
+          </>
+        }
+      >
+        {flowSelection ? (
             <div
               className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm"
               aria-live="polite"
@@ -369,8 +359,7 @@ export default function ComprobantesPage({
             <DataTable.View<Voucher> loading={vouchers.loading} />
             <DataTable.Pagination loading={vouchers.loading} />
           </DataTable.Root>
-        </CardContent>
-      </Card>
+      </ResultsCard>
 
       <DetailDrawer
         open={detail.open}

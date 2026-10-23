@@ -777,12 +777,15 @@ describe("IntelisisUfePage", () => {
     await user.click(await screen.findByRole("option", { name: "Revisar" }));
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
-    expect(screen.getByText(/1 filtro de la tabla/)).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    await user.click(
+      screen.getByRole("button", { name: "Limpiar filtros (1)" }),
+    );
 
     expect(screen.getByText("B602-00000001")).toBeTruthy();
-    expect(screen.queryByText(/filtro de la tabla/)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Limpiar filtros/ }),
+    ).toBeNull();
   });
 
   it("valida en SUNAT solo los documentos seleccionados", async () => {
