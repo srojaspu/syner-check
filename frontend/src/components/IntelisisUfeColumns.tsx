@@ -91,6 +91,15 @@ export function intelisisUfeColumns(
                   estimado
                 </Badge>
               ) : null}
+              {/* Unica incidencia que no se deduce de Generador ni de SUNAT. */}
+              {doc.incidencias?.includes("CRUCE AMBIGUO") ? (
+                <Badge
+                  variant="destructive"
+                  title="Otra venta del periodo tiene el mismo documento"
+                >
+                  cruce ambiguo
+                </Badge>
+              ) : null}
             </span>
             <small className="text-muted-foreground">
               {doc.mov} {doc.mov_id}
@@ -214,41 +223,6 @@ export function intelisisUfeColumns(
           >
             {ESTADO_SUNAT_LABEL[doc.estado_sunat] ?? doc.estado_sunat}
           </Badge>
-        );
-      },
-    },
-    {
-      id: "resultado",
-      header: "Revisión",
-      accessorFn: (doc) => doc.resultado,
-      meta: { priority: "always" },
-      cell: ({ row }) => {
-        const doc = row.original;
-        const incidencias = doc.incidencias ?? [];
-        return (
-          <span className="flex flex-col items-start gap-1">
-            <Badge
-              variant={doc.resultado === "REVISAR" ? "destructive" : "secondary"}
-            >
-              {doc.resultado}
-            </Badge>
-            {incidencias.length ? (
-              <span
-                className="flex flex-col gap-0.5"
-                title={doc.detalle_incidencia ?? undefined}
-              >
-                {incidencias.map((item) => (
-                  <span key={item} className="text-xs font-medium">
-                    {item}
-                  </span>
-                ))}
-              </span>
-            ) : doc.exento_generador ? (
-              <span className="text-xs text-muted-foreground">
-                No aplica el generador
-              </span>
-            ) : null}
-          </span>
         );
       },
     },

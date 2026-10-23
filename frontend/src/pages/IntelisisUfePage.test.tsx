@@ -255,7 +255,6 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByText("B602-00142702")).toBeTruthy();
     expect(screen.getAllByText("OK REGISTRADO").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Aceptado").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("CONFORME").length).toBeGreaterThan(0);
   });
 
   it("abre la trazabilidad al hacer clic en un comprobante", () => {
@@ -339,28 +338,21 @@ describe("IntelisisUfePage", () => {
 
     expect(screen.getByText("estimado")).toBeTruthy();
     expect(screen.getAllByText("SIN TRAZA").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("REVISAR").length).toBeGreaterThan(0);
   });
 
-  it("junta el resultado y el motivo en la columna Revision", () => {
+  it("ya no muestra la columna Revision y marca el cruce ambiguo", () => {
     mocks.ufe.rows = [
-      fila({ id_venta: 1, comprobante: "B602-00000001" }),
-      fila({
-        id_venta: 2,
-        comprobante: "B602-00000002",
-        exento_generador: true,
-        incidencias: [],
-      }),
+      fila({ id_venta: 1, incidencias: ["CRUCE AMBIGUO"] }),
     ];
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
-    // La columna suelta de Incidencias ya no existe: el motivo vive en Revision.
     expect(
-      screen.queryByRole("columnheader", { name: /Incidencias/ }),
+      screen.queryByRole("columnheader", { name: /Revisión/ }),
     ).toBeNull();
-    expect(screen.getAllByText("No aplica el generador")).toHaveLength(1);
+    // Lo unico que no se deduce de Generador ni de SUNAT.
+    expect(screen.getByText("cruce ambiguo")).toBeTruthy();
   });
 
   it("avisa cuando Intelisis no esta disponible", () => {
@@ -442,9 +434,9 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByText("B602-00000001")).toBeTruthy();
     expect(screen.getByText("B602-00000002")).toBeTruthy();
 
-    // El filtro "Resultado = Revisar" oculta la fila conforme, al instante.
-    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
-    await user.click(screen.getByRole("option", { name: "Revisar" }));
+    // "Generador = Sin traza" oculta la fila conforme, al instante.
+    await user.click(screen.getByRole("combobox", { name: "Generador" }));
+    await user.click(await screen.findByRole("option", { name: "Sin traza" }));
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
     expect(screen.getByText("B602-00000002")).toBeTruthy();
@@ -743,10 +735,12 @@ describe("IntelisisUfePage", () => {
     expect(boton.disabled).toBe(false);
     expect(boton.textContent).toContain("(1)");
 
-    // Al filtrar por Conforme la fila marcada desaparece: no se encola algo
-    // que el usuario ya no ve en la tabla.
-    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
-    await user.click(await screen.findByRole("option", { name: "Conforme" }));
+    // Al filtrar por otro generador la fila marcada desaparece: no se encola
+    // algo que el usuario ya no ve en la tabla.
+    await user.click(screen.getByRole("combobox", { name: "Generador" }));
+    await user.click(
+      await screen.findByRole("option", { name: "OK registrado" }),
+    );
 
     expect(boton.disabled).toBe(true);
     expect(boton.textContent).not.toContain("(1)");
@@ -759,18 +753,18 @@ describe("IntelisisUfePage", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
-    // La fila es CONFORME: filtrar por REVISAR deja la tabla sin resultados.
-    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
-    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+    // La fila tiene traza: filtrar por "Sin traza" deja la tabla vacia.
+    await user.click(screen.getByRole("combobox", { name: "Generador" }));
+    await user.click(await screen.findByRole("option", { name: "Sin traza" }));
 
     expect(screen.getByText("No encontramos comprobantes")).toBeTruthy();
     // La cabecera se queda: los filtros siguen accesibles para deshacerlo.
-    const filtro = screen.getByRole("combobox", { name: "Resultado" });
+    const filtro = screen.getByRole("combobox", { name: "Generador" });
     expect(filtro).toBeTruthy();
 
     await user.click(filtro);
     // Volver a elegir el mismo valor quita el filtro (toggle del panel).
-    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+    await user.click(await screen.findByRole("option", { name: "Sin traza" }));
 
     expect(screen.getByText("B602-00000001")).toBeTruthy();
   });
@@ -792,8 +786,8 @@ describe("IntelisisUfePage", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
-    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
-    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+    await user.click(screen.getByRole("combobox", { name: "Generador" }));
+    await user.click(await screen.findByRole("option", { name: "Sin traza" }));
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
 

@@ -59,11 +59,6 @@ export function FiltroSelect({
   );
 }
 
-const OPCIONES_RESULTADO = [
-  { value: "CONFORME", label: "Conforme" },
-  { value: "REVISAR", label: "Revisar" },
-];
-
 const OPCIONES_GENERADOR = [
   { value: "OK REGISTRADO", label: "OK registrado" },
   { value: "SIN OK", label: "Sin OK" },
@@ -182,17 +177,17 @@ export function creaRenderFiltro(
             className="h-8"
           />
         );
-      case "resultado":
+      case "generador":
         return (
           <div className="flex flex-col gap-1">
             <FiltroSelect
-              label="Resultado"
-              value={filtros.resultado ?? ""}
+              label="Generador"
+              value={filtros.generador ?? ""}
               placeholder="Todos"
-              options={OPCIONES_RESULTADO}
-              onChange={(valor) => alternar("resultado", valor)}
+              options={OPCIONES_GENERADOR}
+              onChange={(valor) => alternar("generador", valor)}
             />
-            {/* La columna Revisión muestra el motivo: su filtro va aqui. */}
+            {/* Sin columna Revisión, el tipo de incidencia se filtra aqui. */}
             <FiltroSelect
               label="Incidencia"
               value={filtros.incidencia ?? ""}
@@ -204,16 +199,6 @@ export function creaRenderFiltro(
               onChange={(valor) => alternar("incidencia", valor)}
             />
           </div>
-        );
-      case "generador":
-        return (
-          <FiltroSelect
-            label="Generador"
-            value={filtros.generador ?? ""}
-            placeholder="Todos"
-            options={OPCIONES_GENERADOR}
-            onChange={(valor) => alternar("generador", valor)}
-          />
         );
       case "tipo":
         return (
