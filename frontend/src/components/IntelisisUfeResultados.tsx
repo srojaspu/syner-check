@@ -47,6 +47,8 @@ interface IntelisisUfeResultadosProps {
     onValidar: () => void;
   };
   exportar: { total: number; truncado: boolean; onExportar: () => void };
+  /** Filtros que no son de una columna (Resultado, Incidencia). */
+  toolbarAction?: ReactNode;
   onRowClick: (row: IntelisisUfeRow) => void;
   onFilteredRowsChange: (rows: IntelisisUfeRow[]) => void;
 }
@@ -73,6 +75,7 @@ export function IntelisisUfeResultados({
   reenvio,
   sunat,
   exportar,
+  toolbarAction,
   onRowClick,
   onFilteredRowsChange,
 }: IntelisisUfeResultadosProps) {
@@ -204,6 +207,7 @@ export function IntelisisUfeResultados({
             <DataTable.Toolbar
               active={filtros.activos}
               onClear={filtros.onLimpiar}
+              action={toolbarAction}
             />
             <DataTable.View<IntelisisUfeRow> loading={loading} />
             <DataTable.Pagination loading={loading} />

@@ -444,6 +444,34 @@ describe("IntelisisUfePage", () => {
     expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
   });
 
+  it("los filtros de resultado viven en la barra, no en una columna", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        resultado: "REVISAR",
+        estado_generacion: "sin_registro",
+        generador: "SIN TRAZA",
+        incidencias: ["SIN TRAZA"],
+      }),
+    ];
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    // Generador vuelve a tener un solo control en su celda de filtro.
+    expect(
+      screen.getAllByRole("combobox", { name: "Generador" }),
+    ).toHaveLength(1);
+
+    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
+    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+
+    expect(screen.queryByText("B602-00000001")).toBeNull();
+    expect(screen.getByText("B602-00000002")).toBeTruthy();
+  });
+
   it("avisa cuando el listado viene recortado", () => {
     mocks.ufe.truncado = true;
     mocks.ufe.maxFilas = 5000;

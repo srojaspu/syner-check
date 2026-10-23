@@ -59,6 +59,11 @@ export function FiltroSelect({
   );
 }
 
+const OPCIONES_RESULTADO = [
+  { value: "CONFORME", label: "Conforme" },
+  { value: "REVISAR", label: "Revisar" },
+];
+
 const OPCIONES_GENERADOR = [
   { value: "OK REGISTRADO", label: "OK registrado" },
   { value: "SIN OK", label: "Sin OK" },
@@ -142,6 +147,22 @@ export function filtraUfeFilas(
   });
 }
 
+/** Alterna un filtro del borrador: elegir el valor activo lo quita. */
+export function aplicaFiltro(
+  filtros: IntelisisUfeFiltros,
+  clave: keyof IntelisisUfeFiltros,
+  valor: string,
+): IntelisisUfeFiltros {
+  const esIgual = String(filtros[clave] ?? "") === valor;
+  const siguiente: IntelisisUfeFiltros = { ...filtros };
+  if (esIgual) {
+    delete siguiente[clave];
+  } else {
+    siguiente[clave] = valor as never;
+  }
+  return siguiente;
+}
+
 /**
  * Fila de filtros de la tabla (la misma de la pantalla de comprobantes).
  *
@@ -153,17 +174,8 @@ export function creaRenderFiltro(
   onCambio: (filtros: IntelisisUfeFiltros) => void,
   kpis: IntelisisUfeKpis | null,
 ): (column: Column<IntelisisUfeRow>) => React.ReactNode {
-  const alternar = (clave: keyof IntelisisUfeFiltros, valor: string) => {
-    const actual = filtros[clave];
-    const esIgual = String(actual ?? "") === valor;
-    const siguiente: IntelisisUfeFiltros = { ...filtros };
-    if (esIgual) {
-      delete siguiente[clave];
-    } else {
-      siguiente[clave] = valor as never;
-    }
-    onCambio(siguiente);
-  };
+  const alternar = (clave: keyof IntelisisUfeFiltros, valor: string) =>
+    onCambio(aplicaFiltro(filtros, clave, valor));
 
   return (column) => {
     switch (column.id) {
@@ -179,26 +191,13 @@ export function creaRenderFiltro(
         );
       case "generador":
         return (
-          <div className="flex flex-col gap-1">
-            <FiltroSelect
-              label="Generador"
-              value={filtros.generador ?? ""}
-              placeholder="Todos"
-              options={OPCIONES_GENERADOR}
-              onChange={(valor) => alternar("generador", valor)}
-            />
-            {/* Sin columna Revisión, el tipo de incidencia se filtra aqui. */}
-            <FiltroSelect
-              label="Incidencia"
-              value={filtros.incidencia ?? ""}
-              placeholder="Todas"
-              options={(kpis?.por_incidencia ?? []).map((item) => ({
-                value: item.key,
-                label: `${item.key} (${item.count})`,
-              }))}
-              onChange={(valor) => alternar("incidencia", valor)}
-            />
-          </div>
+          <FiltroSelect
+            label="Generador"
+            value={filtros.generador ?? ""}
+            placeholder="Todos"
+            options={OPCIONES_GENERADOR}
+            onChange={(valor) => alternar("generador", valor)}
+          />
         );
       case "tipo":
         return (
@@ -254,4 +253,57 @@ export function creaRenderFiltro(
         return null;
     }
   };
+}
+
+/**
+ * Filtros semánticos de la tabla: no pertenecen a una columna, así que no van
+ * en la fila de filtros por columna sino en la barra de la tabla.
+ *
+ * - **Resultado** es un agregado (Generador + SUNAT + cruce ambiguo).
+ * - **Incidencia** es la lista derivada de motivos.
+ *
+ * Se mantienen fuera de la celda de una columna para no romper el patrón
+ * "un filtro por columna" ni ocultar controles detrás de una columna que
+ * puede plegarse según el ancho.
+ */
+export function IntelisisUfeRevisionFiltros({
+  filtros,
+  onCambio,
+  kpis,
+}: {
+  filtros: IntelisisUfeFiltros;
+  onCambio: (filtros: IntelisisUfeFiltros) => void;
+  kpis: IntelisisUfeKpis | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Resultado</span>
+        <FiltroSelect
+          label="Resultado"
+          value={filtros.resultado ?? ""}
+          placeholder="Todos"
+          options={OPCIONES_RESULTADO}
+          onChange={(valor) =>
+            onCambio(aplicaFiltro(filtros, "resultado", valor))
+          }
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Incidencia</span>
+        <FiltroSelect
+          label="Incidencia"
+          value={filtros.incidencia ?? ""}
+          placeholder="Todas"
+          options={(kpis?.por_incidencia ?? []).map((item) => ({
+            value: item.key,
+            label: `${item.key} (${item.count})`,
+          }))}
+          onChange={(valor) =>
+            onCambio(aplicaFiltro(filtros, "incidencia", valor))
+          }
+        />
+      </div>
+    </div>
+  );
 }

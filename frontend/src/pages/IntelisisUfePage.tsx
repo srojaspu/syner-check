@@ -9,7 +9,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
 import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
-import { creaRenderFiltro, filtraUfeFilas } from "@/components/IntelisisUfeFiltros";
+import {
+  creaRenderFiltro,
+  filtraUfeFilas,
+  IntelisisUfeRevisionFiltros,
+} from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
 import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
 import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialog";
@@ -389,6 +393,13 @@ export default function IntelisisUfePage({
         periodo={{ desde: ufe.desde, hasta: ufe.hasta }}
         visibles={visibles.length}
         incidencias={kpis?.por_incidencia ?? []}
+        toolbarAction={
+          <IntelisisUfeRevisionFiltros
+            filtros={borrador}
+            onCambio={setBorrador}
+            kpis={kpis}
+          />
+        }
         seleccionados={seleccionadas.length}
         filtros={{
           activos: filtrosActivos,
