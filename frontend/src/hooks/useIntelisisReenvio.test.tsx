@@ -89,7 +89,7 @@ describe("useIntelisisReenvio", () => {
   it("carga el panel al montar y expone el flag y el tope", async () => {
     const { result } = await montar();
 
-    expect(panelMock).toHaveBeenCalledWith({ limit: 20, estado: undefined });
+    expect(panelMock).toHaveBeenCalledWith({ limit: 100, estado: undefined });
     expect(result.current.panel?.habilitado).toBe(true);
     expect(result.current.panel?.max_batch).toBe(10);
     expect(result.current.panelLoading).toBe(false);
@@ -104,7 +104,7 @@ describe("useIntelisisReenvio", () => {
     });
 
     expect(panelMock).toHaveBeenCalledWith({
-      limit: 20,
+      limit: 100,
       estado: "NO_CONFIRMADO",
     });
     expect(result.current.filtro).toBe("NO_CONFIRMADO");

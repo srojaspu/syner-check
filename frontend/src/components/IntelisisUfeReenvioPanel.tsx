@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Loading02Icon,
@@ -12,161 +13,19 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { DataTable } from "@/components/DataTable";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ESTADOS_REENVIO,
+  fechaHora,
+  intelisisReenvioColumns,
+} from "./IntelisisReenvioColumns";
 import type {
   IntelisisReenvioCola,
-  IntelisisReenvioEstado,
   IntelisisReenvioFila,
 } from "../api/types";
 
-const ESTADOS: { value: IntelisisReenvioEstado; label: string }[] = [
-  { value: "EN_COLA", label: "En cola" },
-  { value: "EJECUTANDO", label: "Ejecutando" },
-  { value: "FINALIZADO_OK", label: "Finalizado OK" },
-  { value: "FINALIZADO_REVISAR", label: "Finalizado · revisar" },
-  { value: "NO_EJECUTADO", label: "No ejecutado" },
-  { value: "NO_CONFIRMADO", label: "Sin confirmar" },
-  { value: "REVISADO_MANUAL", label: "Revisado a mano" },
-];
-
-const ETIQUETA: Record<string, string> = Object.fromEntries(
-  ESTADOS.map((estado) => [estado.value, estado.label]),
-);
-
-type BadgeVariant = "default" | "secondary" | "outline" | "destructive";
-
-function variante(estado: string): BadgeVariant {
-  if (estado === "FINALIZADO_OK") return "default";
-  if (estado === "FINALIZADO_REVISAR" || estado === "NO_CONFIRMADO") {
-    return "destructive";
-  }
-  if (estado === "EN_COLA" || estado === "EJECUTANDO") return "secondary";
-  return "outline";
-}
-
-/** Timestamp del ERP sin segundos ni zona: es lo que se muestra en el PHP. */
-function fechaHora(valor: string | null): string {
-  if (!valor) return "—";
-  return String(valor).replace("T", " ").slice(0, 16);
-}
-
-function EstadoBadge({ estado }: { estado: string }) {
-  return <Badge variant={variante(estado)}>{ETIQUETA[estado] ?? estado}</Badge>;
-}
-
-function FilaReenvio({
-  fila,
-  resolviendo,
-  onResolver,
-}: {
-  fila: IntelisisReenvioFila;
-  resolviendo: number | null;
-  onResolver: (fila: IntelisisReenvioFila) => void;
-}) {
-  return (
-    <TableRow>
-      <TableCell className="tabular-nums text-muted-foreground">
-        {fila.ID}
-      </TableCell>
-      <TableCell className="tabular-nums">{fila.IDVenta}</TableCell>
-      <TableCell>
-        <Badge variant="outline">{fila.Tipo || "—"}</Badge>
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {fila.Procedimiento || "—"}
-      </TableCell>
-      <TableCell>
-        <EstadoBadge estado={fila.Estado} />
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {fila.Usuario || "—"}
-      </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
-        {fechaHora(fila.Creado)}
-      </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
-        {fechaHora(fila.Fin)}
-      </TableCell>
-      <TableCell className="max-w-56 truncate text-muted-foreground">
-        <span title={fila.Revision || fila.Detalle || fila.Motivo || undefined}>
-          {fila.Revision || fila.Detalle || fila.Motivo || "—"}
-        </span>
-      </TableCell>
-      <TableCell className="text-right">
-        {fila.Estado === "NO_CONFIRMADO" ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={resolviendo === fila.ID}
-            onClick={() => onResolver(fila)}
-          >
-            {resolviendo === fila.ID ? "Cerrando…" : "Resolver"}
-          </Button>
-        ) : null}
-      </TableCell>
-    </TableRow>
-  );
-}
-
-function TablaReenvios({
-  filas,
-  vacio,
-  resolviendo,
-  onResolver,
-}: {
-  filas: IntelisisReenvioFila[];
-  vacio: string;
-  resolviendo: number | null;
-  onResolver: (fila: IntelisisReenvioFila) => void;
-}) {
-  if (!filas.length) {
-    return (
-      <p className="py-3 text-sm text-muted-foreground" role="status">
-        {vacio}
-      </p>
-    );
-  }
-  return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">#</TableHead>
-            <TableHead scope="col">Venta</TableHead>
-            <TableHead scope="col">Tipo</TableHead>
-            <TableHead scope="col">Generador</TableHead>
-            <TableHead scope="col">Estado</TableHead>
-            <TableHead scope="col">Usuario</TableHead>
-            <TableHead scope="col">Creado</TableHead>
-            <TableHead scope="col">Fin</TableHead>
-            <TableHead scope="col">Detalle</TableHead>
-            <TableHead scope="col" className="text-right">
-              Acción
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filas.map((fila) => (
-            <FilaReenvio
-              key={fila.ID}
-              fila={fila}
-              resolviendo={resolviendo}
-              onResolver={onResolver}
-            />
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
+/** Paginacion de la cola: las dos tablas comparten los mismos tamanos. */
+const TAMANOS_PAGINA = [10, 20, 50];
 
 interface IntelisisUfeReenvioPanelProps {
   panel: IntelisisReenvioCola | null;
@@ -182,9 +41,12 @@ interface IntelisisUfeReenvioPanelProps {
 /**
  * Panel de la cola del ERP (`feop_queue`).
  *
- * Muestra el heartbeat del worker PHP (`dbo.FE_Worker`), lo que está en curso,
- * lo que quedó sin confirmar y el historial. Mientras haya trabajo se refresca
+ * Muestra el heartbeat del worker PHP (`dbo.FE_Worker`), lo que esta en curso,
+ * lo que quedo sin confirmar y el historial. Mientras haya trabajo se refresca
  * solo; sin trabajo no consulta nada.
+ *
+ * Las tablas usan el `DataTable` comun con paginacion de 10/20/50. El sondeo
+ * no reinicia la pagina: solo el cambio de filtro lo hace (via `key`).
  */
 export function IntelisisUfeReenvioPanel({
   panel,
@@ -202,6 +64,11 @@ export function IntelisisUfeReenvioPanel({
   const resumen = panel?.resumen ?? {};
   const enCola = resumen.EN_COLA ?? panel?.pendientes ?? 0;
   const ejecutando = resumen.EJECUTANDO ?? 0;
+
+  const columns = useMemo(
+    () => intelisisReenvioColumns({ resolviendo, onResolver }),
+    [resolviendo, onResolver],
+  );
 
   return (
     <Card>
@@ -274,12 +141,26 @@ export function IntelisisUfeReenvioPanel({
 
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-medium">En curso</h3>
-          <TablaReenvios
-            filas={activos}
-            vacio="No hay reenvíos activos."
-            resolviendo={resolviendo}
-            onResolver={onResolver}
-          />
+          <DataTable.Root
+            data={activos}
+            columns={columns}
+            showFilters={false}
+            initialPageSize={10}
+            resetPageOnDataChange={false}
+          >
+            <DataTable.View<IntelisisReenvioFila>
+              label="Reenvíos en curso"
+              loading={loading}
+              empty={
+                <p className="text-sm text-muted-foreground">
+                  No hay reenvíos activos.
+                </p>
+              }
+            />
+            {activos.length ? (
+              <DataTable.Pagination pageSizeOptions={TAMANOS_PAGINA} />
+            ) : null}
+          </DataTable.Root>
         </section>
 
         <section className="flex flex-col gap-2">
@@ -294,7 +175,7 @@ export function IntelisisUfeReenvioPanel({
                 aria-label="Filtrar el historial por estado"
               >
                 <NativeSelectOption value="">Todos</NativeSelectOption>
-                {ESTADOS.map((estado) => (
+                {ESTADOS_REENVIO.map((estado) => (
                   <NativeSelectOption key={estado.value} value={estado.value}>
                     {estado.label}
                   </NativeSelectOption>
@@ -302,12 +183,27 @@ export function IntelisisUfeReenvioPanel({
               </NativeSelect>
             </label>
           </div>
-          <TablaReenvios
-            filas={historial}
-            vacio="Todavía no hay reenvíos en el historial."
-            resolviendo={resolviendo}
-            onResolver={onResolver}
-          />
+          <DataTable.Root
+            key={`historial-${filtro}`}
+            data={historial}
+            columns={columns}
+            showFilters={false}
+            initialPageSize={10}
+            resetPageOnDataChange={false}
+          >
+            <DataTable.View<IntelisisReenvioFila>
+              label="Historial de reenvíos"
+              loading={loading}
+              empty={
+                <p className="text-sm text-muted-foreground">
+                  Todavía no hay reenvíos en el historial.
+                </p>
+              }
+            />
+            {historial.length ? (
+              <DataTable.Pagination pageSizeOptions={TAMANOS_PAGINA} />
+            ) : null}
+          </DataTable.Root>
         </section>
       </CardContent>
     </Card>

@@ -102,6 +102,12 @@ interface RootProps<T> {
    * que viven en el servidor (la fila sigue siendo la de la tabla).
    */
   renderFilter?: (column: Column<T>) => ReactNode;
+  /**
+   * False for tables que se refrescan solas (polling): un sondeo no debe
+   * devolver al usuario a la primera pagina. El filtro externo debe remontar
+   * el componente (``key``) para volver a empezar.
+   */
+  resetPageOnDataChange?: boolean;
 }
 
 /** Per-column filter configuration read from columnDef.meta.filter. */
@@ -201,6 +207,7 @@ function Root<T>({
   onFilteredRowsChange,
   showFilters = true,
   renderFilter,
+  resetPageOnDataChange = true,
 }: RootProps<T>) {
   // All interactive table state is controlled here: nothing implicit,
   // nothing shared between searches, nothing that can go stale.
@@ -240,12 +247,12 @@ function Root<T>({
     getPaginationRowModel: getPaginationRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-    autoResetPageIndex: true,
+    autoResetPageIndex: resetPageOnDataChange,
     // Rows are data-only; clicks open the detail drawer.
     meta: { onRowClick },
   });
 
-  useResetPageOnDataChange(data, setPagination);
+  useResetPageOnDataChange(data, setPagination, resetPageOnDataChange);
 
   // Push filtered originals up (all pages). getFilteredRowModel() memoizes on
   // filters/data, so `filteredRows` keeps a stable identity between renders.
@@ -288,14 +295,19 @@ function useResetPageOnDataChange<T>(
   setPagination: Dispatch<
     SetStateAction<{ pageIndex: number; pageSize: number }>
   >,
+  enabled: boolean,
 ) {
   const previous = useRef(data);
   useEffect(() => {
+    if (!enabled) {
+      previous.current = data;
+      return;
+    }
     if (previous.current !== data) {
       previous.current = data;
       setPagination((current) => ({ ...current, pageIndex: 0 }));
     }
-  }, [data, setPagination]);
+  }, [data, setPagination, enabled]);
 }
 
 function Toolbar({
@@ -451,7 +463,16 @@ function rowActionLabel<T>(row: T): string {
     : "Ver detalle del comprobante";
 }
 
-function View<T>({ loading }: { loading?: boolean }) {
+function View<T>({
+  loading,
+  empty,
+  label = "Comprobantes",
+}: {
+  loading?: boolean;
+  /** Contenido para cuando no hay filas (por defecto, el de comprobantes). */
+  empty?: ReactNode;
+  label?: string;
+}) {
   const table = useTableInstance<T>();
   const showFilters = useShowFilters();
   const renderFilter = useRenderFilter();
@@ -462,7 +483,7 @@ function View<T>({ loading }: { loading?: boolean }) {
   const onRowClick = (table.options.meta as { onRowClick?: (row: T) => void })
     ?.onRowClick;
   return (
-    <UiTable aria-label="Comprobantes">
+    <UiTable aria-label={label}>
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id}>
@@ -570,17 +591,21 @@ function View<T>({ loading }: { loading?: boolean }) {
               className="px-3 py-10 text-center"
             >
               <div className="flex flex-col items-center gap-1.5">
-                <HugeiconsIcon
-                  icon={SearchXIcon}
-                  size={20}
-                  strokeWidth={2}
-                  className="text-muted-foreground"
-                  aria-hidden
-                />
-                <p className="font-medium">No encontramos comprobantes</p>
-                <p className="text-sm text-muted-foreground">
-                  Ajusta o limpia los filtros para ver otros documentos.
-                </p>
+                {empty ?? (
+                  <>
+                    <HugeiconsIcon
+                      icon={SearchXIcon}
+                      size={20}
+                      strokeWidth={2}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                    <p className="font-medium">No encontramos comprobantes</p>
+                    <p className="text-sm text-muted-foreground">
+                      Ajusta o limpia los filtros para ver otros documentos.
+                    </p>
+                  </>
+                )}
               </div>
             </TableCell>
           </TableRow>
@@ -590,7 +615,13 @@ function View<T>({ loading }: { loading?: boolean }) {
   );
 }
 
-function Pagination({ loading }: { loading?: boolean }) {
+function Pagination({
+  loading,
+  pageSizeOptions = [25, 50, 100],
+}: {
+  loading?: boolean;
+  pageSizeOptions?: number[];
+}) {
   const table = useTableInstance();
   if (loading) {
     return (
@@ -633,7 +664,7 @@ function Pagination({ loading }: { loading?: boolean }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[25, 50, 100].map((size) => (
+              {pageSizeOptions.map((size) => (
                 <SelectItem key={size} value={String(size)}>
                   {size}
                 </SelectItem>

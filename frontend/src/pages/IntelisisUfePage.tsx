@@ -272,6 +272,16 @@ export default function IntelisisUfePage({
     [borrador],
   );
 
+  // Estable: las columnas de la cola se memoizan con este callback.
+  const { limpiarErrorResolucion } = reenvio;
+  const abrirRevision = useCallback(
+    (fila: IntelisisReenvioFila) => {
+      limpiarErrorResolucion();
+      setResolviendoFila(fila);
+    },
+    [limpiarErrorResolucion],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Tabs mode={modo} onChange={setModo} />
@@ -427,10 +437,7 @@ export default function IntelisisUfePage({
         resolviendo={reenvio.resolviendo}
         onFiltro={reenvio.cambiarFiltro}
         onRecargar={reenvio.recargar}
-        onResolver={(fila) => {
-          reenvio.limpiarErrorResolucion();
-          setResolviendoFila(fila);
-        }}
+        onResolver={abrirRevision}
       />
 
       <IntelisisUfeReenvioDialog

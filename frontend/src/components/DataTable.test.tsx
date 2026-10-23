@@ -133,6 +133,24 @@ describe("DataTable interactions", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts custom page sizes and an empty message", async () => {
+    const user = userEvent.setup();
+    render(
+      <DataTable.Root data={[]} columns={voucherColumns()} showFilters={false}>
+        <DataTable.View<Voucher> label="Cola" empty={<p>Sin trabajo</p>} />
+        <DataTable.Pagination pageSizeOptions={[10, 20, 50]} />
+      </DataTable.Root>,
+    );
+
+    expect(screen.getByRole("table", { name: "Cola" })).toBeTruthy();
+    expect(screen.getByText("Sin trabajo")).toBeTruthy();
+
+    await user.click(screen.getByRole("combobox", { name: "Filas" }));
+    expect(await screen.findByRole("option", { name: "10" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "20" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "50" })).toBeTruthy();
+  });
+
   it("opens a row with the keyboard", async () => {
     const user = userEvent.setup();
     const onRowClick = vi.fn();

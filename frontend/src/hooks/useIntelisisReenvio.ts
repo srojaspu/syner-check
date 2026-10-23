@@ -12,8 +12,8 @@ import type {
 
 /** Cadencia del panel mientras el worker tiene trabajo. */
 export const REENVIO_POLL_MS = 5000;
-/** Filas de historial que se piden al panel. */
-const HISTORIAL_LIMITE = 20;
+/** Filas de historial que se piden al panel (2 paginas de 50). */
+const HISTORIAL_LIMITE = 100;
 
 interface ReenvioState {
   /** Foto de la cola del ERP (null hasta la primera respuesta). */
