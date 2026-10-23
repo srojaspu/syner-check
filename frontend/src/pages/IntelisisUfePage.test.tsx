@@ -733,6 +733,49 @@ describe("IntelisisUfePage", () => {
     expect(boton.disabled).toBe(true);
   });
 
+  it("mantiene la fila de filtros cuando ningun documento coincide", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [fila({ id_venta: 1, comprobante: "B602-00000001" })];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    // La fila es CONFORME: filtrar por REVISAR deja la tabla sin resultados.
+    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
+    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+
+    expect(screen.getByText("No encontramos comprobantes")).toBeTruthy();
+    // La cabecera se queda: los filtros siguen accesibles para deshacerlo.
+    const filtro = screen.getByRole("combobox", { name: "Resultado" });
+    expect(filtro).toBeTruthy();
+
+    await user.click(filtro);
+    // Volver a elegir el mismo valor quita el filtro (toggle del panel).
+    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+  });
+
+  it("valida en SUNAT solo los documentos seleccionados", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({ id_venta: 2, comprobante: "B602-00000002" }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    const boton = screen.getByRole("button", { name: /Validar en SUNAT/ });
+    expect(boton.textContent).toContain("(2)");
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Seleccionar B602-00000002" }),
+    );
+
+    expect(boton.textContent).toContain("(1)");
+  });
+
   it("muestra el error de la cola sin romper la pantalla", () => {
     mocks.reenvio.panelError = "No fue posible consultar la cola de reenvíos.";
 

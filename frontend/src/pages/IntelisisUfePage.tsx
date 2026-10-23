@@ -2,24 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CalendarDaysIcon,
-  FileDownIcon,
   InformationCircleIcon,
-  Loading02Icon,
   TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { DataTable } from "@/components/DataTable";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
 import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
@@ -29,6 +15,7 @@ import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso"
 import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialog";
 import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel";
 import { IntelisisUfeResolverDialog } from "@/components/IntelisisUfeResolverDialog";
+import { IntelisisUfeResultados } from "@/components/IntelisisUfeResultados";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
@@ -240,10 +227,15 @@ export default function IntelisisUfePage({
   const maxBatch = reenvio.panel?.max_batch ?? 10;
   const reenvioHabilitado = reenvio.panel?.habilitado === true;
 
+  /**
+   * Documentos que se validaran en SUNAT: manda la seleccion cuando existe
+   * (permite acotar un periodo grande); sin seleccion, todos los mostrados.
+   */
+  const documentosSunat = seleccionadas.length ? seleccionadas : filas;
   /** Documentos consultables en SUNAT (el backend arma el payload final). */
   const consultables: SunatDocumentInput[] = useMemo(
     () =>
-      filas
+      documentosSunat
         .filter((fila) => fila.tipo_sunat && fila.comprobante)
         .map((fila) => ({
           tipo: fila.tipo_sunat,
@@ -252,7 +244,7 @@ export default function IntelisisUfePage({
           crossTotal: fila.total,
           sunat: { estado: fila.estado_sunat },
         })),
-    [filas],
+    [documentosSunat],
   );
 
   const refrescar = useCallback(async () => {
@@ -368,158 +360,48 @@ export default function IntelisisUfePage({
         <IntelisisUfeCobertura dias={kpis.por_dia} />
       ) : null}
 
-      <Card>
-        <CardHeader className="gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="text-base font-medium">Comprobantes</h2>
-              <span className="text-sm text-muted-foreground" aria-live="polite">
-                {hayConsulta
-                  ? `${visibles.length} documentos${
-                      modo === "range" && ufe.desde
-                        ? ` · ${ufe.desde} a ${ufe.hasta}`
-                        : ""
-                    }`
-                  : "Selecciona un periodo para comenzar."}
-              </span>
-            </div>
-            {kpis && kpis.por_incidencia.length ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {kpis.por_incidencia.map((item) => (
-                  <Badge key={item.key} variant="outline">
-                    {item.key}: {item.count}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-            {loteExcedido ? (
-              <p className="text-xs text-muted-foreground" role="status">
-                La validacion SUNAT admite {SUNAT_LOTE_MAX.toLocaleString("es-PE")}{" "}
-                documentos por solicitud y hay{" "}
-                {consultables.length.toLocaleString("es-PE")}: filtra la tabla
-                (resultado, generador o tipo) para dejar menos.
-              </p>
-            ) : null}
-            {seleccionadas.length ? (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span aria-live="polite">
-                  {seleccionadas.length} seleccionado
-                  {seleccionadas.length === 1 ? "" : "s"} para reenviar
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => setSeleccion(new Set<number>())}
-                >
-                  Limpiar selección
-                </Button>
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-self-end">
-            {reenvioHabilitado ? (
-              <Button
-                type="button"
-                disabled={!seleccionadas.length}
-                onClick={() => {
-                  reenvio.limpiarMensajes();
-                  setReenvioDialogOpen(true);
-                }}
-                title="Encola los documentos marcados en la cola del ERP"
-              >
-                Reenviar selección
-                {seleccionadas.length ? ` (${seleccionadas.length})` : ""}
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!consultables.length || sunat.busy || loteExcedido}
-              onClick={() => setSunatDialogOpen(true)}
-              title={
-                loteExcedido
-                  ? `El tope por solicitud es de ${SUNAT_LOTE_MAX} documentos`
-                  : "Consulta en SUNAT los documentos mostrados"
-              }
-            >
-              {sunat.busy ? (
-                <HugeiconsIcon
-                  icon={Loading02Icon}
-                  size={16}
-                  strokeWidth={2}
-                  className="animate-spin"
-                  aria-hidden
-                />
-              ) : null}{" "}
-              Validar en SUNAT
-              {consultables.length ? ` (${consultables.length})` : ""}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!visibles.length}
-              onClick={() =>
-                void exportIntelisisUfeExcel(visibles, {
-                  truncado: ufe.truncado,
-                  filtradosTotal: ufe.filtradosTotal,
-                })
-              }
-              title={
-                ufe.truncado
-                  ? "El listado esta recortado: el archivo lo deja constancia"
-                  : "Exporta los documentos mostrados"
-              }
-            >
-              <HugeiconsIcon
-                icon={FileDownIcon}
-                size={16}
-                strokeWidth={2}
-                aria-hidden
-              />{" "}
-              Exportar Excel
-              {visibles.length ? ` (${visibles.length})` : ""}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!hayConsulta ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <HugeiconsIcon icon={CalendarDaysIcon} strokeWidth={2} />
-                </EmptyMedia>
-                <EmptyTitle>Aun no hay consulta</EmptyTitle>
-                <EmptyDescription>
-                  {modo === "range" ? (
-                    <>
-                      Elige el periodo y pulsa <b>Consultar</b>. No se
-                      consulta nada hasta que lo pidas.
-                    </>
-                  ) : (
-                    <>
-                      Escribe el numero de comprobante y pulsa <b>Buscar</b>.
-                    </>
-                  )}
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <DataTable.Root
-              key={`${modo}-${ufe.desde}-${ufe.hasta}`}
-              data={filas}
-              columns={columns}
-              renderFilter={renderFiltro}
-              onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
-              onFilteredRowsChange={setFilteredRows}
-            >
-              <DataTable.View<IntelisisUfeRow> loading={ufe.loading} />
-              <DataTable.Pagination loading={ufe.loading} />
-            </DataTable.Root>
-          )}
-        </CardContent>
-      </Card>
+      <IntelisisUfeResultados
+        filas={filas}
+        columns={columns}
+        renderFiltro={renderFiltro}
+        loading={ufe.loading}
+        hayConsulta={hayConsulta}
+        modo={modo}
+        periodo={{ desde: ufe.desde, hasta: ufe.hasta }}
+        visibles={visibles.length}
+        incidencias={kpis?.por_incidencia ?? []}
+        seleccion={{
+          total: seleccionadas.length,
+          onLimpiar: () => setSeleccion(new Set<number>()),
+        }}
+        reenvio={{
+          habilitado: reenvioHabilitado,
+          total: seleccionadas.length,
+          onReenviar: () => {
+            reenvio.limpiarMensajes();
+            setReenvioDialogOpen(true);
+          },
+        }}
+        sunat={{
+          total: consultables.length,
+          excedido: loteExcedido,
+          busy: sunat.busy,
+          limite: SUNAT_LOTE_MAX,
+          onValidar: () => setSunatDialogOpen(true),
+        }}
+        exportar={{
+          total: visibles.length,
+          truncado: ufe.truncado,
+          onExportar: () => {
+            void exportIntelisisUfeExcel(visibles, {
+              truncado: ufe.truncado,
+              filtradosTotal: ufe.filtradosTotal,
+            });
+          },
+        }}
+        onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
+        onFilteredRowsChange={setFilteredRows}
+      />
 
       <IntelisisUfeReenvioAviso
         resultado={reenvio.resultado}

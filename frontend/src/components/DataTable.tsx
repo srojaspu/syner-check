@@ -35,13 +35,6 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -455,21 +448,6 @@ function View<T>({ loading }: { loading?: boolean }) {
     return <SkeletonRows table={table} />;
   }
   const rows = table.getRowModel().rows;
-  if (!rows.length) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <HugeiconsIcon icon={SearchXIcon} strokeWidth={2} />
-          </EmptyMedia>
-          <EmptyTitle>No encontramos comprobantes</EmptyTitle>
-          <EmptyDescription>
-            Prueba otro rango, tipo o número.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
   const onRowClick = (table.options.meta as { onRowClick?: (row: T) => void })
     ?.onRowClick;
   return (
@@ -539,38 +517,63 @@ function View<T>({ loading }: { loading?: boolean }) {
         ) : null}
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
-          <TableRow
-            key={row.id}
-            onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-            onKeyDown={
-              onRowClick
-                ? (event) => {
-                    if (event.target !== event.currentTarget) return;
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onRowClick(row.original);
-                  }
-                : undefined
-            }
-            tabIndex={onRowClick ? 0 : undefined}
-            aria-label={onRowClick ? rowActionLabel(row.original) : undefined}
-            className={
-              onRowClick
-                ? "cursor-pointer outline-none focus-visible:bg-muted/60"
-                : undefined
-            }
-          >
-            {row.getVisibleCells().map((cell) => (
-              <TableCell
-                key={cell.id}
-                className={`p-2 sm:p-3 ${columnWidthClass(cell.column)}`}
-              >
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </TableCell>
-            ))}
+        {rows.length ? (
+          rows.map((row) => (
+            <TableRow
+              key={row.id}
+              onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onRowClick(row.original);
+                    }
+                  : undefined
+              }
+              tabIndex={onRowClick ? 0 : undefined}
+              aria-label={onRowClick ? rowActionLabel(row.original) : undefined}
+              className={
+                onRowClick
+                  ? "cursor-pointer outline-none focus-visible:bg-muted/60"
+                  : undefined
+              }
+            >
+              {row.getVisibleCells().map((cell) => (
+                <TableCell
+                  key={cell.id}
+                  className={`p-2 sm:p-3 ${columnWidthClass(cell.column)}`}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))
+        ) : (
+          // La cabecera (y su fila de filtros) se mantiene visible: si no,
+          // un filtro sin resultados deja la pantalla sin forma de limpiarlo.
+          <TableRow>
+            <TableCell
+              colSpan={table.getVisibleLeafColumns().length}
+              className="px-3 py-10 text-center"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <HugeiconsIcon
+                  icon={SearchXIcon}
+                  size={20}
+                  strokeWidth={2}
+                  className="text-muted-foreground"
+                  aria-hidden
+                />
+                <p className="font-medium">No encontramos comprobantes</p>
+                <p className="text-sm text-muted-foreground">
+                  Ajusta o limpia los filtros para ver otros documentos.
+                </p>
+              </div>
+            </TableCell>
           </TableRow>
-        ))}
+        )}
       </TableBody>
     </UiTable>
   );
