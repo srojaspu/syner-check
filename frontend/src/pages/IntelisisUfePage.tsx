@@ -25,6 +25,10 @@ import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import { creaRenderFiltro, filtraUfeFilas } from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
+import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
+import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialog";
+import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel";
+import { IntelisisUfeResolverDialog } from "@/components/IntelisisUfeResolverDialog";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
@@ -34,10 +38,12 @@ import { Tabs } from "@/components/Tabs";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
 import type {
+  IntelisisReenvioFila,
   IntelisisUfeFiltros,
   IntelisisUfeRow,
   SunatDocumentInput,
 } from "../api/types";
+import { useIntelisisReenvio } from "../hooks/useIntelisisReenvio";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 import { useSunat } from "../hooks/useSunat";
 import { SUNAT_LOTE_MAX } from "../api/client";
@@ -72,6 +78,7 @@ export default function IntelisisUfePage({
 }) {
   const ufe = useIntelisisUfe(onAuthFailure);
   const sunat = useSunat(onAuthFailure);
+  const reenvio = useIntelisisReenvio(onAuthFailure);
   const [modo, setModo] = useState<"range" | "number">("range");
   const [range, setRange] = useState<DateRange | undefined>(() => {
     // Arranca en hoy, igual que la pantalla de comprobantes.
@@ -95,6 +102,19 @@ export default function IntelisisUfePage({
   const [filteredRows, setFilteredRows] = useState<IntelisisUfeRow[] | null>(
     null,
   );
+  /** Documentos marcados para reenviar (sobrevive al cambio de página). */
+  const [seleccion, setSeleccion] = useState<Set<number>>(
+    () => new Set<number>(),
+  );
+  const [reenvioDialogOpen, setReenvioDialogOpen] = useState(false);
+  const [resolviendoFila, setResolviendoFila] =
+    useState<IntelisisReenvioFila | null>(null);
+
+  // Una consulta nueva invalida la selección: los ids de otra búsqueda no
+  // deben viajar en una solicitud de reenvío.
+  useEffect(() => {
+    setSeleccion(new Set<number>());
+  }, [modo, consulta, documentoBuscado]);
 
   // Unica consulta posible: la que el usuario lanzo con "Consultar".
   useEffect(() => {
@@ -163,9 +183,62 @@ export default function IntelisisUfePage({
       ),
     [modo, ufe.rows, ufe.busqueda, borrador],
   );
-  const columns = useMemo(() => intelisisUfeColumns(), []);
+  const toggleSeleccion = useCallback((idVenta: number, marcado: boolean) => {
+    setSeleccion((prev) => {
+      const siguiente = new Set(prev);
+      if (marcado) siguiente.add(idVenta);
+      else siguiente.delete(idVenta);
+      return siguiente;
+    });
+  }, []);
+
+  const togglePagina = useCallback(
+    (pagina: IntelisisUfeRow[], marcado: boolean) => {
+      setSeleccion((prev) => {
+        const siguiente = new Set(prev);
+        for (const fila of pagina) {
+          if (marcado) siguiente.add(fila.id_venta);
+          else siguiente.delete(fila.id_venta);
+        }
+        return siguiente;
+      });
+    },
+    [],
+  );
+
+  const columns = useMemo(
+    () =>
+      intelisisUfeColumns({
+        seleccionados: seleccion,
+        onToggle: toggleSeleccion,
+        onTogglePagina: togglePagina,
+      }),
+    [seleccion, toggleSeleccion, togglePagina],
+  );
   const kpis = ufe.kpis;
   const visibles = filteredRows ?? filas;
+
+  /** Filas marcadas que se enviarán al confirmar (solo las visibles). */
+  const seleccionadas = useMemo(
+    () => filas.filter((fila) => seleccion.has(fila.id_venta)),
+    [filas, seleccion],
+  );
+
+  // Si un filtro oculta un documento marcado, se desmarca: no se encola algo
+  // que el usuario ya no ve en la tabla.
+  useEffect(() => {
+    setSeleccion((prev) => {
+      if (!prev.size) return prev;
+      const vigentes = new Set(filas.map((fila) => fila.id_venta));
+      const siguiente = new Set(
+        [...prev].filter((idVenta) => vigentes.has(idVenta)),
+      );
+      return siguiente.size === prev.size ? prev : siguiente;
+    });
+  }, [filas]);
+  /** El borde expone el tope real; 10 es el default del backend. */
+  const maxBatch = reenvio.panel?.max_batch ?? 10;
+  const reenvioHabilitado = reenvio.panel?.habilitado === true;
 
   /** Documentos consultables en SUNAT (el backend arma el payload final). */
   const consultables: SunatDocumentInput[] = useMemo(
@@ -327,8 +400,39 @@ export default function IntelisisUfePage({
                 (resultado, generador o tipo) para dejar menos.
               </p>
             ) : null}
+            {seleccionadas.length ? (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span aria-live="polite">
+                  {seleccionadas.length} seleccionado
+                  {seleccionadas.length === 1 ? "" : "s"} para reenviar
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setSeleccion(new Set<number>())}
+                >
+                  Limpiar selección
+                </Button>
+              </p>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2 sm:justify-self-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-self-end">
+            {reenvioHabilitado ? (
+              <Button
+                type="button"
+                disabled={!seleccionadas.length}
+                onClick={() => {
+                  reenvio.limpiarMensajes();
+                  setReenvioDialogOpen(true);
+                }}
+                title="Encola los documentos marcados en la cola del ERP"
+              >
+                Reenviar selección
+                {seleccionadas.length ? ` (${seleccionadas.length})` : ""}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -416,6 +520,61 @@ export default function IntelisisUfePage({
           )}
         </CardContent>
       </Card>
+
+      <IntelisisUfeReenvioAviso
+        resultado={reenvio.resultado}
+        aviso={reenvio.aviso}
+        onCerrar={reenvio.limpiarMensajes}
+      />
+
+      <IntelisisUfeReenvioPanel
+        panel={reenvio.panel}
+        loading={reenvio.panelLoading}
+        error={reenvio.panelError}
+        filtro={reenvio.filtro}
+        resolviendo={reenvio.resolviendo}
+        onFiltro={reenvio.cambiarFiltro}
+        onRecargar={reenvio.recargar}
+        onResolver={setResolviendoFila}
+      />
+
+      <IntelisisUfeReenvioDialog
+        open={reenvioDialogOpen}
+        onOpenChange={setReenvioDialogOpen}
+        rows={seleccionadas}
+        maxBatch={maxBatch}
+        enviando={reenvio.enviando}
+        error={reenvio.errorEnvio}
+        onConfirm={(motivo, token, forzar) => {
+          void reenvio
+            .reenviar(
+              seleccionadas.map((fila) => fila.id_venta),
+              motivo,
+              token,
+              forzar,
+            )
+            .then((ok) => {
+              if (!ok) return;
+              setSeleccion(new Set<number>());
+              setReenvioDialogOpen(false);
+            });
+        }}
+      />
+
+      <IntelisisUfeResolverDialog
+        fila={resolviendoFila}
+        enviando={reenvio.resolviendo !== null}
+        error={reenvio.errorResolucion}
+        onOpenChange={(open) => {
+          if (!open) setResolviendoFila(null);
+        }}
+        onConfirm={(nota) => {
+          if (!resolviendoFila) return;
+          void reenvio.resolver(resolviendoFila.ID, nota).then((ok) => {
+            if (ok) setResolviendoFila(null);
+          });
+        }}
+      />
 
       <SunatConfirmDialog
         open={sunatDialogOpen}

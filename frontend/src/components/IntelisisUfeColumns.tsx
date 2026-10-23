@@ -1,5 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate, formatMoney } from "../api/format";
 import type {
   IntelisisUfeRow,
@@ -49,14 +50,29 @@ function sunatVariant(estado: UfeEstadoSunat): BadgeVariant {
 }
 
 /**
+ * Seleccion de filas para el reenvio.
+ *
+ * Vive en la pagina (no en la tabla) para conservarse al cambiar de pagina y
+ * se limpia al lanzar una consulta nueva: un id de otra busqueda no debe
+ * viajar en la solicitud.
+ */
+export interface IntelisisUfeSelection {
+  seleccionados: ReadonlySet<number>;
+  onToggle: (idVenta: number, seleccionado: boolean) => void;
+  onTogglePagina: (filas: IntelisisUfeRow[], seleccionado: boolean) => void;
+}
+
+/**
  * Columnas de la grilla UFE.
  *
  * Sin filtros por columna: los filtros viven en un panel que va al servidor
  * (con 31 dias el universo son ~18.000 documentos y filtrarlos en el
  * navegador no era viable).
  */
-export function intelisisUfeColumns(): ColumnDef<IntelisisUfeRow>[] {
-  return [
+export function intelisisUfeColumns(
+  selection?: IntelisisUfeSelection,
+): ColumnDef<IntelisisUfeRow>[] {
+  const columnas: ColumnDef<IntelisisUfeRow>[] = [
     {
       id: "documento",
       header: "Comprobante",
@@ -257,4 +273,54 @@ export function intelisisUfeColumns(): ColumnDef<IntelisisUfeRow>[] {
       ),
     },
   ];
+
+  if (selection) {
+    const columnaSeleccion: ColumnDef<IntelisisUfeRow> = {
+      id: "seleccion",
+      header: ({ table }) => {
+        const pagina = table.getRowModel().rows.map((row) => row.original);
+        const marcados = pagina.filter((fila) =>
+          selection.seleccionados.has(fila.id_venta),
+        ).length;
+        const todos = pagina.length > 0 && marcados === pagina.length;
+        return (
+          <Checkbox
+            checked={todos}
+            indeterminate={marcados > 0 && !todos}
+            aria-label={
+              todos
+                ? "Quitar la selección de esta página"
+                : "Seleccionar los documentos de esta página"
+            }
+            onClick={(event) => event.stopPropagation()}
+            onCheckedChange={(checked) =>
+              selection.onTogglePagina(pagina, checked === true)
+            }
+          />
+        );
+      },
+      enableSorting: false,
+      meta: { priority: "always" },
+      cell: ({ row }) => {
+        const doc = row.original;
+        return (
+          <span
+            className="flex items-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Checkbox
+              checked={selection.seleccionados.has(doc.id_venta)}
+              aria-label={`Seleccionar ${doc.comprobante || doc.documento}`}
+              onCheckedChange={(checked) =>
+                selection.onToggle(doc.id_venta, checked === true)
+              }
+            />
+          </span>
+        );
+      },
+    };
+    columnas.unshift(columnaSeleccion);
+  }
+
+  return columnas;
 }

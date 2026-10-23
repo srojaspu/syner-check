@@ -1,5 +1,8 @@
 import type {
   DocumentResponse,
+  IntelisisReenvioCola,
+  IntelisisReenvioResolucion,
+  IntelisisReenvioResultado,
   IntelisisUfeBusqueda,
   IntelisisUfeDetalle,
   IntelisisUfeResponse,
@@ -239,6 +242,67 @@ export function validarIntelisisUfe(
       signal,
     },
     SUNAT_STATUS_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Encola el reenvio de uno o varios documentos en `dbo.FE_Reenvio`.
+ *
+ * No genera nada: solo inserta la intencion en la cola del ERP. El worker PHP
+ * del ERP (`fe_worker.php`) es el unico que ejecuta el generador. El `token`
+ * es la clave de idempotencia de la solicitud (32 hex): reintentar con el
+ * mismo token devuelve las filas ya creadas en vez de duplicarlas.
+ */
+export function reenviarIntelisisUfe(
+  ids: number[],
+  motivo: string,
+  token: string,
+  options: { forzar?: boolean; signal?: AbortSignal } = {},
+): Promise<IntelisisReenvioResultado> {
+  return api(
+    "/api/intelisis/ufe/reenviar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        motivo,
+        token,
+        forzar: options.forzar === true,
+      }),
+      signal: options.signal,
+    },
+    LONG_TIMEOUT_MS,
+  );
+}
+
+/** Panel de la cola del ERP: worker, pendientes, activos e historial. */
+export function getIntelisisReenvios(
+  params: { limit?: number; estado?: string } = {},
+  signal?: AbortSignal,
+): Promise<IntelisisReenvioCola> {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.estado) qs.set("estado", params.estado);
+  const suffix = qs.size ? `?${qs}` : "";
+  return api(`/api/intelisis/ufe/reenvios${suffix}`, { signal });
+}
+
+/** Cierra a mano un `NO_CONFIRMADO` (paridad `feop_resolve`). */
+export function resolverIntelisisReenvio(
+  queueId: number,
+  nota: string,
+  signal?: AbortSignal,
+): Promise<IntelisisReenvioResolucion> {
+  return api(
+    `/api/intelisis/ufe/reenvios/${encodeURIComponent(queueId)}/resolver`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nota }),
+      signal,
+    },
+    LONG_TIMEOUT_MS,
   );
 }
 

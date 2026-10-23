@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SUNAT_LOTE_MAX } from "../api/client";
-import type { IntelisisUfeRow } from "../api/types";
+import type { IntelisisReenvioFila, IntelisisUfeRow } from "../api/types";
 
 const mocks = vi.hoisted(() => ({
   ufe: {
@@ -46,6 +46,30 @@ const mocks = vi.hoisted(() => ({
       },
     ),
   },
+  reenvio: {
+    panel: null as unknown,
+    panelLoading: false,
+    panelError: null as string | null,
+    filtro: "",
+    enviando: false,
+    resolviendo: null as number | null,
+    resultado: null as unknown,
+    aviso: null as string | null,
+    errorEnvio: null as string | null,
+    errorResolucion: null as string | null,
+    recargar: vi.fn(),
+    cambiarFiltro: vi.fn(),
+    reenviar: vi.fn(
+      async (
+        _ids: number[],
+        _motivo: string,
+        _token: string,
+        _forzar?: boolean,
+      ) => true,
+    ),
+    resolver: vi.fn(async (_queueId: number, _nota: string) => true),
+    limpiarMensajes: vi.fn(),
+  },
 }));
 
 vi.mock("../hooks/useIntelisisUfe", () => ({
@@ -54,6 +78,10 @@ vi.mock("../hooks/useIntelisisUfe", () => ({
 
 vi.mock("../hooks/useSunat", () => ({
   useSunat: () => mocks.sunat,
+}));
+
+vi.mock("../hooks/useIntelisisReenvio", () => ({
+  useIntelisisReenvio: () => mocks.reenvio,
 }));
 
 import IntelisisUfePage from "./IntelisisUfePage";
@@ -121,6 +149,32 @@ function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
   };
 }
 
+function filaReenvio(
+  overrides: Partial<IntelisisReenvioFila> = {},
+): IntelisisReenvioFila {
+  return {
+    ID: 31,
+    IDVenta: 7466462,
+    Tipo: "03",
+    Procedimiento: "SPPUFE_UBL21",
+    Usuario: "dev@perfumeriasunidas.com.pe",
+    Motivo: "no se genero",
+    Estado: "NO_CONFIRMADO",
+    Creado: "2026-10-21T12:41:07",
+    Inicio: "2026-10-21T12:41:08",
+    Fin: null,
+    SPID: 71,
+    LogDesde: null,
+    LogHasta: null,
+    Retorno: null,
+    Detalle: "Conexion perdida a mitad del generador.",
+    RevisadoPor: null,
+    Revision: null,
+    LoteID: null,
+    ...overrides,
+  };
+}
+
 function kpis(overrides: Record<string, unknown> = {}) {
   return {
     total: 2,
@@ -171,6 +225,19 @@ describe("IntelisisUfePage", () => {
     mocks.sunat.warning = null;
     mocks.sunat.error = null;
     mocks.sunat.runBatch.mockClear();
+    mocks.reenvio.panel = null;
+    mocks.reenvio.panelError = null;
+    mocks.reenvio.enviando = false;
+    mocks.reenvio.resolviendo = null;
+    mocks.reenvio.resultado = null;
+    mocks.reenvio.aviso = null;
+    mocks.reenvio.errorEnvio = null;
+    mocks.reenvio.errorResolucion = null;
+    mocks.reenvio.reenviar.mockClear();
+    mocks.reenvio.resolver.mockClear();
+    mocks.reenvio.recargar.mockClear();
+    mocks.reenvio.cambiarFiltro.mockClear();
+    mocks.reenvio.limpiarMensajes.mockClear();
   });
 
   it("muestra el resumen del periodo", () => {
@@ -511,5 +578,128 @@ describe("IntelisisUfePage", () => {
 
     const boton = screen.getByRole("button", { name: /Validar en SUNAT/ });
     expect(boton.textContent).toContain("(1)");
+  });
+
+  it("no ofrece reenviar si la cola del ERP esta deshabilitada", () => {
+    mocks.reenvio.panel = { habilitado: false, max_batch: 10 };
+    mocks.ufe.rows = [fila()];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    expect(screen.queryByRole("button", { name: /Reenviar selección/ })).toBeNull();
+  });
+
+  it("encola la seleccion con motivo y token de idempotencia", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    mocks.ufe.rows = [fila()];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    const boton = screen.getByRole("button", {
+      name: /^Reenviar selección/,
+    }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(true);
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Seleccionar B602-00142702" }),
+    );
+    expect(boton.disabled).toBe(false);
+    expect(boton.textContent).toContain("(1)");
+
+    await user.click(boton);
+    expect(screen.getByText("Reenviar al generador UFE")).toBeTruthy();
+
+    await user.type(
+      screen.getByLabelText("Motivo del reenvío"),
+      "El cliente lo reclama",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Encolar 1 documento" }),
+    );
+
+    expect(mocks.reenvio.reenviar).toHaveBeenCalledTimes(1);
+    const [ids, motivo, token, forzar] = mocks.reenvio.reenviar.mock.calls[0];
+    expect(ids).toEqual([7466462]);
+    expect(motivo).toBe("El cliente lo reclama");
+    expect(token).toMatch(/^[0-9a-f]{32}$/);
+    expect(forzar).toBe(false);
+  });
+
+  it("pide confirmar antes de regenerar un documento ya generado", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    mocks.ufe.rows = [fila()];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "Seleccionar B602-00142702" }),
+    );
+    await user.click(screen.getByRole("button", { name: /^Reenviar selección/ }));
+
+    await user.type(
+      screen.getByLabelText("Motivo del reenvío"),
+      "regenerar",
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Regenerar documentos ya generados",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Encolar 1 documento" }),
+    );
+
+    expect(mocks.reenvio.reenviar.mock.calls[0][3]).toBe(true);
+  });
+
+  it("resuelve un NO_CONFIRMADO del panel con nota obligatoria", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = {
+      habilitado: true,
+      max_batch: 10,
+      ocupado: true,
+      worker: { ID: 1, UltimoContacto: null, Estado: "PAUSADO_REVISION", TrabajoID: null, SPID: null },
+      pendientes: 0,
+      sin_confirmar: 1,
+      activos: [filaReenvio()],
+      historial: [],
+      resumen: { NO_CONFIRMADO: 1 },
+      total: 1,
+    };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(screen.getByText(/PAUSADO_REVISION/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Resolver" }));
+
+    const confirmar = screen.getByRole("button", {
+      name: "Registrar revisión",
+    }) as HTMLButtonElement;
+    expect(confirmar.disabled).toBe(true);
+
+    await user.type(
+      screen.getByLabelText("Nota de revisión"),
+      "Se genero; se valido en SUNAT.",
+    );
+    await user.click(confirmar);
+
+    expect(mocks.reenvio.resolver).toHaveBeenCalledWith(
+      31,
+      "Se genero; se valido en SUNAT.",
+    );
+  });
+
+  it("muestra el error de la cola sin romper la pantalla", () => {
+    mocks.reenvio.panelError = "No fue posible consultar la cola de reenvíos.";
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(
+      screen.getByText("No fue posible consultar la cola de reenvíos."),
+    ).toBeTruthy();
   });
 });

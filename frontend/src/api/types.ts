@@ -442,3 +442,89 @@ export interface IntelisisUfeBusqueda {
   encontrados: number;
   rows: IntelisisUfeRow[];
 }
+
+/* --- Cola de reenvios del ERP (`dbo.FE_Reenvio`) ------------------------ */
+
+/** Los 7 estados reales de `CK_FE_Reenvio_Estado`. */
+export type IntelisisReenvioEstado =
+  | "EN_COLA"
+  | "EJECUTANDO"
+  | "FINALIZADO_OK"
+  | "FINALIZADO_REVISAR"
+  | "NO_EJECUTADO"
+  | "NO_CONFIRMADO"
+  | "REVISADO_MANUAL";
+
+/** Resultado del encolado de un documento. */
+export interface IntelisisReenvioDetalle {
+  id_venta: number;
+  documento: string;
+  tipo: string;
+  procedimiento: string;
+  estado: "encolado" | "ya_registrado" | "rechazado";
+  /** Razon del rechazo (o confirmacion de idempotencia). */
+  motivo: string;
+  queue_id: number | null;
+}
+
+export interface IntelisisReenvioResultado {
+  total: number;
+  encolados: number;
+  duplicados: number;
+  rechazados: number;
+  detalle: IntelisisReenvioDetalle[];
+}
+
+/** Una fila de `dbo.FE_Reenvio` (los nombres son los de la tabla del ERP). */
+export interface IntelisisReenvioFila {
+  ID: number;
+  IDVenta: number;
+  Tipo: string;
+  Procedimiento: string;
+  Usuario: string;
+  Motivo: string;
+  Estado: IntelisisReenvioEstado;
+  Creado: string | null;
+  Inicio: string | null;
+  Fin: string | null;
+  SPID: number | null;
+  LogDesde: number | null;
+  LogHasta: number | null;
+  Retorno: string | null;
+  Detalle: string | null;
+  RevisadoPor: string | null;
+  Revision: string | null;
+  LoteID: number | null;
+}
+
+/** Heartbeat del worker PHP del ERP (`dbo.FE_Worker`). */
+export interface IntelisisFeWorker {
+  ID: number;
+  UltimoContacto: string | null;
+  Estado: string | null;
+  TrabajoID: number | null;
+  SPID: number | null;
+}
+
+/** Respuesta de `GET /reenvios`: espejo de `feop_queue` del ERP. */
+export interface IntelisisReenvioCola {
+  /** El mutex `RMAND2:FE:WORKER` esta tomado. */
+  ocupado: boolean;
+  worker: IntelisisFeWorker | null;
+  pendientes: number;
+  sin_confirmar: number;
+  activos: IntelisisReenvioFila[];
+  historial: IntelisisReenvioFila[];
+  resumen: Record<string, number>;
+  total: number;
+  /** Si el encolado esta habilitado (lo agrega el borde). */
+  habilitado?: boolean;
+  /** Tope de documentos por solicitud (lo agrega el borde). */
+  max_batch?: number;
+}
+
+export interface IntelisisReenvioResolucion {
+  queue_id: number;
+  estado: IntelisisReenvioEstado;
+  mensaje: string;
+}
