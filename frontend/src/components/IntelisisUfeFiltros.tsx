@@ -184,13 +184,26 @@ export function creaRenderFiltro(
         );
       case "resultado":
         return (
-          <FiltroSelect
-            label="Resultado"
-            value={filtros.resultado ?? ""}
-            placeholder="Todos"
-            options={OPCIONES_RESULTADO}
-            onChange={(valor) => alternar("resultado", valor)}
-          />
+          <div className="flex flex-col gap-1">
+            <FiltroSelect
+              label="Resultado"
+              value={filtros.resultado ?? ""}
+              placeholder="Todos"
+              options={OPCIONES_RESULTADO}
+              onChange={(valor) => alternar("resultado", valor)}
+            />
+            {/* La columna Revisión muestra el motivo: su filtro va aqui. */}
+            <FiltroSelect
+              label="Incidencia"
+              value={filtros.incidencia ?? ""}
+              placeholder="Todas"
+              options={(kpis?.por_incidencia ?? []).map((item) => ({
+                value: item.key,
+                label: `${item.key} (${item.count})`,
+              }))}
+              onChange={(valor) => alternar("incidencia", valor)}
+            />
+          </div>
         );
       case "generador":
         return (
@@ -250,19 +263,6 @@ export function creaRenderFiltro(
                   : { sucursal: undefined }),
               })
             }
-          />
-        );
-      case "incidencias":
-        return (
-          <FiltroSelect
-            label="Incidencia"
-            value={filtros.incidencia ?? ""}
-            placeholder="Todas"
-            options={(kpis?.por_incidencia ?? []).map((item) => ({
-              value: item.key,
-              label: `${item.key} (${item.count})`,
-            }))}
-            onChange={(valor) => alternar("incidencia", valor)}
           />
         );
       default:

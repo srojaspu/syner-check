@@ -342,6 +342,27 @@ describe("IntelisisUfePage", () => {
     expect(screen.getAllByText("REVISAR").length).toBeGreaterThan(0);
   });
 
+  it("junta el resultado y el motivo en la columna Revision", () => {
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        exento_generador: true,
+        incidencias: [],
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    // La columna suelta de Incidencias ya no existe: el motivo vive en Revision.
+    expect(
+      screen.queryByRole("columnheader", { name: /Incidencias/ }),
+    ).toBeNull();
+    expect(screen.getAllByText("No aplica el generador")).toHaveLength(1);
+  });
+
   it("avisa cuando Intelisis no esta disponible", () => {
     mocks.ufe.intelisisEnabled = false;
 

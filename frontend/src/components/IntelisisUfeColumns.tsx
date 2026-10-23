@@ -222,40 +222,32 @@ export function intelisisUfeColumns(
       header: "Revisión",
       accessorFn: (doc) => doc.resultado,
       meta: { priority: "always" },
-      cell: ({ row }) => (
-        <Badge
-          variant={
-            row.original.resultado === "REVISAR" ? "destructive" : "secondary"
-          }
-        >
-          {row.original.resultado}
-        </Badge>
-      ),
-    },
-    {
-      id: "incidencias",
-      header: "Incidencias",
-      accessorFn: (doc) => (doc.incidencias ?? []).join(", "),
-      meta: { priority: "2xl" },
       cell: ({ row }) => {
         const doc = row.original;
-        if (!doc.incidencias?.length) {
-          return (
-            <span className="text-muted-foreground">
-              {doc.exento_generador ? "No aplica el generador" : "—"}
-            </span>
-          );
-        }
+        const incidencias = doc.incidencias ?? [];
         return (
-          <span
-            className="flex flex-col gap-0.5"
-            title={doc.detalle_incidencia ?? undefined}
-          >
-            {doc.incidencias.map((item) => (
-              <span key={item} className="text-xs font-medium">
-                {item}
+          <span className="flex flex-col items-start gap-1">
+            <Badge
+              variant={doc.resultado === "REVISAR" ? "destructive" : "secondary"}
+            >
+              {doc.resultado}
+            </Badge>
+            {incidencias.length ? (
+              <span
+                className="flex flex-col gap-0.5"
+                title={doc.detalle_incidencia ?? undefined}
+              >
+                {incidencias.map((item) => (
+                  <span key={item} className="text-xs font-medium">
+                    {item}
+                  </span>
+                ))}
               </span>
-            ))}
+            ) : doc.exento_generador ? (
+              <span className="text-xs text-muted-foreground">
+                No aplica el generador
+              </span>
+            ) : null}
           </span>
         );
       },
