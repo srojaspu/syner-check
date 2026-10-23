@@ -433,9 +433,7 @@ export default function IntelisisUfePage({
         panel={reenvio.panel}
         loading={reenvio.panelLoading}
         error={reenvio.panelError}
-        filtro={reenvio.filtro}
         resolviendo={reenvio.resolviendo}
-        onFiltro={reenvio.cambiarFiltro}
         onRecargar={reenvio.recargar}
         onResolver={abrirRevision}
       />

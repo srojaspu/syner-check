@@ -20,8 +20,6 @@ interface ReenvioState {
   panel: IntelisisReenvioCola | null;
   panelLoading: boolean;
   panelError: string | null;
-  /** Filtro de estado del historial ("" = todos). */
-  filtro: string;
   /** Encolado en curso. */
   enviando: boolean;
   /** Fila que se está resolviendo a mano. */
@@ -39,7 +37,6 @@ const EMPTY: ReenvioState = {
   panel: null,
   panelLoading: false,
   panelError: null,
-  filtro: "",
   enviando: false,
   resolviendo: null,
   resultado: null,
@@ -88,7 +85,6 @@ export function hayTrabajo(panel: IntelisisReenvioCola | null): boolean {
  */
 export function useIntelisisReenvio(onAuthFailure: () => void) {
   const [state, setState] = useState<ReenvioState>(EMPTY);
-  const filtroRef = useRef("");
   const enVuelo = useRef(false);
   const montado = useRef(true);
 
@@ -100,14 +96,13 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
   }, []);
 
   const cargar = useCallback(
-    async (estado = filtroRef.current, forzar = false) => {
+    async (forzar = false) => {
       if (enVuelo.current && !forzar) return;
       enVuelo.current = true;
       setState((prev) => ({ ...prev, panelLoading: prev.panel === null }));
       try {
         const panel = await getIntelisisReenvios({
           limit: HISTORIAL_LIMITE,
-          estado: estado || undefined,
         });
         if (!montado.current) return;
         setState((prev) => ({
@@ -139,7 +134,7 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
 
   // Primera foto al montar: sin ella no se sabe si el reenvío está habilitado.
   useEffect(() => {
-    void cargar("", true);
+    void cargar(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -150,17 +145,8 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
     return () => clearInterval(timer);
   }, [sondeando, cargar]);
 
-  const cambiarFiltro = useCallback(
-    (estado: string) => {
-      filtroRef.current = estado;
-      setState((prev) => ({ ...prev, filtro: estado }));
-      void cargar(estado, true);
-    },
-    [cargar],
-  );
-
   const recargar = useCallback(() => {
-    void cargar(filtroRef.current, true);
+    void cargar(true);
   }, [cargar]);
 
   const reenviar = useCallback(
@@ -188,7 +174,7 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
           resultado,
           aviso: resumenReenvio(resultado),
         }));
-        void cargar("", true);
+        void cargar(true);
         return true;
       } catch (error: unknown) {
         if (!montado.current) return false;
@@ -222,7 +208,7 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
           resolviendo: null,
           aviso: data.mensaje || "Revisión registrada.",
         }));
-        void cargar("", true);
+        void cargar(true);
         return true;
       } catch (error: unknown) {
         if (!montado.current) return false;
@@ -263,7 +249,6 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
     ...state,
     cargar,
     recargar,
-    cambiarFiltro,
     reenviar,
     resolver,
     limpiarMensajes,

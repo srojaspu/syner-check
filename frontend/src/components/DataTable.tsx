@@ -254,6 +254,17 @@ function Root<T>({
 
   useResetPageOnDataChange(data, setPagination, resetPageOnDataChange);
 
+  // Cambiar un filtro siempre vuelve a la primera pagina; el refresco de los
+  // datos (sondeo) no, para no expulsar al usuario de la pagina donde esta.
+  const filtrosPrevios = useRef(columnFilters);
+  useEffect(() => {
+    if (filtrosPrevios.current === columnFilters) return;
+    filtrosPrevios.current = columnFilters;
+    setPagination((current) =>
+      current.pageIndex === 0 ? current : { ...current, pageIndex: 0 },
+    );
+  }, [columnFilters]);
+
   // Push filtered originals up (all pages). getFilteredRowModel() memoizes on
   // filters/data, so `filteredRows` keeps a stable identity between renders.
   // Mapping inside useMemo is required: a fresh array on every render made the

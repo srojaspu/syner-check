@@ -9,13 +9,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
 import { DataTable } from "@/components/DataTable";
 import {
-  ESTADOS_REENVIO,
   fechaHora,
   intelisisReenvioColumns,
 } from "./IntelisisReenvioColumns";
@@ -31,9 +26,7 @@ interface IntelisisUfeReenvioPanelProps {
   panel: IntelisisReenvioCola | null;
   loading: boolean;
   error: string | null;
-  filtro: string;
   resolviendo: number | null;
-  onFiltro: (estado: string) => void;
   onRecargar: () => void;
   onResolver: (fila: IntelisisReenvioFila) => void;
 }
@@ -52,9 +45,7 @@ export function IntelisisUfeReenvioPanel({
   panel,
   loading,
   error,
-  filtro,
   resolviendo,
-  onFiltro,
   onRecargar,
   onResolver,
 }: IntelisisUfeReenvioPanelProps) {
@@ -144,7 +135,6 @@ export function IntelisisUfeReenvioPanel({
           <DataTable.Root
             data={activos}
             columns={columns}
-            showFilters={false}
             initialPageSize={10}
             resetPageOnDataChange={false}
           >
@@ -164,30 +154,10 @@ export function IntelisisUfeReenvioPanel({
         </section>
 
         <section className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Historial</h3>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              Estado{" "}
-              <NativeSelect
-                size="sm"
-                value={filtro}
-                onChange={(event) => onFiltro(event.target.value)}
-                aria-label="Filtrar el historial por estado"
-              >
-                <NativeSelectOption value="">Todos</NativeSelectOption>
-                {ESTADOS_REENVIO.map((estado) => (
-                  <NativeSelectOption key={estado.value} value={estado.value}>
-                    {estado.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </label>
-          </div>
+          <h3 className="text-sm font-medium">Historial</h3>
           <DataTable.Root
-            key={`historial-${filtro}`}
             data={historial}
             columns={columns}
-            showFilters={false}
             initialPageSize={10}
             resetPageOnDataChange={false}
           >

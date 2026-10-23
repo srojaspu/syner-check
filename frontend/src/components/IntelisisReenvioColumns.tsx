@@ -1,7 +1,10 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { ResponsivePriority } from "@/components/DataTable";
+import type {
+  ColumnFilterConfig,
+  ResponsivePriority,
+} from "@/components/DataTable";
 import type {
   IntelisisReenvioEstado,
   IntelisisReenvioFila,
@@ -44,6 +47,23 @@ function EstadoBadge({ estado }: { estado: string }) {
   return <Badge variant={variante(estado)}>{ETIQUETA[estado] ?? estado}</Badge>;
 }
 
+const TIPOS: { value: string; label: string }[] = [
+  { value: "01", label: "Factura" },
+  { value: "03", label: "Boleta" },
+  { value: "07", label: "Nota de crédito" },
+  { value: "08", label: "Nota de débito" },
+];
+
+const texto = (placeholder: string): ColumnFilterConfig => ({
+  variant: "text",
+  placeholder,
+});
+
+const seleccion = (options: { value: string; label: string }[]): ColumnFilterConfig => ({
+  variant: "select",
+  options,
+});
+
 /** Columnas de la cola del ERP, compartidas por "En curso" e "Historial". */
 export function intelisisReenvioColumns({
   resolviendo,
@@ -56,21 +76,10 @@ export function intelisisReenvioColumns({
 
   return [
     {
-      id: "id",
-      header: "#",
-      accessorFn: (fila) => fila.ID,
-      meta: prioridad("always"),
-      cell: ({ row }) => (
-        <span className="tabular-nums text-muted-foreground">
-          {row.original.ID}
-        </span>
-      ),
-    },
-    {
       id: "venta",
       header: "Venta",
       accessorFn: (fila) => fila.IDVenta,
-      meta: prioridad("always"),
+      meta: { priority: "always", filter: texto("Buscar venta") },
       cell: ({ row }) => (
         <span className="tabular-nums">{row.original.IDVenta}</span>
       ),
@@ -79,7 +88,8 @@ export function intelisisReenvioColumns({
       id: "tipo",
       header: "Tipo",
       accessorFn: (fila) => fila.Tipo,
-      meta: prioridad("sm"),
+      filterFn: "equals",
+      meta: { priority: "sm", filter: seleccion(TIPOS) },
       cell: ({ row }) => (
         <Badge variant="outline">{row.original.Tipo || "—"}</Badge>
       ),
@@ -88,7 +98,14 @@ export function intelisisReenvioColumns({
       id: "generador",
       header: "Generador",
       accessorFn: (fila) => fila.Procedimiento,
-      meta: prioridad("lg"),
+      filterFn: "equals",
+      meta: {
+        priority: "lg",
+        filter: seleccion([
+          { value: "SPPUFE_UBL21", label: "SPPUFE_UBL21" },
+          { value: "SPPUFE_UBL21_NCND", label: "SPPUFE_UBL21_NCND" },
+        ]),
+      },
       cell: ({ row }) => (
         <span className="text-muted-foreground">
           {row.original.Procedimiento || "—"}
@@ -99,14 +116,23 @@ export function intelisisReenvioColumns({
       id: "estado",
       header: "Estado",
       accessorFn: (fila) => fila.Estado,
-      meta: prioridad("always"),
+      filterFn: "equals",
+      meta: {
+        priority: "always",
+        filter: seleccion(
+          ESTADOS_REENVIO.map((estado) => ({
+            value: estado.value,
+            label: estado.label,
+          })),
+        ),
+      },
       cell: ({ row }) => <EstadoBadge estado={row.original.Estado} />,
     },
     {
       id: "usuario",
       header: "Usuario",
       accessorFn: (fila) => fila.Usuario,
-      meta: prioridad("md"),
+      meta: { priority: "md", filter: texto("Buscar usuario") },
       cell: ({ row }) => (
         <span className="text-muted-foreground">
           {row.original.Usuario || "—"}
@@ -139,7 +165,7 @@ export function intelisisReenvioColumns({
       id: "detalle",
       header: "Detalle",
       accessorFn: (fila) => fila.Revision || fila.Detalle || fila.Motivo || "",
-      meta: prioridad("lg"),
+      meta: { priority: "lg", filter: texto("Buscar detalle") },
       cell: ({ row }) => {
         const fila = row.original;
         const texto = fila.Revision || fila.Detalle || fila.Motivo || "—";

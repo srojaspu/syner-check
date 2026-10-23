@@ -50,7 +50,6 @@ const mocks = vi.hoisted(() => ({
     panel: null as unknown,
     panelLoading: false,
     panelError: null as string | null,
-    filtro: "",
     enviando: false,
     resolviendo: null as number | null,
     resultado: null as unknown,
@@ -58,7 +57,6 @@ const mocks = vi.hoisted(() => ({
     errorEnvio: null as string | null,
     errorResolucion: null as string | null,
     recargar: vi.fn(),
-    cambiarFiltro: vi.fn(),
     reenviar: vi.fn(
       async (
         _ids: number[],
@@ -237,7 +235,6 @@ describe("IntelisisUfePage", () => {
     mocks.reenvio.reenviar.mockClear();
     mocks.reenvio.resolver.mockClear();
     mocks.reenvio.recargar.mockClear();
-    mocks.reenvio.cambiarFiltro.mockClear();
     mocks.reenvio.limpiarMensajes.mockClear();
     mocks.reenvio.limpiarErrorResolucion.mockClear();
   });
@@ -807,6 +804,50 @@ describe("IntelisisUfePage", () => {
     );
 
     expect(boton.textContent).toContain("(1)");
+  });
+
+  it("filtra la cola del ERP desde la propia tabla", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = {
+      habilitado: true,
+      max_batch: 10,
+      ocupado: false,
+      worker: null,
+      pendientes: 0,
+      sin_confirmar: 1,
+      activos: [filaReenvio()],
+      historial: [
+        filaReenvio({
+          ID: 30,
+          Estado: "FINALIZADO_OK",
+          Detalle: "fila-historial",
+        }),
+      ],
+      resumen: { NO_CONFIRMADO: 1, FINALIZADO_OK: 1 },
+      total: 2,
+    };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    // Un control por tabla: la cola ya no tiene un filtro suelto arriba.
+    const filtros = screen.getAllByRole("combobox", {
+      name: "Filtrar por estado",
+    });
+    expect(filtros).toHaveLength(2);
+    expect(
+      screen.queryByRole("combobox", {
+        name: "Filtrar el historial por estado",
+      }),
+    ).toBeNull();
+
+    expect(screen.getByText("fila-historial")).toBeTruthy();
+
+    // Filtrar el historial no toca la tabla de "En curso".
+    await user.click(filtros[1]);
+    await user.click(await screen.findByRole("option", { name: "En cola" }));
+
+    expect(screen.queryByText("fila-historial")).toBeNull();
+    expect(screen.getByRole("button", { name: "Resolver" })).toBeTruthy();
   });
 
   it("muestra el error de la cola sin romper la pantalla", () => {
