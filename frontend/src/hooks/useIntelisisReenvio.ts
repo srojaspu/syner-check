@@ -54,9 +54,12 @@ function mensaje(error: unknown, porDefecto: string): string {
 
 /** Resumen de una línea para el aviso de la pantalla. */
 export function resumenReenvio(resultado: IntelisisReenvioResultado): string {
-  const partes = [
-    `${resultado.encolados} documento${resultado.encolados === 1 ? "" : "s"} en cola`,
-  ];
+  const partes: string[] = [];
+  if (resultado.encolados) {
+    partes.push(
+      `${resultado.encolados} documento${resultado.encolados === 1 ? "" : "s"} en cola`,
+    );
+  }
   if (resultado.duplicados) {
     partes.push(
       `${resultado.duplicados} ya registrado${resultado.duplicados === 1 ? "" : "s"}`,
@@ -65,7 +68,7 @@ export function resumenReenvio(resultado: IntelisisReenvioResultado): string {
   if (resultado.rechazados) {
     partes.push(`${resultado.rechazados} rechazado${resultado.rechazados === 1 ? "" : "s"}`);
   }
-  return `${partes.join(" · ")}.`;
+  return partes.length ? `${partes.join(" · ")}.` : "Sin cambios.";
 }
 
 /** El panel solo se refresca solo mientras haya algo que mirar. */
@@ -251,6 +254,11 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
     }));
   }, []);
 
+  /** Un error de resolucion viejo no debe aparecer al abrir otra fila. */
+  const limpiarErrorResolucion = useCallback(() => {
+    setState((prev) => ({ ...prev, errorResolucion: null }));
+  }, []);
+
   return {
     ...state,
     cargar,
@@ -259,5 +267,6 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
     reenviar,
     resolver,
     limpiarMensajes,
+    limpiarErrorResolucion,
   };
 }

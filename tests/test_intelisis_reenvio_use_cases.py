@@ -277,8 +277,10 @@ class TestEncolar:
             now=AHORA,
         )
 
-        assert out["encolados"] == 1
+        assert out["encolados"] == 0
         assert out["duplicados"] == 1
+        assert out["rechazados"] == 0
+        assert out["encolados"] + out["duplicados"] + out["rechazados"] == out["total"]
         assert out["detalle"][0]["estado"] == "ya_registrado"
         assert out["detalle"][0]["queue_id"] == 99
         assert queue.encolados == []

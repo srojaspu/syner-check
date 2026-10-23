@@ -69,6 +69,7 @@ const mocks = vi.hoisted(() => ({
     ),
     resolver: vi.fn(async (_queueId: number, _nota: string) => true),
     limpiarMensajes: vi.fn(),
+    limpiarErrorResolucion: vi.fn(),
   },
 }));
 
@@ -238,6 +239,7 @@ describe("IntelisisUfePage", () => {
     mocks.reenvio.recargar.mockClear();
     mocks.reenvio.cambiarFiltro.mockClear();
     mocks.reenvio.limpiarMensajes.mockClear();
+    mocks.reenvio.limpiarErrorResolucion.mockClear();
   });
 
   it("muestra el resumen del periodo", () => {
@@ -676,6 +678,9 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByText(/PAUSADO_REVISION/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Resolver" }));
 
+    // Un error de otra fila no debe sobrevivir al abrir esta revision.
+    expect(mocks.reenvio.limpiarErrorResolucion).toHaveBeenCalledTimes(1);
+
     const confirmar = screen.getByRole("button", {
       name: "Registrar revisión",
     }) as HTMLButtonElement;
@@ -691,6 +696,41 @@ describe("IntelisisUfePage", () => {
       31,
       "Se genero; se valido en SUNAT.",
     );
+  });
+
+  it("desmarca el documento que un filtro oculta de la tabla", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        resultado: "REVISAR",
+        estado_generacion: "sin_registro",
+        generador: "SIN TRAZA",
+        incidencias: ["SIN TRAZA"],
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Seleccionar B602-00000002" }),
+    );
+    expect(screen.getByText(/1 seleccionado/)).toBeTruthy();
+
+    // Al filtrar por Conforme la fila marcada desaparece: no se encola algo
+    // que el usuario ya no ve en la tabla.
+    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
+    await user.click(await screen.findByRole("option", { name: "Conforme" }));
+
+    expect(screen.queryByText(/seleccionado/)).toBeNull();
+    const boton = screen.getByRole("button", {
+      name: /^Reenviar selección/,
+    }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(true);
   });
 
   it("muestra el error de la cola sin romper la pantalla", () => {

@@ -469,7 +469,9 @@ def intelisis_reenvio_encolar(
         raise HTTPException(
             502, "No fue posible consultar el comprobante en Intelisis."
         )
-    if resultado.get("encolados", 0) == 0:
+    # Un lote idempotente (todo "ya registrado") no es un fallo: el cliente
+    # puede reintentar con el mismo token y recibir la misma respuesta.
+    if resultado.get("encolados", 0) == 0 and resultado.get("duplicados", 0) == 0:
         motivo_rechazo = next(
             (
                 item.get("motivo")
@@ -507,7 +509,7 @@ def intelisis_reenvios_listar(limit: int = 20, estado: str = "") -> dict:
 
 
 def intelisis_reenvio_resolver(
-    queue_id: int, nota: str, actor: str
+    queue_id: int, nota: str, actor: str, correlation_id: str = ""
 ) -> dict:
     """Cierra a mano un NO_CONFIRMADO (con nota obligatoria)."""
     from syner_check import config as cfg
@@ -521,6 +523,7 @@ def intelisis_reenvio_resolver(
             queue_id=queue_id,
             actor=actor or "",
             nota=nota or "",
+            correlation_id=correlation_id or "",
         )
     except NotFoundError:
         raise HTTPException(404, "No hay un reenvío pendiente de revisión.")

@@ -231,4 +231,12 @@ describe("resumenReenvio", () => {
     expect(texto).toContain("1 ya registrado");
     expect(texto).toContain("3 rechazados");
   });
+
+  it("no dice '0 documentos en cola' cuando todo fue duplicado", () => {
+    const texto = resumenReenvio(
+      resultado({ encolados: 0, duplicados: 1, rechazados: 0 }) as never,
+    );
+
+    expect(texto).toBe("1 ya registrado.");
+  });
 });

@@ -39,17 +39,25 @@ export function IntelisisUfeReenvioAviso({
     <Alert>
       <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} />
       <AlertTitle>
-        {resultado ? "Reenvío encolado" : "Cola actualizada"}
+        {resultado
+          ? resultado.encolados
+            ? "Reenvío encolado"
+            : "Sin cambios en la cola"
+          : "Cola actualizada"}
       </AlertTitle>
       <AlertDescription>
         {resultado ? (
           <p>
-            {resultado.encolados} en cola
+            {resultado.encolados
+              ? `${resultado.encolados} en cola`
+              : "No se encoló nada nuevo"}
             {resultado.duplicados
               ? ` · ${resultado.duplicados} ya registrados (mismo token)`
               : ""}
             {resultado.rechazados ? ` · ${resultado.rechazados} rechazados` : ""}
-            . El worker del ERP los procesará en su próxima vuelta.
+            {resultado.encolados
+              ? ". El worker del ERP los procesará en su próxima vuelta."
+              : "."}
           </p>
         ) : (
           <p>{aviso}</p>

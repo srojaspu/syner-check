@@ -245,6 +245,7 @@ async def resolver_reenvio_ufe(request: Request, queue_id: int):
             queue_id,
             nota,
             _actor_email(request),
+            request_id_var.get(),
         )
     except HTTPException:
         raise

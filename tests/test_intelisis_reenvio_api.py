@@ -54,22 +54,48 @@ def habilitado(monkeypatch):
 
 
 def _respuesta(encolados: int = 1, duplicados: int = 0) -> dict:
-    detalle = [
-        {
-            "id_venta": 1,
-            "documento": "602-00142702",
-            "tipo": "03" if encolados else "",
-            "procedimiento": "SPPUFE_UBL21" if encolados else "",
-            "estado": "encolado" if encolados else "rechazado",
-            "motivo": "" if encolados else "Solo se puede reenviar un concluido.",
-            "queue_id": 1 if encolados else None,
-        }
-    ]
+    """Respuesta del caso de uso con un solo documento en el detalle."""
+    if duplicados and not encolados:
+        detalle = [
+            {
+                "id_venta": 1,
+                "documento": "602-00142702",
+                "tipo": "03",
+                "procedimiento": "SPPUFE_UBL21",
+                "estado": "ya_registrado",
+                "motivo": "Solicitud ya registrada; no se duplico.",
+                "queue_id": 1,
+            }
+        ]
+    elif encolados:
+        detalle = [
+            {
+                "id_venta": 1,
+                "documento": "602-00142702",
+                "tipo": "03",
+                "procedimiento": "SPPUFE_UBL21",
+                "estado": "encolado",
+                "motivo": "",
+                "queue_id": 1,
+            }
+        ]
+    else:
+        detalle = [
+            {
+                "id_venta": 1,
+                "documento": "602-00142702",
+                "tipo": "",
+                "procedimiento": "",
+                "estado": "rechazado",
+                "motivo": "Solo se puede reenviar un concluido.",
+                "queue_id": None,
+            }
+        ]
     return {
         "total": 1,
         "encolados": encolados,
         "duplicados": duplicados,
-        "rechazados": 0 if encolados else 1,
+        "rechazados": 0 if (encolados or duplicados) else 1,
         "detalle": detalle,
     }
 
@@ -264,7 +290,8 @@ def test_un_reintento_idempotente_se_reporta_como_tal(
     autenticado, habilitado, monkeypatch
 ) -> None:
     _parchear_encolar(
-        monkeypatch, lambda *args, **kwargs: _respuesta(duplicados=1)
+        monkeypatch,
+        lambda *args, **kwargs: _respuesta(encolados=0, duplicados=1),
     )
 
     response = _post(
@@ -274,6 +301,7 @@ def test_un_reintento_idempotente_se_reporta_como_tal(
 
     assert response.status_code == 200
     assert response.json()["duplicados"] == 1
+    assert response.json()["encolados"] == 0
 
 
 def test_si_ningun_documento_se_encola_es_409(
@@ -431,7 +459,7 @@ def test_si_la_cola_no_responde_es_502(
 def test_resolver_exitoso(autenticado, habilitado, monkeypatch) -> None:
     recibido: dict = {}
 
-    def _resolver(_queue, *, queue_id, actor, nota):
+    def _resolver(_queue, *, queue_id, actor, nota, correlation_id=""):
         recibido.update(queue_id=queue_id, nota=nota)
         return {
             "queue_id": queue_id,
@@ -453,7 +481,7 @@ def test_resolver_exitoso(autenticado, habilitado, monkeypatch) -> None:
 def test_resolver_sin_nota_es_400(
     autenticado, habilitado, monkeypatch
 ) -> None:
-    def _fallar(_queue, *, queue_id, actor, nota):
+    def _fallar(_queue, *, queue_id, actor, nota, correlation_id=""):
         raise ValueError("La nota de revision es obligatoria.")
 
     monkeypatch.setattr(wiring, "resolver_reenvio", _fallar)
@@ -469,7 +497,7 @@ def test_resolver_sin_nota_es_400(
 def test_resolver_un_reenvio_inexistente_es_404(
     autenticado, habilitado, monkeypatch
 ) -> None:
-    def _fallar(_queue, *, queue_id, actor, nota):
+    def _fallar(_queue, *, queue_id, actor, nota, correlation_id=""):
         raise NotFoundError("no esta")
 
     monkeypatch.setattr(wiring, "resolver_reenvio", _fallar)
@@ -485,7 +513,7 @@ def test_resolver_un_reenvio_inexistente_es_404(
 def test_resolver_con_el_worker_activo_es_409(
     autenticado, habilitado, monkeypatch
 ) -> None:
-    def _fallar(_queue, *, queue_id, actor, nota):
+    def _fallar(_queue, *, queue_id, actor, nota, correlation_id=""):
         raise ReenvioNoPermitidoError(
             "El procesador sigue activo. No se puede cerrar la revision."
         )
@@ -503,7 +531,7 @@ def test_resolver_con_el_worker_activo_es_409(
 def test_resolver_con_la_cola_caida_es_502(
     autenticado, habilitado, monkeypatch
 ) -> None:
-    def _fallar(_queue, *, queue_id, actor, nota):
+    def _fallar(_queue, *, queue_id, actor, nota, correlation_id=""):
         raise UpstreamError("sin conexion")
 
     monkeypatch.setattr(wiring, "resolver_reenvio", _fallar)

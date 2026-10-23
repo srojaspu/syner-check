@@ -108,10 +108,10 @@ def encolar_reenvio(
             duplicados += 1
         else:
             item["estado"] = "encolado"
-        encolados += 1
+            encolados += 1
         detalle.append(item)
 
-    rechazados = len(detalle) - encolados
+    rechazados = len(detalle) - encolados - duplicados
     logger.info(
         "Intelisis UFE resend enqueue correlation_id=%s actor=%s token=%s "
         "total=%d encolados=%d duplicados=%d rechazados=%d forzar=%s",
@@ -152,6 +152,7 @@ def resolver_reenvio(
     queue_id: int,
     actor: str,
     nota: str,
+    correlation_id: str = "",
 ) -> dict[str, Any]:
     """Cierra a mano un NO_CONFIRMADO (paridad ``feop_resolve``)."""
     identificador = int(queue_id)
@@ -163,7 +164,10 @@ def resolver_reenvio(
     texto = dominio.validar_nota(nota)
     resultado = queue.resolver(identificador, actor=persona, nota=texto)
     logger.info(
-        "Intelisis UFE resend resolved queue_id=%d actor=%s", identificador, persona
+        "Intelisis UFE resend resolved queue_id=%d actor=%s correlation_id=%s",
+        identificador,
+        persona,
+        correlation_id,
     )
     return {
         "queue_id": identificador,

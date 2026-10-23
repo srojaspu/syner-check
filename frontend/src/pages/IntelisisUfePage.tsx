@@ -535,7 +535,10 @@ export default function IntelisisUfePage({
         resolviendo={reenvio.resolviendo}
         onFiltro={reenvio.cambiarFiltro}
         onRecargar={reenvio.recargar}
-        onResolver={setResolviendoFila}
+        onResolver={(fila) => {
+          reenvio.limpiarErrorResolucion();
+          setResolviendoFila(fila);
+        }}
       />
 
       <IntelisisUfeReenvioDialog
