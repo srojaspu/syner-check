@@ -2,9 +2,12 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate, formatMoney } from "../api/format";
+import {
+  ESTADO_GENERACION_LABEL,
+  ESTADO_SUNAT_LABEL,
+} from "./IntelisisUfeEstados";
 import type {
   IntelisisUfeRow,
-  UfeEstadoGeneracion,
   UfeEstadoSunat,
   UfeGenerador,
 } from "../api/types";
@@ -14,23 +17,6 @@ const TIPO_LABEL: Record<string, string> = {
   BO: "Boleta",
   NC: "Nota de crédito",
   ND: "Nota de débito",
-};
-
-const ESTADO_GENERACION_LABEL: Record<UfeEstadoGeneracion, string> = {
-  generado: "Generado",
-  error_validacion: "Error de validación",
-  omitido_validacion: "Omitido en validación",
-  sin_bloque: "Sin bloque de tipo",
-  en_proceso: "En proceso",
-  sin_registro: "Sin registro",
-  fuera_de_bitacora: "Fuera de bitácora",
-};
-
-const ESTADO_SUNAT_LABEL: Record<UfeEstadoSunat, string> = {
-  ACEPTADO: "Aceptado",
-  "SUNAT NO ENCONTRADO": "No encontrado",
-  "SUNAT NO ACEPTADO": "No aceptado",
-  "SUNAT SIN CONSULTA": "Sin consulta",
 };
 
 type BadgeVariant = "default" | "secondary" | "outline" | "destructive";
@@ -154,7 +140,7 @@ export function intelisisUfeColumns(
       id: "estatus",
       header: "ERP",
       accessorFn: (doc) => doc.estatus_erp,
-      meta: { priority: "2xl" },
+      meta: { priority: "lg" },
       cell: ({ row }) => (
         <Badge variant="outline">{row.original.estatus_erp || "—"}</Badge>
       ),

@@ -430,6 +430,48 @@ class TestListadoServidor:
 
         assert out["filtrados"] == 1
 
+    def test_filtra_por_estatus_erp(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, estatus="CONCLUIDO"),
+                _fila(id_venta=2, estatus="PENDIENTE"),
+            ]
+        )
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+            estatus="CONCLUIDO",
+        )
+
+        assert [fila["id_venta"] for fila in out["rows"]] == [1]
+
+    def test_los_kpis_desglosan_los_tres_ejes(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, estatus="CONCLUIDO"),
+                _fila(id_venta=2, estatus="PENDIENTE"),
+            ]
+        )
+
+        out = listar_ufe(
+            reader,
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=AHORA,
+        )
+
+        kpis = out["kpis"]
+
+        def conteo(clave: str) -> dict[str, int]:
+            return {item["key"]: item["count"] for item in kpis[clave]}
+
+        assert conteo("por_estatus") == {"CONCLUIDO": 1, "PENDIENTE": 1}
+        assert conteo("por_estado_generacion") == {"generado": 2}
+        assert conteo("por_estado_sunat") == {"SUNAT SIN CONSULTA": 2}
+
     def test_filtra_por_lista_de_tipos(self) -> None:
         reader = _Reader(
             [

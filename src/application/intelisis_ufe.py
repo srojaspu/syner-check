@@ -160,6 +160,7 @@ def listar_ufe(
     tipos: Sequence[str] = (),
     generador: str = "",
     sunat: str = "",
+    estatus: str = "",
     sucursal: int | None = None,
     q: str = "",
     correlation_id: str = "",
@@ -218,6 +219,7 @@ def listar_ufe(
             tipos=tipos,
             generador=generador,
             sunat=sunat,
+            estatus=estatus,
             sucursal=sucursal,
             q=q,
         )

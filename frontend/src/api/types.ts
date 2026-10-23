@@ -353,6 +353,12 @@ export interface IntelisisUfeKpis {
   en_espera: number;
   no_aplica: number;
   sin_cobertura_sunat: number;
+  /** Desglose por estatus de la venta en el ERP (columna ERP). */
+  por_estatus: { key: string; count: number }[];
+  /** Desglose por estado del generador (columna Estado). */
+  por_estado_generacion: { key: string; count: number }[];
+  /** Desglose por estado SUNAT. */
+  por_estado_sunat: { key: string; count: number }[];
   por_generador: { key: string; count: number }[];
   por_incidencia: { key: string; count: number }[];
   por_sucursal: IntelisisUfeSucursal[];
@@ -367,6 +373,8 @@ export interface IntelisisUfeKpis {
  */
 export interface IntelisisUfeFiltros {
   estado?: string;
+  /** Estatus de la venta en el ERP (columna ERP). */
+  estatus?: string;
   /** Tipo de la fila de filtros de la tabla: no viaja al servidor. */
   tipo?: string;
   /** Tipos de documento de la consulta (chips del panel): FA, BO, NC, ND. */

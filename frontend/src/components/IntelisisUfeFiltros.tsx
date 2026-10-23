@@ -113,6 +113,7 @@ export function filtraUfeFilas(
       return false;
     }
     if (filtros.sunat && fila.estado_sunat !== filtros.sunat) return false;
+    if (filtros.estatus && fila.estatus_erp !== filtros.estatus) return false;
     if (filtros.sucursal !== undefined && fila.sucursal !== filtros.sucursal) {
       return false;
     }
@@ -205,6 +206,19 @@ export function creaRenderFiltro(
             placeholder="Todos"
             options={OPCIONES_SUNAT}
             onChange={(valor) => alternar("sunat", valor)}
+          />
+        );
+      case "estatus":
+        return (
+          <FiltroSelect
+            label="ERP"
+            value={filtros.estatus ?? ""}
+            placeholder="Todos"
+            options={(kpis?.por_estatus ?? []).map((item) => ({
+              value: item.key,
+              label: item.key,
+            }))}
+            onChange={(valor) => alternar("estatus", valor)}
           />
         );
       case "estado_generacion":

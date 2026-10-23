@@ -183,6 +183,12 @@ function kpis(overrides: Record<string, unknown> = {}) {
     en_espera: 0,
     no_aplica: 0,
     sin_cobertura_sunat: 2,
+    por_estatus: [{ key: "CONCLUIDO", count: 2 }],
+    por_estado_generacion: [
+      { key: "generado", count: 1 },
+      { key: "sin_registro", count: 1 },
+    ],
+    por_estado_sunat: [{ key: "SUNAT SIN CONSULTA", count: 2 }],
     por_generador: [{ key: "OK REGISTRADO", count: 1 }],
     por_incidencia: [{ key: "SIN TRAZA", count: 1 }],
     por_sucursal: [{ sucursal: 602, nombre: "Tienda Central", ventas: 2, incidencias: 1 }],
@@ -239,11 +245,18 @@ describe("IntelisisUfePage", () => {
     mocks.reenvio.limpiarErrorResolucion.mockClear();
   });
 
-  it("muestra el resumen del periodo", () => {
+  it("muestra el estado del periodo por eje", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("Emitidos")).toBeTruthy();
-    expect(screen.getByText("Sin cobertura SUNAT")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Validador: ver estados" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "SUNAT: ver estados" }),
+    ).toBeTruthy();
   });
 
   it("lista los comprobantes con su generador y su estado SUNAT", () => {
@@ -373,10 +386,15 @@ describe("IntelisisUfePage", () => {
     ).toBeTruthy();
   });
 
-  it("filtra en el servidor al pulsar un KPI", () => {
+  it("filtra por un estado del card y viaja en la consulta", async () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Sin traza/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Validador: ver estados" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Sin registro/ }),
+    );
 
     // El filtro queda en borrador: todavia no se consulta.
     expect(mocks.ufe.run).not.toHaveBeenCalled();
@@ -387,9 +405,58 @@ describe("IntelisisUfePage", () => {
 
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
-    // El filtro del KPI viaja en la consulta; los tipos van aparte como
-    // parametro de la consulta (por defecto, los cuatro).
-    expect(ultima?.[2]).toMatchObject({ generador: "SIN TRAZA" });
+    // El estado del generador viaja como `estado` (columna Estado).
+    expect(ultima?.[2]).toMatchObject({ estado: "sin_registro" });
+  });
+
+  it("el card de Intelisis filtra por estatus de la venta", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.kpis = kpis({
+      por_estatus: [
+        { key: "CONCLUIDO", count: 1 },
+        { key: "PENDIENTE", count: 1 },
+      ],
+    });
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        estatus_erp: "PENDIENTE",
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    await user.click(
+      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+    );
+    await user.click(await screen.findByRole("button", { name: /PENDIENTE/ }));
+
+    expect(screen.queryByText("B602-00000001")).toBeNull();
+    expect(screen.getByText("B602-00000002")).toBeTruthy();
+  });
+
+  it("filtra por el estatus del ERP desde la columna", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        estatus_erp: "PENDIENTE",
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    await user.click(screen.getByRole("combobox", { name: "ERP" }));
+    await user.click(await screen.findByRole("option", { name: "CONCLUIDO" }));
+
+    expect(screen.queryByText("B602-00000002")).toBeNull();
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
   });
 
   it("no consulta nada al entrar en la seccion", () => {

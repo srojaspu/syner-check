@@ -92,6 +92,11 @@ describe("filtraUfeFilas", () => {
     expect(out.map((f) => f.id_venta)).toEqual([2]);
   });
 
+  it("filtra por estatus del ERP", () => {
+    expect(filtraUfeFilas(FILAS, { estatus: "CONCLUIDO" })).toHaveLength(2);
+    expect(filtraUfeFilas(FILAS, { estatus: "PENDIENTE" })).toHaveLength(0);
+  });
+
   it("filtra por estado SUNAT", () => {
     const out = filtraUfeFilas(FILAS, { sunat: "SUNAT SIN CONSULTA" });
     expect(out).toHaveLength(2);

@@ -13,7 +13,7 @@ import {
   creaRenderFiltro,
   filtraUfeFilas,
 } from "@/components/IntelisisUfeFiltros";
-import { IntelisisUfeKpis } from "@/components/IntelisisUfeKpis";
+import { IntelisisUfeFlujo } from "@/components/IntelisisUfeFlujo";
 import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
 import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialog";
 import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel";
@@ -149,7 +149,7 @@ export default function IntelisisUfePage({
   }, [range, borrador, tipos]);
 
   const alternar = useCallback(
-    (clave: "generador" | "sunat", valor: string) => {
+    (clave: "estatus" | "estado" | "sunat", valor: string) => {
       setBorrador((prev) => {
         const esIgual = String(prev[clave] ?? "") === valor;
         const siguiente = { ...prev };
@@ -357,11 +357,12 @@ export default function IntelisisUfePage({
       ) : null}
 
       {modo === "range" && kpis ? (
-        <IntelisisUfeKpis
+        <IntelisisUfeFlujo
           kpis={kpis}
           filtros={borrador}
           onAlternar={alternar}
           onLimpiar={() => setBorrador({})}
+          loading={ufe.loading}
         />
       ) : null}
 

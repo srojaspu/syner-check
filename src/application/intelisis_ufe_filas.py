@@ -203,6 +203,7 @@ def aplica_filtros(
     tipos: Sequence[str] = (),
     generador: str = "",
     sunat: str = "",
+    estatus: str = "",
     sucursal: int | None = None,
     q: str = "",
 ) -> bool:
@@ -226,6 +227,8 @@ def aplica_filtros(
         return False
     if sunat and texto(fila.get("estado_sunat")).upper() != sunat.upper():
         return False
+    if estatus and texto(fila.get("estatus_erp")).upper() != estatus.upper():
+        return False
     if sucursal is not None and entero(fila.get("sucursal")) != int(sucursal):
         return False
     if q:
@@ -243,6 +246,21 @@ def aplica_filtros(
         if not any(aguja in campo.lower() for campo in campos):
             return False
     return True
+
+
+def _por_campo(
+    filas: list[dict[str, Any]], campo: str
+) -> list[dict[str, Any]]:
+    """Conteo por valor de un campo, de mayor a menor (para los cards)."""
+    conteo: dict[str, int] = {}
+    for fila in filas:
+        clave = texto(fila.get(campo))
+        if clave:
+            conteo[clave] = conteo.get(clave, 0) + 1
+    return [
+        {"key": clave, "count": total}
+        for clave, total in sorted(conteo.items(), key=lambda par: (-par[1], par[0]))
+    ]
 
 
 def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
@@ -280,6 +298,9 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
         "en_espera": sum(1 for f in filas if f["en_espera"]),
         "no_aplica": sum(1 for f in filas if f["exento_generador"]),
         "sin_cobertura_sunat": sin_cobertura,
+        "por_estatus": _por_campo(filas, "estatus_erp"),
+        "por_estado_generacion": _por_campo(filas, "estado_generacion"),
+        "por_estado_sunat": _por_campo(filas, "estado_sunat"),
         "por_generador": dominio.resumen_por_generador(filas),
         "por_incidencia": dominio.resumen_por_incidencia(filas),
         "por_sucursal": sorted(

@@ -79,6 +79,7 @@ async def listar_ufe(
     tipo: str = Query("", max_length=20),
     generador: str = Query("", max_length=20),
     sunat: str = Query("", max_length=30),
+    estatus: str = Query("", max_length=20),
     sucursal: int | None = Query(None),
     q: str = Query("", max_length=80),
 ):
@@ -114,6 +115,7 @@ async def listar_ufe(
             tipos=tipos,
             generador=generador.upper(),
             sunat=sunat.upper(),
+            estatus=estatus.upper(),
             sucursal=sucursal,
             q=q,
             correlation_id=request_id_var.get(),

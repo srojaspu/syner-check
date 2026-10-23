@@ -185,6 +185,7 @@ export function getIntelisisUfe(
     tipos?: string[];
     generador?: string;
     sunat?: string;
+    estatus?: string;
     sucursal?: number;
     q?: string;
   },
@@ -201,6 +202,7 @@ export function getIntelisisUfe(
   if (params.tipos?.length) qs.set("tipo", params.tipos.join(","));
   if (params.generador) qs.set("generador", params.generador);
   if (params.sunat) qs.set("sunat", params.sunat);
+  if (params.estatus) qs.set("estatus", params.estatus);
   if (params.sucursal !== undefined) qs.set("sucursal", String(params.sucursal));
   if (params.q) qs.set("q", params.q);
   return api(`/api/intelisis/ufe?${qs}`, { signal }, LONG_TIMEOUT_MS);
