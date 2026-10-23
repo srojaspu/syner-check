@@ -263,6 +263,15 @@ export default function IntelisisUfePage({
   /** El servidor rechaza el lote entero por encima de este tope. */
   const loteExcedido = consultables.length > SUNAT_LOTE_MAX;
 
+  /** Filtros de la tabla activos (los que se aplican al instante). */
+  const filtrosActivos = useMemo(
+    () =>
+      Object.values(borrador).filter(
+        (valor) => String(valor ?? "").trim() !== "",
+      ).length,
+    [borrador],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Tabs mode={modo} onChange={setModo} />
@@ -373,6 +382,10 @@ export default function IntelisisUfePage({
         seleccion={{
           total: seleccionadas.length,
           onLimpiar: () => setSeleccion(new Set<number>()),
+        }}
+        filtros={{
+          activos: filtrosActivos,
+          onLimpiar: () => setBorrador({}),
         }}
         reenvio={{
           habilitado: reenvioHabilitado,

@@ -4,6 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CalendarDaysIcon,
   FileDownIcon,
+  FilterRemoveIcon,
   Loading02Icon,
 } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ interface IntelisisUfeResultadosProps {
   visibles: number;
   incidencias: IncidenciaCount[];
   seleccion: { total: number; onLimpiar: () => void };
+  filtros: { activos: number; onLimpiar: () => void };
   reenvio: { habilitado: boolean; total: number; onReenviar: () => void };
   sunat: {
     total: number;
@@ -68,6 +70,7 @@ export function IntelisisUfeResultados({
   visibles,
   incidencias,
   seleccion,
+  filtros,
   reenvio,
   sunat,
   exportar,
@@ -108,6 +111,29 @@ export function IntelisisUfeResultados({
                 </Badge>
               ))}
             </div>
+          ) : null}
+          {filtros.activos ? (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {filtros.activos} filtro{filtros.activos === 1 ? "" : "s"} de la
+                tabla
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={filtros.onLimpiar}
+              >
+                <HugeiconsIcon
+                  icon={FilterRemoveIcon}
+                  size={14}
+                  strokeWidth={2}
+                  aria-hidden
+                />
+                Limpiar filtros
+              </Button>
+            </p>
           ) : null}
           {sunat.excedido ? (
             <p className="text-xs text-muted-foreground" role="status">

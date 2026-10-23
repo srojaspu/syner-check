@@ -756,6 +756,35 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByText("B602-00000001")).toBeTruthy();
   });
 
+  it("limpia los filtros de la tabla desde la cabecera", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        resultado: "REVISAR",
+        estado_generacion: "sin_registro",
+        generador: "SIN TRAZA",
+        incidencias: ["SIN TRAZA"],
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    await user.click(screen.getByRole("combobox", { name: "Resultado" }));
+    await user.click(await screen.findByRole("option", { name: "Revisar" }));
+
+    expect(screen.queryByText("B602-00000001")).toBeNull();
+    expect(screen.getByText(/1 filtro de la tabla/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+    expect(screen.queryByText(/filtro de la tabla/)).toBeNull();
+  });
+
   it("valida en SUNAT solo los documentos seleccionados", async () => {
     const user = userEvent.setup();
     mocks.ufe.rows = [
