@@ -379,10 +379,7 @@ export default function IntelisisUfePage({
         periodo={{ desde: ufe.desde, hasta: ufe.hasta }}
         visibles={visibles.length}
         incidencias={kpis?.por_incidencia ?? []}
-        seleccion={{
-          total: seleccionadas.length,
-          onLimpiar: () => setSeleccion(new Set<number>()),
-        }}
+        seleccionados={seleccionadas.length}
         filtros={{
           activos: filtrosActivos,
           onLimpiar: () => setBorrador({}),

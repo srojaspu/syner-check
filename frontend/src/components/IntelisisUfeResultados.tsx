@@ -36,7 +36,7 @@ interface IntelisisUfeResultadosProps {
   /** Filas que quedan despues de los filtros de la tabla. */
   visibles: number;
   incidencias: IncidenciaCount[];
-  seleccion: { total: number; onLimpiar: () => void };
+  seleccionados: number;
   filtros: { activos: number; onLimpiar: () => void };
   reenvio: { habilitado: boolean; total: number; onReenviar: () => void };
   sunat: {
@@ -68,7 +68,7 @@ export function IntelisisUfeResultados({
   periodo,
   visibles,
   incidencias,
-  seleccion,
+  seleccionados,
   filtros,
   reenvio,
   sunat,
@@ -82,7 +82,7 @@ export function IntelisisUfeResultados({
     ? `El tope por solicitud es de ${limite} documentos: selecciona o filtra`
     : !sunat.total
       ? "No hay documentos mostrados que se puedan validar en SUNAT"
-      : seleccion.total
+      : seleccionados
         ? `Consulta en SUNAT los ${sunat.total} documentos seleccionados`
         : "Consulta en SUNAT los documentos mostrados";
 
@@ -114,22 +114,6 @@ export function IntelisisUfeResultados({
               La validacion SUNAT admite {limite} documentos por solicitud y hay{" "}
               {sunat.total.toLocaleString("es-PE")}: selecciona hasta {limite} en
               la tabla o filtra (resultado, generador o tipo) para dejar menos.
-            </p>
-          ) : null}
-          {seleccion.total ? (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span aria-live="polite">
-                {seleccion.total} seleccionado{seleccion.total === 1 ? "" : "s"}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={seleccion.onLimpiar}
-              >
-                Limpiar selección
-              </Button>
             </p>
           ) : null}
         </>

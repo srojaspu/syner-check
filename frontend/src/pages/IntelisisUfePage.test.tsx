@@ -719,18 +719,19 @@ describe("IntelisisUfePage", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Seleccionar B602-00000002" }),
     );
-    expect(screen.getByText(/1 seleccionado/)).toBeTruthy();
+    const boton = screen.getByRole("button", {
+      name: /^Reenviar selección/,
+    }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(false);
+    expect(boton.textContent).toContain("(1)");
 
     // Al filtrar por Conforme la fila marcada desaparece: no se encola algo
     // que el usuario ya no ve en la tabla.
     await user.click(screen.getByRole("combobox", { name: "Resultado" }));
     await user.click(await screen.findByRole("option", { name: "Conforme" }));
 
-    expect(screen.queryByText(/seleccionado/)).toBeNull();
-    const boton = screen.getByRole("button", {
-      name: /^Reenviar selección/,
-    }) as HTMLButtonElement;
     expect(boton.disabled).toBe(true);
+    expect(boton.textContent).not.toContain("(1)");
   });
 
   it("mantiene la fila de filtros cuando ningun documento coincide", async () => {
