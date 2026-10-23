@@ -98,6 +98,24 @@ describe("DataTable interactions", () => {
     expect(screen.queryByText("F001-00000")).toBeNull();
   });
 
+  it("keeps the filters visible when nothing matches", async () => {
+    const user = userEvent.setup();
+    render(<Harness rows={makeRows(3)} />);
+
+    const filtro = screen.getByLabelText("Filtrar por documento");
+    await user.type(filtro, "zzz");
+
+    // El mensaje va dentro de la tabla; la cabecera y su fila de filtros
+    // siguen ahi, asi que se puede corregir sin "Limpiar filtros".
+    expect(screen.getByText("No encontramos comprobantes")).toBeTruthy();
+    expect(screen.getByLabelText("Filtrar por documento")).toBeTruthy();
+
+    await user.clear(filtro);
+    await user.type(filtro, "00001");
+
+    expect(screen.getByText("F001-00001")).toBeTruthy();
+  });
+
   it("opens a row with the keyboard", async () => {
     const user = userEvent.setup();
     const onRowClick = vi.fn();
