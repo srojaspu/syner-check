@@ -386,6 +386,8 @@ class TestListadoServidor:
 
         fila = out["rows"][0]
         assert set(fila) == set(CAMPOS_LISTA)
+        # SUNAT se arma desde el listado: sin el tipo no se puede validar.
+        assert fila["tipo_sunat"] == "BOLETA"
         # Lo que solo necesita el detalle no viaja en el listado.
         assert "ruc" not in fila
         assert "hash" not in fila

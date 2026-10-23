@@ -46,6 +46,7 @@ CAMPOS_LISTA: tuple[str, ...] = (
     "etapa",
     "intentos",
     "ultimo_intento",
+    "tipo_sunat",
     "estado_sunat",
     "sunat",
 )
