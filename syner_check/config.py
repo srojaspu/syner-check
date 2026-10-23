@@ -340,13 +340,18 @@ def get_intelisis_config() -> dict:
 # programada). Esta aplicacion NO ejecuta el generador ni crea tablas: solo
 # encola, lee la cola y cierra casos a mano.
 #
-# La conexion de escritura (INTELISIS_WRITER_*) inserta en la cola. Ya no
-# necesita EXECUTE sobre SPPUFE_UBL21 / _NCND ni permisos de instancia
-# (xp_cmdshell): eso lo hace el worker del ERP con su propia credencial.
+# Un solo login para lectura y reenvio (``INTELISIS_*``): hay una sola
+# instancia (sin AG) y dos credenciales vivirian en el mismo .env, asi que la
+# conexion de escritura se deriva de la de lectura (mismo patron que
+# MovSynerPos): misma config, sin ApplicationIntent=ReadOnly solo aqui. Ese
+# login necesita SELECT sobre Venta/MovTipo/FE_Worker/FE_Reenvio,
+# INSERT/UPDATE sobre FE_Reenvio y EXECUTE de sp_getapplock. NO necesita
+# EXECUTE de los generadores ni permisos de instancia (xp_cmdshell): eso lo
+# hace el worker del ERP con su propia cuenta.
 
 INTELISIS_RESEND_MAX_BATCH_DEFAULT = 10
 INTELISIS_RESEND_MAX_BATCH_LIMIT = 50
-INTELISIS_WRITER_APP_NAME_DEFAULT = "syner-check-web"
+INTELISIS_APP_NAME_DEFAULT = "syner-check-web"
 
 # Nombre fijo: la cola es del ERP y no se cambia por variable de entorno.
 FE_REENVIO_TABLE = "dbo.FE_Reenvio"
@@ -372,70 +377,45 @@ def intelisis_resend_max_batch() -> int:
 
 
 def get_intelisis_write_config() -> dict:
-    """Conexion de ESCRITURA a PUnidas (la que inserta en ``FE_Reenvio``).
+    """Conexion que escribe en la cola del ERP, derivada del login unico.
 
-    Nunca usa ``ApplicationIntent=ReadOnly``. La conexion solo necesita
-    SELECT sobre Venta/MovTipo/FE_Reenvio/FE_Worker, INSERT/UPDATE sobre
-    FE_Reenvio y EXECUTE sobre ``sp_getapplock``/``sp_releaseapplock``. El
-    generador y su ``xp_cmdshell`` son del worker del ERP, no nuestros.
+    Misma instancia, mismo login y mismo password que la lectura: solo cambia
+    la tabla de referencia y que **no** lleva ``ApplicationIntent=ReadOnly``
+    (aqui si se escribe). ``APP=`` permite atribuir en SQL Server las sesiones
+    que encolaron cada fila.
+
+    El login necesita SELECT sobre Venta/MovTipo/FE_Reenvio/FE_Worker,
+    INSERT/UPDATE sobre FE_Reenvio y EXECUTE sobre
+    ``sp_getapplock``/``sp_releaseapplock``. El generador y su
+    ``xp_cmdshell`` son del worker del ERP, no nuestros.
     """
-    server = os.getenv("INTELISIS_WRITER_HOST", "").strip()
-    database = os.getenv("INTELISIS_WRITER_DB", "").strip()
-    uid = os.getenv("INTELISIS_WRITER_USER", "").strip()
-    pwd = os.getenv("INTELISIS_WRITER_PASSWORD", "")
-    if not server:
-        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_HOST.")
-    if not database:
-        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_DB.")
-    if not uid:
-        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_USER.")
-    if not pwd:
-        raise RuntimeError(
-            "Missing required DB env var: INTELISIS_WRITER_PASSWORD."
-        )
-    try:
-        connect_timeout = int(
-            os.getenv("INTELISIS_WRITER_CONNECT_TIMEOUT", str(DB_TIMEOUT_DEFAULT))
-        )
-    except ValueError:
-        connect_timeout = DB_TIMEOUT_DEFAULT
     return {
-        "driver": DB_DRIVER_DEFAULT,
-        "server": server,
-        "database": database,
+        **get_intelisis_config(),
         "table": FE_REENVIO_TABLE,
-        "uid": uid,
-        "trusted": False,
-        "port": os.getenv("INTELISIS_WRITER_PORT", "").strip(),
-        "instance": os.getenv("INTELISIS_WRITER_INSTANCE", "").strip(),
-        "timeout": connect_timeout,
-        "encrypt": os.getenv("INTELISIS_WRITER_ENCRYPT", "yes"),
-        "trust_server_certificate": os.getenv(
-            "INTELISIS_WRITER_TRUST_SERVER_CERTIFICATE", "no"
-        ),
-        "app_name": (
-            os.getenv(
-                "INTELISIS_WRITER_APP_NAME", INTELISIS_WRITER_APP_NAME_DEFAULT
-            ).strip()
-            or INTELISIS_WRITER_APP_NAME_DEFAULT
-        ),
-        # Escritura: jamas ReadOnly.
+        # Escritura: jamas ReadOnly (es inerte en esta instancia, pero si
+        # algun dia aparece un AG la conexion de escritura sigue siendo la
+        # primaria).
         "application_intent_read_only": False,
+        "app_name": (
+            os.getenv("INTELISIS_APP_NAME", "").strip()
+            or INTELISIS_APP_NAME_DEFAULT
+        ),
     }
 
 
 def get_intelisis_write_password() -> str:
-    """Password del writer de Intelisis (nunca se registra ni se imprime)."""
-    return os.getenv("INTELISIS_WRITER_PASSWORD", "")
+    """Password del login unico (nunca se registra ni se imprime)."""
+    return get_intelisis_password()
 
 
 def is_intelisis_write_configured() -> bool:
-    """True cuando el writer tiene host, base, usuario y password."""
-    try:
-        config = get_intelisis_write_config()
-    except RuntimeError:
-        return False
-    return bool(config.get("uid") and get_intelisis_write_password())
+    """True cuando el login de Intelisis esta configurado.
+
+    Con un solo login, "writer configurado" es exactamente "Intelisis
+    configurado"; se conserva el nombre porque describe la capacidad (poder
+    encolar), no una credencial distinta.
+    """
+    return is_intelisis_configured()
 
 
 def resolve_graphql_token() -> tuple[str, str]:

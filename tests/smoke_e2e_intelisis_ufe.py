@@ -49,7 +49,7 @@ LOGIN_LECTURA = os.getenv("INTELISIS_USER", "pu_reader")
 # Nombre que esta app pone en su conexion de escritura (APP=...). El generador
 # lo ejecuta el worker del ERP, asi que una fila con nuestra AppName solo puede
 # venir de una conexion nuestra.
-APP_WRITER = os.getenv("INTELISIS_WRITER_APP_NAME", "syner-check-web")
+APP_WRITER = os.getenv("INTELISIS_APP_NAME", "syner-check-web")
 
 FALLOS: list[str] = []
 
