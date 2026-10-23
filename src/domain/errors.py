@@ -23,6 +23,10 @@ class MovSynerPosValidationError(DomainError):
     """Raised when a document cannot be mapped to dbo.MovSynerPos safely."""
 
 
+class ReenvioNoPermitidoError(DomainError):
+    """Raised when a document cannot be queued for regeneration."""
+
+
 class NotFoundError(LookupError):
     """Raised when a document is not found."""
 

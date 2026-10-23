@@ -52,6 +52,39 @@ class IntelisisUfeReader(Protocol):
         ...
 
 
+class IntelisisReenvioQueue(Protocol):
+    """Cola de reenvios del ERP (``dbo.FE_Reenvio`` de PUnidas).
+
+    La cola es compartida: el worker PHP del ERP ejecuta el generador y esta
+    aplicacion solo encola, consulta y cierra casos. Implementar este puerto
+    nunca debe ejecutar ``SPPUFE_UBL21`` / ``SPPUFE_UBL21_NCND``.
+    """
+
+    def encolar(
+        self,
+        *,
+        id_venta: int,
+        usuario: str,
+        motivo: str,
+        token: str,
+        correlation_id: str = "",
+    ) -> dict:
+        """Inserta la fila en la cola y devuelve ``{"id", "duplicado"}``.
+
+        El tipo y el procedimiento los resuelve la implementacion contra
+        ``dbo.Venta``; nunca llegan desde el navegador.
+        """
+        ...
+
+    def panel(self, *, limit: int = 20, estado: str = "") -> dict:
+        """Foto de la cola: worker, pendientes, activos, historial y conteos."""
+        ...
+
+    def resolver(self, queue_id: int, *, actor: str, nota: str) -> dict:
+        """Cierra a mano un ``NO_CONFIRMADO`` (paridad ``feop_resolve``)."""
+        ...
+
+
 class SunatValidator(Protocol):
     """SUNAT Validator microservice (batch submit + job polling)."""
 

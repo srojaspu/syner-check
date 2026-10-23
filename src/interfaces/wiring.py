@@ -20,6 +20,11 @@ from src.application import (
     sunat_job_status,
     sunat_revalidate,
 )
+from src.application.intelisis_reenvio import (
+    encolar_reenvio,
+    listar_reenvios,
+    resolver_reenvio,
+)
 from src.application.intelisis_ufe import (
     RangoInvalidoError,
     buscar_ufe,
@@ -32,6 +37,7 @@ from src.domain.errors import (
     InvalidDocumentTypeError,
     InvalidRangeError,
     NotFoundError,
+    ReenvioNoPermitidoError,
     UpstreamError,
 )
 from src.infrastructure import (
@@ -416,6 +422,115 @@ def intelisis_ufe_validate(
     except UpstreamError:
         logger.exception("Intelisis UFE validation failure")
         raise HTTPException(502, "No fue posible validar en SUNAT.")
+
+
+def intelisis_reenvio_encolar(
+    ids: list[int],
+    motivo: str,
+    forzar: bool,
+    actor: str,
+    correlation_id: str = "",
+    token: str = "",
+) -> dict:
+    """Encola uno o varios reenvios en ``dbo.FE_Reenvio`` (no ejecuta el SP).
+
+    La cola y el worker son los del ERP: aqui solo se registra la intencion
+    con auditoria (usuario, motivo, token). Un documento rechazado no bloquea
+    a los demas del lote.
+    """
+    from syner_check import config as cfg
+    from src.infrastructure.intelisis_reenvio import IntelisisFeReenvioAdapter
+
+    if not cfg.intelisis_resend_enabled():
+        raise HTTPException(503, "El reenvío a Intelisis está deshabilitado.")
+    if not cfg.is_intelisis_write_configured():
+        raise HTTPException(503, "La cola del ERP no está configurada.")
+
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        raise HTTPException(503, "Intelisis no disponible.")
+
+    try:
+        resultado = encolar_reenvio(
+            reader,
+            IntelisisFeReenvioAdapter(),
+            ids=ids,
+            usuario=actor or "",
+            motivo=motivo or "",
+            forzar=bool(forzar),
+            max_batch=cfg.intelisis_resend_max_batch(),
+            correlation_id=correlation_id or "",
+            token=token or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Solicitud inválida.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE resend enqueue upstream failure")
+        raise HTTPException(
+            502, "No fue posible consultar el comprobante en Intelisis."
+        )
+    if resultado.get("encolados", 0) == 0:
+        motivo_rechazo = next(
+            (
+                item.get("motivo")
+                for item in resultado.get("detalle", [])
+                if item.get("motivo")
+            ),
+            "No se pudo encolar el reenvío.",
+        )
+        raise HTTPException(409, motivo_rechazo)
+    return resultado
+
+
+def intelisis_reenvios_listar(limit: int = 20, estado: str = "") -> dict:
+    """Panel de la cola del ERP: worker, pendientes, activos e historial."""
+    from syner_check import config as cfg
+    from src.infrastructure.intelisis_reenvio import IntelisisFeReenvioAdapter
+
+    if not cfg.is_intelisis_write_configured():
+        raise HTTPException(503, "La cola del ERP no está configurada.")
+    try:
+        panel = listar_reenvios(
+            IntelisisFeReenvioAdapter(), limit=limit, estado=estado
+        )
+        # El navegador decide con esto si ofrece el reenvio y cuanto admite.
+        panel["habilitado"] = bool(cfg.intelisis_resend_enabled())
+        panel["max_batch"] = int(cfg.intelisis_resend_max_batch())
+        return panel
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Filtro inválido.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE resend queue read failure")
+        raise HTTPException(
+            502, "No fue posible consultar la cola de reenvíos."
+        )
+
+
+def intelisis_reenvio_resolver(
+    queue_id: int, nota: str, actor: str
+) -> dict:
+    """Cierra a mano un NO_CONFIRMADO (con nota obligatoria)."""
+    from syner_check import config as cfg
+    from src.infrastructure.intelisis_reenvio import IntelisisFeReenvioAdapter
+
+    if not cfg.is_intelisis_write_configured():
+        raise HTTPException(503, "La cola del ERP no está configurada.")
+    try:
+        return resolver_reenvio(
+            IntelisisFeReenvioAdapter(),
+            queue_id=queue_id,
+            actor=actor or "",
+            nota=nota or "",
+        )
+    except NotFoundError:
+        raise HTTPException(404, "No hay un reenvío pendiente de revisión.")
+    except ReenvioNoPermitidoError as exc:
+        raise HTTPException(409, str(exc) or "La revisión no se puede cerrar.")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Solicitud inválida.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE resend resolve failure")
+        raise HTTPException(502, "No fue posible resolver el reenvío.")
 
 
 def movsynerpos_send(

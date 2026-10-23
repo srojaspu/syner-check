@@ -86,7 +86,12 @@ class RateLimitMiddleware:
             return await self.app(scope, receive, send)
 
         limiter = self._general
-        write_paths = ("/api/sunat/", "/api/movsynerpos/")
+        write_paths = (
+            "/api/sunat/",
+            "/api/movsynerpos/",
+            "/api/intelisis/ufe/reenviar",
+            "/api/intelisis/ufe/reenvios/",
+        )
         if scope.get("method") == "POST" and path.startswith(write_paths):
             limiter = self._sunat_write
 

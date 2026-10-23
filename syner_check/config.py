@@ -334,6 +334,110 @@ def get_intelisis_config() -> dict:
     }
 
 
+# --- Intelisis: reenvio manual (fase 2) ------------------------------------
+# La cola es dbo.FE_Reenvio de PUnidas: la misma tabla y el mismo worker que
+# usa el ERP (C:\Projects\PHP\rmand2, bin/fe_worker.php en su tarea
+# programada). Esta aplicacion NO ejecuta el generador ni crea tablas: solo
+# encola, lee la cola y cierra casos a mano.
+#
+# La conexion de escritura (INTELISIS_WRITER_*) inserta en la cola. Ya no
+# necesita EXECUTE sobre SPPUFE_UBL21 / _NCND ni permisos de instancia
+# (xp_cmdshell): eso lo hace el worker del ERP con su propia credencial.
+
+INTELISIS_RESEND_MAX_BATCH_DEFAULT = 10
+INTELISIS_RESEND_MAX_BATCH_LIMIT = 50
+INTELISIS_WRITER_APP_NAME_DEFAULT = "syner-check-web"
+
+# Nombre fijo: la cola es del ERP y no se cambia por variable de entorno.
+FE_REENVIO_TABLE = "dbo.FE_Reenvio"
+
+
+def intelisis_resend_enabled() -> bool:
+    """Kill switch del reenvio: apagado por defecto.
+
+    Apagado, el POST /reenviar responde 503 y no se inserta nada en la cola
+    del ERP. Es el unico interruptor necesario para detener la escritura.
+    """
+    return _is_truthy(os.getenv("INTELISIS_RESEND_ENABLED", "false"))
+
+
+def intelisis_resend_max_batch() -> int:
+    """Tope de documentos por solicitud de reenvio (1..50)."""
+    return _int_env(
+        "INTELISIS_RESEND_MAX_BATCH",
+        INTELISIS_RESEND_MAX_BATCH_DEFAULT,
+        1,
+        INTELISIS_RESEND_MAX_BATCH_LIMIT,
+    )
+
+
+def get_intelisis_write_config() -> dict:
+    """Conexion de ESCRITURA a PUnidas (la que inserta en ``FE_Reenvio``).
+
+    Nunca usa ``ApplicationIntent=ReadOnly``. La conexion solo necesita
+    SELECT sobre Venta/MovTipo/FE_Reenvio/FE_Worker, INSERT/UPDATE sobre
+    FE_Reenvio y EXECUTE sobre ``sp_getapplock``/``sp_releaseapplock``. El
+    generador y su ``xp_cmdshell`` son del worker del ERP, no nuestros.
+    """
+    server = os.getenv("INTELISIS_WRITER_HOST", "").strip()
+    database = os.getenv("INTELISIS_WRITER_DB", "").strip()
+    uid = os.getenv("INTELISIS_WRITER_USER", "").strip()
+    pwd = os.getenv("INTELISIS_WRITER_PASSWORD", "")
+    if not server:
+        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_HOST.")
+    if not database:
+        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_DB.")
+    if not uid:
+        raise RuntimeError("Missing required DB env var: INTELISIS_WRITER_USER.")
+    if not pwd:
+        raise RuntimeError(
+            "Missing required DB env var: INTELISIS_WRITER_PASSWORD."
+        )
+    try:
+        connect_timeout = int(
+            os.getenv("INTELISIS_WRITER_CONNECT_TIMEOUT", str(DB_TIMEOUT_DEFAULT))
+        )
+    except ValueError:
+        connect_timeout = DB_TIMEOUT_DEFAULT
+    return {
+        "driver": DB_DRIVER_DEFAULT,
+        "server": server,
+        "database": database,
+        "table": FE_REENVIO_TABLE,
+        "uid": uid,
+        "trusted": False,
+        "port": os.getenv("INTELISIS_WRITER_PORT", "").strip(),
+        "instance": os.getenv("INTELISIS_WRITER_INSTANCE", "").strip(),
+        "timeout": connect_timeout,
+        "encrypt": os.getenv("INTELISIS_WRITER_ENCRYPT", "yes"),
+        "trust_server_certificate": os.getenv(
+            "INTELISIS_WRITER_TRUST_SERVER_CERTIFICATE", "no"
+        ),
+        "app_name": (
+            os.getenv(
+                "INTELISIS_WRITER_APP_NAME", INTELISIS_WRITER_APP_NAME_DEFAULT
+            ).strip()
+            or INTELISIS_WRITER_APP_NAME_DEFAULT
+        ),
+        # Escritura: jamas ReadOnly.
+        "application_intent_read_only": False,
+    }
+
+
+def get_intelisis_write_password() -> str:
+    """Password del writer de Intelisis (nunca se registra ni se imprime)."""
+    return os.getenv("INTELISIS_WRITER_PASSWORD", "")
+
+
+def is_intelisis_write_configured() -> bool:
+    """True cuando el writer tiene host, base, usuario y password."""
+    try:
+        config = get_intelisis_write_config()
+    except RuntimeError:
+        return False
+    return bool(config.get("uid") and get_intelisis_write_password())
+
+
 def resolve_graphql_token() -> tuple[str, str]:
     """Return (token, source) where source is always 'auto'.
 

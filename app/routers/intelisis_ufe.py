@@ -4,8 +4,10 @@ Viven en un router propio para que ``app.main`` siga siendo el punto de
 composicion de la aplicacion y no se llene de handlers de una sola
 pantalla.
 
-Solo lectura, salvo la validacion individual en SUNAT (que consulta SUNAT y
-guarda el estado en la base de syner-check; no escribe en Intelisis).
+Solo lectura, salvo dos escrituras acotadas: la validación individual en
+SUNAT (guarda el estado en la base de syner-check) y el reenvío manual (una
+fila ``EN_COLA`` en ``dbo.FE_Reenvio``, la cola del propio ERP). Esta
+aplicación nunca ejecuta el generador UFE: eso es del worker PHP del ERP.
 """
 
 from __future__ import annotations
@@ -20,6 +22,9 @@ from app.logging_setup import request_id_var
 from app.security import read_json_limited
 from app.config import MAX_REQUEST_BYTES
 from src.interfaces.wiring import (
+    intelisis_reenvio_encolar as clean_intelisis_reenvio_encolar,
+    intelisis_reenvio_resolver as clean_intelisis_reenvio_resolver,
+    intelisis_reenvios_listar as clean_intelisis_reenvios_listar,
     intelisis_ufe_buscar as clean_intelisis_ufe_buscar,
     intelisis_ufe_detail as clean_intelisis_ufe_detail,
     intelisis_ufe_list as clean_intelisis_ufe_list,
@@ -140,6 +145,112 @@ async def buscar_ufe(
         raise HTTPException(
             502, "No fue posible buscar el comprobante."
         ) from exc
+
+
+@router.get("/reenvios")
+async def listar_reenvios_ufe(
+    request: Request,
+    limit: int = Query(20, ge=1, le=200),
+    estado: str = Query("", max_length=20),
+):
+    """Panel de la cola del ERP: worker, pendientes, activos e historial."""
+    _protected(request)
+    try:
+        return await run_blocking(
+            clean_intelisis_reenvios_listar, limit, estado
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE resend queue read failed")
+        raise HTTPException(
+            502, "No fue posible consultar la cola de reenvíos."
+        ) from exc
+
+
+@router.post("/reenviar")
+async def reenviar_ufe(request: Request):
+    """Encola uno o varios reenvíos en la cola del ERP (``dbo.FE_Reenvio``).
+
+    No ejecuta el SP: el worker PHP del ERP es el único que genera. Aquí solo
+    se registra la intención con auditoría (usuario, motivo, token). Un
+    documento rechazado no bloquea a los demás del lote.
+
+    ``token`` es la clave de idempotencia de la solicitud (32 hex): si el
+    navegador reintenta con el mismo token, no se duplica la fila.
+    """
+    _protected(request)
+    body = await read_json_limited(request, MAX_REQUEST_BYTES)
+    data = body if isinstance(body, dict) else {}
+    raw_ids = data.get("ids")
+    if raw_ids is None and data.get("id_venta") is not None:
+        raw_ids = [data.get("id_venta")]
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(400, "Indica los comprobantes a reenviar.")
+    ids: list[int] = []
+    for item in raw_ids:
+        try:
+            ids.append(int(item))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Identificador de comprobante inválido.")
+    motivo = data.get("motivo", "")
+    motivo = motivo.strip() if isinstance(motivo, str) else ""
+    if not motivo or len(motivo) > 500:
+        raise HTTPException(
+            400, "El motivo debe tener entre 1 y 500 caracteres."
+        )
+    token_raw = data.get("token", "")
+    if token_raw is None:
+        token = ""
+    elif isinstance(token_raw, str):
+        token = token_raw.strip()
+    else:
+        raise HTTPException(400, "Token de solicitud inválido.")
+    if token and (
+        len(token) != 32
+        or any(caracter not in "0123456789abcdefABCDEF" for caracter in token)
+    ):
+        raise HTTPException(400, "Token de solicitud inválido.")
+    # `forzar` regenera un documento ya emitido: solo el booleano JSON `true`
+    # lo activa. Un "false" (texto), 1 o cualquier otra cosa no fuerza.
+    forzar = data.get("forzar") is True
+    try:
+        return await run_blocking(
+            clean_intelisis_reenvio_encolar,
+            ids,
+            motivo,
+            forzar,
+            _actor_email(request),
+            request_id_var.get(),
+            token,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE resend enqueue failed")
+        raise HTTPException(502, "No fue posible encolar el reenvío.") from exc
+
+
+@router.post("/reenvios/{queue_id}/resolver")
+async def resolver_reenvio_ufe(request: Request, queue_id: int):
+    """Cierra a mano un NO_CONFIRMADO de la cola del ERP (nota obligatoria)."""
+    _protected(request)
+    body = await read_json_limited(request, MAX_REQUEST_BYTES)
+    data = body if isinstance(body, dict) else {}
+    nota = data.get("nota", "")
+    nota = nota if isinstance(nota, str) else ""
+    try:
+        return await run_blocking(
+            clean_intelisis_reenvio_resolver,
+            queue_id,
+            nota,
+            _actor_email(request),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE resend resolve failed")
+        raise HTTPException(502, "No fue posible resolver el reenvío.") from exc
 
 
 @router.get("/{id_venta}")

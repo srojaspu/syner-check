@@ -94,6 +94,11 @@ def build_connection_string(db_config: dict[str, Any], password: str) -> str:
         parts.append(f"UID={db_config['uid']}")
         parts.append(f"PWD={password}")
     parts.append(f"Connection Timeout={db_config.get('timeout', 30)}")
+    # ``APP`` queda en APP_NAME() dentro de SQL Server. El generador lo
+    # guarda en dbo.SPPUFE_EjecucionLog.AppName: es la unica forma de
+    # distinguir nuestros reenvios de los jobs del ERP cuando ambos usan 'sa'.
+    if db_config.get("app_name"):
+        parts.append(f"APP={db_config['app_name']}")
     if db_config.get("application_intent_read_only", True):
         parts.append("ApplicationIntent=ReadOnly")
     return ";".join(parts) + ";"

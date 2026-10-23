@@ -180,6 +180,14 @@ async def lifespan(_app: FastAPI):
     else:
         logger.info("MovSynerPos writer disabled (MOVSYNERPOS_WRITE_ENABLED=false)")
 
+    if cfg.intelisis_resend_enabled():
+        logger.info(
+            "Intelisis resend enabled target=%s worker=ERP fe_worker.php",
+            cfg.FE_REENVIO_TABLE,
+        )
+    else:
+        logger.info("Intelisis resend disabled (INTELISIS_RESEND_ENABLED=false)")
+
     stop = asyncio.Event()
     task: asyncio.Task | None = None
     try:

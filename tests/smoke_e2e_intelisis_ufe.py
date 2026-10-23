@@ -46,6 +46,10 @@ from syner_check.db_client import build_connection_string  # noqa: E402
 PERIODO_INICIO = "2026-10-15"
 PERIODO_FIN = "2026-10-21"
 LOGIN_LECTURA = os.getenv("INTELISIS_USER", "pu_reader")
+# Nombre que esta app pone en su conexion de escritura (APP=...). El generador
+# lo ejecuta el worker del ERP, asi que una fila con nuestra AppName solo puede
+# venir de una conexion nuestra.
+APP_WRITER = os.getenv("INTELISIS_WRITER_APP_NAME", "syner-check-web")
 
 FALLOS: list[str] = []
 
@@ -59,11 +63,13 @@ def verificar(condicion: bool, mensaje: str) -> None:
 
 
 def huella_intelisis() -> dict:
-    """Huella de lo que el generador tocaria, atribuida a nuestro login.
+    """Huella de lo que el generador tocaria, atribuida a nosotros.
 
     La bitacora **crece sola** (los jobs del propio ERP generan documentos
     con el login `sa`), asi que comparar el total de filas no prueba nada.
-    Lo que si prueba es que ninguna fila la genero *nuestro* login.
+    Tampoco alcanza con mirar el login: tanto el ERP como su worker pueden
+    entrar con la misma cuenta. Lo que si prueba es que no haya filas con
+    nuestra `AppName` (ni con el login de lectura, que no puede insertar).
     """
     conexion = pyodbc.connect(
         build_connection_string(get_intelisis_config(), get_intelisis_password())
@@ -74,7 +80,9 @@ def huella_intelisis() -> dict:
     )
     filas, max_log = cursor.fetchone()
     cursor.execute(
-        "SELECT COUNT(*) FROM dbo.SPPUFE_EjecucionLog WHERE LoginName = ?",
+        "SELECT COUNT(*) FROM dbo.SPPUFE_EjecucionLog "
+        "WHERE AppName = ? OR LoginName = ?",
+        APP_WRITER,
         LOGIN_LECTURA,
     )
     propias = cursor.fetchone()[0]
@@ -115,7 +123,7 @@ def main() -> None:
     print(
         "  huella PUnidas antes: "
         f"bitacora={antes['log_filas']} filas (max LogID {antes['log_max']}), "
-        f"filas de {LOGIN_LECTURA}: {antes['propias']}"
+        f"filas nuestras ({APP_WRITER}): {antes['propias']}"
     )
 
     with TestClient(app) as client:
@@ -223,7 +231,7 @@ def main() -> None:
     print(
         "  huella PUnidas despues: "
         f"bitacora={despues['log_filas']} filas (max LogID {despues['log_max']}), "
-        f"filas de {LOGIN_LECTURA}: {despues['propias']}"
+        f"filas nuestras ({APP_WRITER}): {despues['propias']}"
     )
     if despues["log_max"] != antes["log_max"]:
         print(
@@ -232,7 +240,7 @@ def main() -> None:
         )
     verificar(
         despues["propias"] == antes["propias"] == 0,
-        "ninguna fila de la bitacora la genero nuestro login",
+        "ninguna fila de la bitacora es nuestra (AppName/LoginName)",
     )
     verificar(
         not antes["PuedeEjecutarGenerador"] and not antes["PuedeEjecutarGeneradorNC"],
