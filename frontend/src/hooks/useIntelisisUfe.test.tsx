@@ -6,6 +6,7 @@ import type { IntelisisUfeDetalle, IntelisisUfeRow } from "../api/types";
 const getMock = vi.hoisted(() => vi.fn());
 const detalleMock = vi.hoisted(() => vi.fn());
 const validarMock = vi.hoisted(() => vi.fn());
+const buscarMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -14,6 +15,7 @@ vi.mock("../api/client", async (importOriginal) => {
     getIntelisisUfe: getMock,
     getIntelisisUfeDetalle: detalleMock,
     validarIntelisisUfe: validarMock,
+    buscarIntelisisUfe: buscarMock,
   };
 });
 
@@ -115,6 +117,29 @@ describe("useIntelisisUfe", () => {
     expect(result.current.rows).toHaveLength(1);
     expect(result.current.kpis?.total).toBe(1);
     expect(result.current.error).toBeNull();
+  });
+
+  it("la busqueda por numero no arrastra los kpis del periodo", async () => {
+    getMock.mockResolvedValue(respuesta());
+    buscarMock.mockResolvedValue({
+      documento_buscado: "B602-00142702",
+      intelisis_enabled: true,
+      encontrados: 1,
+      rows: [fila()],
+    });
+    const { result } = renderHook(() => useIntelisisUfe(vi.fn()));
+
+    await act(async () => {
+      await result.current.run("2026-10-15", "2026-10-21", {});
+    });
+    expect(result.current.kpis).not.toBeNull();
+
+    await act(async () => {
+      await result.current.buscar("B602-00142702");
+    });
+
+    expect(result.current.kpis).toBeNull();
+    expect(result.current.busqueda?.rows).toHaveLength(1);
   });
 
   it("avisa el error sin romper", async () => {

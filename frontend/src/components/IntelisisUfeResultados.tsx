@@ -91,7 +91,7 @@ export function IntelisisUfeResultados({
       title="Comprobantes"
       summary={
         hayConsulta
-          ? `${visibles} documentos${
+          ? `${visibles} documento${visibles === 1 ? "" : "s"}${
               modo === "range" && periodo.desde
                 ? ` · ${periodo.desde} a ${periodo.hasta}`
                 : ""

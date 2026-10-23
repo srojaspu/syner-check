@@ -158,6 +158,9 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
         }));
         setState((prev) => ({
           ...prev,
+          // El resumen del periodo no aplica a una busqueda puntual: sin esto
+          // los badges de incidencias del ultimo rango quedaban a la vista.
+          kpis: null,
           loading: false,
           searched: true,
           intelisisEnabled: Boolean(data.intelisis_enabled),
@@ -171,6 +174,7 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
         setDetalleState((prev) => ({ ...prev, busqueda: null }));
         setState((prev) => ({
           ...prev,
+          kpis: null,
           loading: false,
           error:
             error instanceof Error

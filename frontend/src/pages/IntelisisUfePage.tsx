@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -99,6 +99,15 @@ export default function IntelisisUfePage({
   const [reenvioDialogOpen, setReenvioDialogOpen] = useState(false);
   const [resolviendoFila, setResolviendoFila] =
     useState<IntelisisReenvioFila | null>(null);
+
+  // Cambiar de modo arranca una consulta distinta: los filtros de la tabla
+  // del modo anterior no deben seguir aplicandose en silencio.
+  const modoPrevio = useRef(modo);
+  useEffect(() => {
+    if (modoPrevio.current === modo) return;
+    modoPrevio.current = modo;
+    setBorrador({});
+  }, [modo]);
 
   // Una consulta nueva invalida la selección: los ids de otra búsqueda no
   // deben viajar en una solicitud de reenvío.
@@ -391,7 +400,7 @@ export default function IntelisisUfePage({
         modo={modo}
         periodo={{ desde: ufe.desde, hasta: ufe.hasta }}
         visibles={visibles.length}
-        incidencias={kpis?.por_incidencia ?? []}
+        incidencias={modo === "range" ? (kpis?.por_incidencia ?? []) : []}
         seleccionados={seleccionadas.length}
         filtros={{
           activos: filtrosActivos,

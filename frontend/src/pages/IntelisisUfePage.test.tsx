@@ -554,6 +554,22 @@ describe("IntelisisUfePage", () => {
     expect(mocks.ufe.buscar).toHaveBeenCalledWith("B710-00004539");
   });
 
+  it("la busqueda por numero no mezcla los badges del periodo", () => {
+    mocks.ufe.kpis = kpis({
+      por_incidencia: [{ key: "SUNAT NO ENCONTRADO", count: 332 }],
+    });
+    mocks.ufe.busqueda = { documento: "B602-00142702", rows: [fila()] };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Número de comprobante" }),
+    );
+
+    // El resumen del periodo anterior no aplica a una busqueda puntual.
+    expect(screen.queryByText(/SUNAT NO ENCONTRADO/)).toBeNull();
+    expect(screen.getByText("1 documento")).toBeTruthy();
+  });
+
   it("repite la busqueda por numero despues de validar en lote", async () => {
     mocks.ufe.busqueda = { documento: "B710-00004539", rows: [fila()] };
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
