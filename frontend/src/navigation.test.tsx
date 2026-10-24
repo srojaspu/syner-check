@@ -23,7 +23,7 @@ describe("PrimaryNav", () => {
     render(<PrimaryNav ruta="intelisis-ufe" />);
 
     const activo = screen.getByRole("link", { name: "Intelisis UFE" });
-    const inactivo = screen.getByRole("link", { name: "Comprobantes" });
+    const inactivo = screen.getByRole("link", { name: "SynerPos" });
     expect(activo.getAttribute("aria-current")).toBe("page");
     expect(inactivo.getAttribute("aria-current")).toBeNull();
   });
@@ -32,7 +32,7 @@ describe("PrimaryNav", () => {
     render(<PrimaryNav ruta="comprobantes" />);
 
     expect(
-      screen.getByRole("link", { name: "Comprobantes" }).getAttribute("href"),
+      screen.getByRole("link", { name: "SynerPos" }).getAttribute("href"),
     ).toBe("#/comprobantes");
     expect(
       screen.getByRole("link", { name: "Intelisis UFE" }).getAttribute("href"),

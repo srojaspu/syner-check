@@ -2,7 +2,7 @@ import { cn } from "cn";
 import type { AppRoute } from "../hooks/useHashRoute";
 
 const ITEMS: { ruta: AppRoute; href: string; label: string }[] = [
-  { ruta: "comprobantes", href: "#/comprobantes", label: "Comprobantes" },
+  { ruta: "comprobantes", href: "#/comprobantes", label: "SynerPos" },
   { ruta: "intelisis-ufe", href: "#/intelisis-ufe", label: "Intelisis UFE" },
 ];
 
