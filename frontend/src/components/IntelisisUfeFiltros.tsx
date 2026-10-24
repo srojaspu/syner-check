@@ -80,16 +80,6 @@ const OPCIONES_SUNAT = [
   { value: "SUNAT SIN CONSULTA", label: "Sin consulta" },
 ];
 
-const OPCIONES_ESTADO = [
-  { value: "generado", label: "Generado" },
-  { value: "error_validacion", label: "Error de validación" },
-  { value: "omitido_validacion", label: "Omitido en validación" },
-  { value: "sin_bloque", label: "Sin bloque de tipo" },
-  { value: "en_proceso", label: "En proceso" },
-  { value: "sin_registro", label: "Sin registro" },
-  { value: "fuera_de_bitacora", label: "Fuera de bitácora" },
-];
-
 /**
  * Filtra las filas cargadas en el navegador (al instante).
  *
@@ -219,16 +209,6 @@ export function creaRenderFiltro(
               label: item.key,
             }))}
             onChange={(valor) => alternar("estatus", valor)}
-          />
-        );
-      case "estado_generacion":
-        return (
-          <FiltroSelect
-            label="Estado"
-            value={filtros.estado ?? ""}
-            placeholder="Todos"
-            options={OPCIONES_ESTADO}
-            onChange={(valor) => alternar("estado", valor)}
           />
         );
       case "sucursal":

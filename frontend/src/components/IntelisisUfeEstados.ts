@@ -7,7 +7,7 @@ export const ESTADO_GENERACION_LABEL: Record<UfeEstadoGeneracion, string> = {
   omitido_validacion: "Omitido en validación",
   sin_bloque: "Sin bloque de tipo",
   en_proceso: "En proceso",
-  sin_registro: "Sin registro",
+  sin_registro: "Sin traza",
   fuera_de_bitacora: "Fuera de bitácora",
 };
 

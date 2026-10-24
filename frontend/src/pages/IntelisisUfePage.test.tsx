@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SUNAT_LOTE_MAX } from "../api/client";
@@ -270,6 +270,42 @@ describe("IntelisisUfePage", () => {
     expect(screen.getAllByText("Aceptado").length).toBeGreaterThan(0);
   });
 
+  it("muestra el detalle del generador solo cuando el badge no lo distingue", () => {
+    mocks.ufe.rows = [
+      fila({ id_venta: 1, comprobante: "B602-00000001" }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        estado_generacion: "error_validacion",
+        generador: "SIN OK",
+      }),
+      fila({
+        id_venta: 3,
+        comprobante: "B602-00000003",
+        estado_generacion: "fuera_de_bitacora",
+        generador: "SIN TRAZA",
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    // La columna Estado se fusiono en Generador: la tabla de resultados ya
+    // no tiene esa cabecera (la cola del ERP si tiene su propio "Estado").
+    const tabla = screen.getByRole("table", { name: "Comprobantes" });
+    expect(
+      within(tabla).queryByRole("columnheader", { name: "Estado" }),
+    ).toBeNull();
+
+    // El detalle tecnico aparece solo cuando "SIN OK" / "SIN TRAZA" no
+    // alcanzan para saber que paso.
+    expect(screen.getByText("Error de validación")).toBeTruthy();
+    expect(screen.getByText("Fuera de bitácora")).toBeTruthy();
+    // "Generado" (OK REGISTRADO) y "Sin traza" no repiten la etiqueta.
+    expect(screen.queryByText("Generado")).toBeNull();
+    expect(screen.queryByText("Sin traza")).toBeNull();
+  });
+
   it("abre la trazabilidad al hacer clic en un comprobante", () => {
     mocks.ufe.rows = [fila()];
     const { unmount } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
@@ -386,15 +422,20 @@ describe("IntelisisUfePage", () => {
     ).toBeTruthy();
   });
 
-  it("filtra por un estado del card y viaja en la consulta", async () => {
+  it("filtra por un estado del card, cierra el popover y viaja en la consulta", async () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Validador: ver estados" }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: /Sin registro/ }),
+      await screen.findByRole("button", { name: /Sin traza/ }),
     );
+
+    // Elegir un estado aplica el filtro y cierra el popover.
+    expect(
+      screen.queryByText("Selecciona un estado para filtrar la tabla."),
+    ).toBeNull();
 
     // El filtro queda en borrador: todavia no se consulta.
     expect(mocks.ufe.run).not.toHaveBeenCalled();
@@ -405,8 +446,56 @@ describe("IntelisisUfePage", () => {
 
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
-    // El estado del generador viaja como `estado` (columna Estado).
+    // El estado del generador viaja como `filtros.estado` (card Validador).
     expect(ultima?.[2]).toMatchObject({ estado: "sin_registro" });
+  });
+
+  it("el filtro de un card reemplaza al de los otros ejes", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.kpis = kpis({
+      por_estatus: [
+        { key: "CONCLUIDO", count: 1 },
+        { key: "PENDIENTE", count: 1 },
+      ],
+    });
+    mocks.ufe.rows = [
+      fila({
+        id_venta: 1,
+        comprobante: "B602-00000001",
+        estatus_erp: "CONCLUIDO",
+        estado_generacion: "sin_registro",
+        generador: "SIN TRAZA",
+      }),
+      fila({
+        id_venta: 2,
+        comprobante: "B602-00000002",
+        estatus_erp: "PENDIENTE",
+        estado_generacion: "generado",
+        generador: "OK REGISTRADO",
+      }),
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    // Primero Intelisis = PENDIENTE: queda solo la fila pendiente.
+    await user.click(
+      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+    );
+    await user.click(await screen.findByRole("button", { name: /PENDIENTE/ }));
+
+    expect(screen.queryByText("B602-00000001")).toBeNull();
+    expect(screen.getByText("B602-00000002")).toBeTruthy();
+
+    // Luego Validador = Sin traza: reemplaza al filtro de Intelisis, no se
+    // combinan (con los dos activos no quedaria ninguna fila).
+    await user.click(
+      screen.getByRole("button", { name: "Validador: ver estados" }),
+    );
+    await user.click(await screen.findByRole("button", { name: /Sin traza/ }));
+
+    expect(screen.getByText("B602-00000001")).toBeTruthy();
+    expect(screen.queryByText("B602-00000002")).toBeNull();
   });
 
   it("el card de Intelisis filtra por estatus de la venta", async () => {

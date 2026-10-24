@@ -51,9 +51,11 @@ export interface IntelisisUfeSelection {
 /**
  * Columnas de la grilla UFE.
  *
- * Sin filtros por columna: los filtros viven en un panel que va al servidor
- * (con 31 dias el universo son ~18.000 documentos y filtrarlos en el
- * navegador no era viable).
+ * La columna Generador concentra el estado del generador: el badge usa el
+ * vocabulario del negocio y, debajo, se muestra el detalle tecnico solo
+ * cuando el badge no lo distingue (error de validacion, sin bloque de tipo,
+ * fuera de bitacora). Los filtros de la fila superior se aplican al instante
+ * en el navegador.
  */
 export function intelisisUfeColumns(
   selection?: IntelisisUfeSelection,
@@ -167,10 +169,23 @@ export function intelisisUfeColumns(
           doc.en_espera
             ? "Emitido hoy: dentro de la ventana de gracia, aún no es un fallo"
             : ESTADO_GENERACION_LABEL[doc.estado_generacion];
+        // El badge ya resume el estado. El detalle tecnico solo se muestra
+        // cuando "SIN OK" / "SIN TRAZA" no distinguen la causa real
+        // (error de validacion, sin bloque de tipo, fuera de bitacora, ...).
+        const detalle =
+          doc.generador === "SIN OK" ||
+          doc.estado_generacion === "fuera_de_bitacora"
+            ? ESTADO_GENERACION_LABEL[doc.estado_generacion]
+            : null;
         return (
-          <Badge variant={generadorVariant(doc.generador)} title={title}>
-            {doc.generador}
-          </Badge>
+          <span className="flex flex-col items-start gap-0.5">
+            <Badge variant={generadorVariant(doc.generador)} title={title}>
+              {doc.generador}
+            </Badge>
+            {detalle ? (
+              <small className="text-muted-foreground">{detalle}</small>
+            ) : null}
+          </span>
         );
       },
     },
@@ -211,18 +226,6 @@ export function intelisisUfeColumns(
           </Badge>
         );
       },
-    },
-    {
-      id: "estado_generacion",
-      header: "Estado",
-      accessorFn: (doc) => doc.estado_generacion,
-      meta: { priority: "2xl" },
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">
-          {ESTADO_GENERACION_LABEL[row.original.estado_generacion] ??
-            row.original.estado_generacion}
-        </span>
-      ),
     },
   ];
 

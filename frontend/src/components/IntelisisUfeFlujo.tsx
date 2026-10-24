@@ -172,7 +172,13 @@ function TarjetaEje({
                     key={estado.key}
                     type="button"
                     aria-pressed={activo}
-                    onClick={() => onSeleccionar(estado.key)}
+                    onClick={() => {
+                      onSeleccionar(estado.key);
+                      // Elegir un estado cierra el popover, como en el flujo
+                      // de la pestana Comprobantes: el resultado se ve en la
+                      // tabla sin dejar el panel encima.
+                      onAbierto(false);
+                    }}
                     className={cn(
                       "flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
                       "hover:bg-muted focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -211,7 +217,15 @@ function TarjetaEje({
               <p className="text-[11px] leading-snug text-muted-foreground">
                 Filtro aplicado en la tabla.
               </p>
-              <Button type="button" variant="ghost" size="sm" onClick={onLimpiar}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onLimpiar();
+                  onAbierto(false);
+                }}
+              >
                 Quitar filtro
               </Button>
             </div>
@@ -226,8 +240,10 @@ function TarjetaEje({
  * Estado del periodo por eje: Intelisis (ERP), Validador y SUNAT.
  *
  * Cada tarjeta resume el eje con su conteo sano y abre un popover con el
- * desglose de estados; elegir uno filtra la tabla. Es el mismo patron del
- * "Flujo" de la pestana Comprobantes, acotado a los tres ejes del UFE.
+ * desglose de estados; elegir uno filtra la tabla y cierra el popover. Los
+ * filtros de los tres ejes son excluyentes: elegir uno reemplaza al de los
+ * demas. Es el mismo patron del "Flujo" de la pestana Comprobantes, acotado a
+ * los tres ejes del UFE.
  */
 export function IntelisisUfeFlujo({
   kpis,

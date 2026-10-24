@@ -152,12 +152,15 @@ export default function IntelisisUfePage({
     (clave: "estatus" | "estado" | "sunat", valor: string) => {
       setBorrador((prev) => {
         const esIgual = String(prev[clave] ?? "") === valor;
-        const siguiente = { ...prev };
-        if (esIgual) {
-          delete siguiente[clave];
-        } else {
-          siguiente[clave] = valor;
-        }
+        // Los filtros de los cards son excluyentes entre si: el estado que
+        // se elige en un eje reemplaza al de los otros dos. Asi el usuario
+        // no ve una tabla vacia por dos filtros de ejes distintos activos
+        // (mismo comportamiento que el flujo de la pestana Comprobantes).
+        const siguiente: IntelisisUfeFiltros = { ...prev };
+        delete siguiente.estatus;
+        delete siguiente.estado;
+        delete siguiente.sunat;
+        if (!esIgual) siguiente[clave] = valor;
         return siguiente;
       });
     },
