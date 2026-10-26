@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,7 @@ from src.application.sunat_submission import (
     SunatSubmissionRegistry,
     submission_fingerprint,
 )
+from src.application import use_cases as use_cases_module
 from src.application.use_cases import _sunat_doc_payload, _sunat_key
 from src.domain.errors import UpstreamError
 
@@ -872,6 +874,78 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(res["pendientes"], 0)
         self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
         self.assertEqual(store.mark_stale_calls, 1)
+
+
+class FakeOperationalError(RuntimeError):
+    """Stands in for pyodbc.OperationalError (the real cause of an outage)."""
+
+
+class FlakyStore(FakeStore):
+    """Store whose DB calls fail (like an unreachable SQL Server) until recover."""
+
+    def __init__(self, cause="Login timeout expired"):
+        super().__init__()
+        self.cause = cause
+        self.down = True
+
+    def recover(self):
+        self.down = False
+
+    def _fail_if_down(self, operation):
+        if self.down:
+            root = FakeOperationalError(self.cause)
+            raise UpstreamError(
+                f"SUNAT {operation} failed: {type(root).__name__}: {self.cause}."
+            ) from root
+
+    def pending_jobs(self, limit=50):
+        self._fail_if_down("pending jobs")
+        return super().pending_jobs(limit)
+
+    def mark_stale_unsubmitted(self, older_than_minutes, message):
+        self._fail_if_down("stale submit cleanup")
+        return super().mark_stale_unsubmitted(older_than_minutes, message)
+
+
+class ReconcileOutageLoggingTests(unittest.TestCase):
+    """An outage must leave one WARNING with its cause, not a flood of noise."""
+
+    def setUp(self):
+        use_cases_module._failing_operations.clear()
+
+    def tearDown(self):
+        use_cases_module._failing_operations.clear()
+
+    def test_warns_once_per_operation_and_logs_the_driver_cause(self):
+        store = FlakyStore()
+        with self.assertLogs("syner_check.use_cases", level="DEBUG") as captured:
+            reconcile_pending_sunat_jobs(FakeValidator(), store, usuario="u")
+            reconcile_pending_sunat_jobs(FakeValidator(), store, usuario="u")
+        warnings = [r for r in captured.records if r.levelno == logging.WARNING]
+        self.assertEqual(len(warnings), 2)
+        text = " ".join(record.getMessage() for record in warnings)
+        self.assertIn("stale submit cleanup", text)
+        self.assertIn("pending jobs read", text)
+        self.assertIn("Login timeout expired", text)
+        self.assertNotIn("UpstreamError", text)
+
+    def test_recovery_is_announced_once_and_healthy_rounds_stay_silent(self):
+        store = FlakyStore()
+        with self.assertLogs("syner_check.use_cases", level="WARNING"):
+            reconcile_pending_sunat_jobs(FakeValidator(), store, usuario="u")
+        store.recover()
+        with self.assertLogs("syner_check.use_cases", level="INFO") as captured:
+            reconcile_pending_sunat_jobs(FakeValidator(), store, usuario="u")
+        self.assertEqual(
+            [record.getMessage() for record in captured.records
+             if record.levelno == logging.INFO],
+            [
+                "SUNAT stale submit cleanup recovered",
+                "SUNAT pending jobs read recovered",
+            ],
+        )
+        with self.assertNoLogs("syner_check.use_cases", level="INFO"):
+            reconcile_pending_sunat_jobs(FakeValidator(), store, usuario="u")
 
 
 class WorkerTests(unittest.IsolatedAsyncioTestCase):

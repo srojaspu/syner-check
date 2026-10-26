@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from typing import Sequence
 
 from src.domain.errors import UpstreamError
+
+_DETAIL_LIMIT = 300
+# Driver errors can echo fragments of the connection string. Never copy
+# credential values into a log line, even if the driver misbehaves.
+_SECRET_PATTERN = re.compile(r"(?i)\b(pwd|password|api[_-]?key)\s*=\s*[^;\s\"']*")
+
+
+def _reason(exc: BaseException) -> str:
+    """Short single-line cause, so an UpstreamError can be diagnosed from logs.
+
+    ``type(exc).__name__`` alone ("OperationalError") says nothing: a login
+    timeout, a missing table and a permission denial look identical. The
+    driver message is bounded and stripped of any credential-looking value.
+    """
+    message = " ".join(str(exc).split()).rstrip(".")
+    message = _SECRET_PATTERN.sub(r"\1=***", message)
+    if len(message) > _DETAIL_LIMIT:
+        message = f"{message[:_DETAIL_LIMIT]}…"
+    name = type(exc).__name__
+    return f"{name}: {message}" if message else name
 
 
 class SqlReaderAdapter:
@@ -25,7 +46,7 @@ class SqlReaderAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"SQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"SQL read failed: {_reason(exc)}.") from exc
 
     def fetch_documents(
         self, start_iso: str, end_iso: str, tipos: Sequence[str]
@@ -37,7 +58,7 @@ class SqlReaderAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"SQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"SQL read failed: {_reason(exc)}.") from exc
 
 
 class IntelisisReaderAdapter:
@@ -52,7 +73,7 @@ class IntelisisReaderAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"Intelisis read failed: {type(exc).__name__}."
+                f"Intelisis read failed: {_reason(exc)}."
             ) from exc
 
 
@@ -110,7 +131,7 @@ class SunatValidatorAdapter:
         except _Upstream:
             raise
         except Exception as exc:
-            raise _Upstream(f"SUNAT submit failed: {type(exc).__name__}.") from exc
+            raise _Upstream(f"SUNAT submit failed: {_reason(exc)}.") from exc
 
     def job_status(self, trabajo_id: int, detalle: bool = False) -> dict:
         from src.domain.errors import UpstreamError as _Upstream
@@ -127,7 +148,7 @@ class SunatValidatorAdapter:
         except _Upstream:
             raise
         except Exception as exc:
-            raise _Upstream(f"SUNAT status failed: {type(exc).__name__}.") from exc
+            raise _Upstream(f"SUNAT status failed: {_reason(exc)}.") from exc
 
     def validate_single(
         self, documento: dict, usuario: str = "", origen: str = ""
@@ -146,7 +167,7 @@ class SunatValidatorAdapter:
         except _Upstream:
             raise
         except Exception as exc:
-            raise _Upstream(f"SUNAT validate failed: {type(exc).__name__}.") from exc
+            raise _Upstream(f"SUNAT validate failed: {_reason(exc)}.") from exc
 
 
 class SunatCacheStoreAdapter:
@@ -162,7 +183,7 @@ class SunatCacheStoreAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"SUNAT cache read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"SUNAT cache read failed: {_reason(exc)}.") from exc
 
     def fetch_by_series(
         self, ruc: str, series: Sequence[str]
@@ -174,7 +195,7 @@ class SunatCacheStoreAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"SUNAT cache read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"SUNAT cache read failed: {_reason(exc)}.") from exc
 
     def upsert(self, row: dict) -> None:
         from app import sunat_db as sunat
@@ -185,7 +206,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT cache write failed: {type(exc).__name__}."
+                f"SUNAT cache write failed: {_reason(exc)}."
             ) from exc
 
     def upsert_many(self, rows: Sequence[dict]) -> None:
@@ -197,7 +218,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT cache write failed: {type(exc).__name__}."
+                f"SUNAT cache write failed: {_reason(exc)}."
             ) from exc
 
     def job_progress(self, trabajo_id: int) -> dict:
@@ -209,7 +230,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT job progress failed: {type(exc).__name__}."
+                f"SUNAT job progress failed: {_reason(exc)}."
             ) from exc
 
     def pending_jobs(self, limit: int = 50) -> list[dict]:
@@ -221,7 +242,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT pending jobs failed: {type(exc).__name__}."
+                f"SUNAT pending jobs failed: {_reason(exc)}."
             ) from exc
 
     def mark_job_missing(self, trabajo_id: int, message: str) -> int:
@@ -233,7 +254,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT job cleanup failed: {type(exc).__name__}."
+                f"SUNAT job cleanup failed: {_reason(exc)}."
             ) from exc
 
     def mark_stale_unsubmitted(self, older_than_minutes: int, message: str) -> int:
@@ -245,7 +266,7 @@ class SunatCacheStoreAdapter:
             raise
         except Exception as exc:
             raise UpstreamError(
-                f"SUNAT stale cleanup failed: {type(exc).__name__}."
+                f"SUNAT stale cleanup failed: {_reason(exc)}."
             ) from exc
 
 
@@ -266,7 +287,7 @@ class GraphqlGatewayAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"GraphQL read failed: {_reason(exc)}.") from exc
 
     def summary(
         self, start_iso: str, end_iso: str, tipos: Sequence[str]
@@ -278,7 +299,7 @@ class GraphqlGatewayAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"GraphQL read failed: {_reason(exc)}.") from exc
 
     def search_by_serie(self, tipo: str, number: str) -> list[dict]:
         from app import graphql as app_gql
@@ -288,7 +309,7 @@ class GraphqlGatewayAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"GraphQL read failed: {_reason(exc)}.") from exc
 
     def detail_by_serie(self, tipo: str, number: str) -> list[dict]:
         from app import graphql as app_gql
@@ -298,4 +319,4 @@ class GraphqlGatewayAdapter:
         except UpstreamError:
             raise
         except Exception as exc:
-            raise UpstreamError(f"GraphQL read failed: {type(exc).__name__}.") from exc
+            raise UpstreamError(f"GraphQL read failed: {_reason(exc)}.") from exc

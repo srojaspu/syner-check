@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -1635,6 +1636,56 @@ def sunat_job_status(
     }
 
 
+_FAILURE_DETAIL_LIMIT = 360
+# An outage must leave a trail, not a flood: SUNAT_WORKER_INTERVAL_SECONDS=10
+# with a 30 s login timeout produced two warnings per minute while the DB was
+# unreachable. Keep one WARNING per operation per outage (DEBUG for retries)
+# and close it with a single INFO when the store answers again.
+_failing_operations_lock = threading.Lock()
+_failing_operations: set[str] = set()
+
+
+def _root_exception(exc: BaseException) -> BaseException:
+    """Deepest ``raise ... from`` cause: the driver error, not its wrapper."""
+    seen: set[int] = set()
+    current = exc
+    while current.__cause__ is not None and id(current) not in seen:
+        seen.add(id(current))
+        current = current.__cause__
+    return current
+
+
+def _failure_detail(exc: BaseException) -> str:
+    """Single-line, bounded reason: exception class + driver message."""
+    root = _root_exception(exc)
+    name = type(root).__name__
+    message = " ".join(str(root).split())
+    if len(message) > _FAILURE_DETAIL_LIMIT:
+        message = f"{message[:_FAILURE_DETAIL_LIMIT]}…"
+    return f"{name}: {message}" if message else name
+
+
+def _report_store_failure(operation: str, exc: BaseException) -> None:
+    """Warn on the first failure of an outage, then keep retries at DEBUG."""
+    with _failing_operations_lock:
+        first_failure = operation not in _failing_operations
+        _failing_operations.add(operation)
+    detail = _failure_detail(exc)
+    if first_failure:
+        logger.warning("SUNAT %s failed: %s", operation, detail)
+    else:
+        logger.debug("SUNAT %s failed again: %s", operation, detail)
+
+
+def _report_store_recovery(operation: str) -> None:
+    """Close an open outage with one INFO line instead of a silent cliff."""
+    with _failing_operations_lock:
+        was_failing = operation in _failing_operations
+        _failing_operations.discard(operation)
+    if was_failing:
+        logger.info("SUNAT %s recovered", operation)
+
+
 def reconcile_pending_sunat_jobs(
     validator: SunatValidator,
     store: SunatCacheStore,
@@ -1660,12 +1711,16 @@ def reconcile_pending_sunat_jobs(
             )
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("SUNAT stale submit cleanup failed: %s", type(exc).__name__)
+        _report_store_failure("stale submit cleanup", exc)
+    else:
+        _report_store_recovery("stale submit cleanup")
     try:
         jobs = store.pending_jobs(max(1, int(max_jobs)))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("SUNAT pending jobs read failed: %s", type(exc).__name__)
+        _report_store_failure("pending jobs read", exc)
         jobs = []
+    else:
+        _report_store_recovery("pending jobs read")
     resumen = {
         "jobs": len(jobs),
         "reconciliados": 0,
@@ -1698,20 +1753,20 @@ def reconcile_pending_sunat_jobs(
                     logger.warning(
                         "SUNAT job %s cleanup failed: %s",
                         job_id,
-                        type(store_exc).__name__,
+                        _failure_detail(store_exc),
                     )
             else:
                 logger.warning(
                     "SUNAT job %s reconcile failed: %s",
                     job_id,
-                    type(exc).__name__,
+                    _failure_detail(exc),
                 )
             continue
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "SUNAT job %s reconcile failed: %s",
                 job_id,
-                type(exc).__name__,
+                _failure_detail(exc),
             )
             continue
         resumen["reconciliados"] += 1
