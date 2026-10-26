@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { toISODate } from "../api/format";
-import { RangePanel } from "./SearchPanels";
+import { RangePanel, NumberPanel } from "./SearchPanels";
 import { Tabs } from "./Tabs";
 
 afterEach(cleanup);
@@ -65,6 +65,33 @@ describe("RangePanel", () => {
       screen.getByText("Selecciona al menos un tipo de documento."),
     ).toBeTruthy();
     expect(onSearch).not.toHaveBeenCalled();
+  });
+});
+
+describe("NumberPanel", () => {
+  it("indica que esta buscando y bloquea el boton", () => {
+    render(<NumberPanel loading onSearch={() => {}} />);
+
+    expect(
+      screen.getByText("Buscando el comprobante en Intelisis…"),
+    ).toBeTruthy();
+    const boton = screen.getByRole("button", { name: /Buscando/ });
+    expect((boton as HTMLButtonElement).disabled).toBe(true);
+    expect(boton.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("sin carga el boton dice Buscar y envia el numero", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn();
+    render(<NumberPanel onSearch={onSearch} />);
+
+    await user.type(
+      screen.getByLabelText("Número"),
+      "B710-00004539",
+    );
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    expect(onSearch).toHaveBeenCalledWith("B710-00004539");
   });
 });
 

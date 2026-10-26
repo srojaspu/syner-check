@@ -881,6 +881,19 @@ describe("IntelisisUfePage", () => {
     expect(documentos[0].crossTotal).toBe(149.25);
   });
 
+  it("muestra el indicador mientras busca por numero", () => {
+    mocks.ufe.busqueda = null;
+    mocks.ufe.loading = true;
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("tab", { name: "Número de comprobante" }),
+    );
+
+    expect(screen.getByText("Buscando el comprobante…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Buscando/ })).toBeTruthy();
+  });
+
   it("no ofrece validar mas documentos de los que admite una solicitud", () => {
     mocks.ufe.rows = Array.from({ length: SUNAT_LOTE_MAX + 1 }, (_, index) =>
       fila({

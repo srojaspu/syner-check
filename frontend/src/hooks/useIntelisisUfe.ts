@@ -229,7 +229,16 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
 
   const cerrarDetalle = useCallback(() => {
     detalleSeq.current += 1;
-    setDetalleState(EMPTY_DETALLE);
+    setDetalleState((prev) => ({
+      ...prev,
+      detalle: null,
+      detalleLoading: false,
+      detalleError: null,
+      validando: null,
+      errorValidacion: null,
+      // `busqueda` se conserva a proposito: en modo numero la tabla sale de
+      // ahi, y cerrar el detalle no debe borrar los resultados.
+    }));
   }, []);
 
   /**

@@ -3,6 +3,7 @@ import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   HashIcon,
+  Loading02Icon,
   Search01Icon,
   TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
@@ -103,13 +104,16 @@ export function RangePanel({
 }
 
 export function NumberPanel({
-  disabled,
+  disabled = false,
+  loading = false,
   onSearch,
   label = "Número",
   placeholder = "Ej. F001-00012345",
   hint,
 }: {
-  disabled: boolean;
+  disabled?: boolean;
+  /** Busqueda en curso: deshabilita y muestra el indicador. */
+  loading?: boolean;
   onSearch: (number: string) => void;
   label?: string;
   placeholder?: string;
@@ -117,9 +121,10 @@ export function NumberPanel({
 }) {
   const [number, setNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const ocupado = disabled || loading;
 
   const submit = () => {
-    if (disabled) return;
+    if (ocupado) return;
     if (!number.trim()) {
       setError("Ingresa un número.");
       return;
@@ -137,7 +142,7 @@ export function NumberPanel({
             id="numero-comprobante"
             value={number}
             onChange={(event) => setNumber(event.target.value)}
-            disabled={disabled}
+            disabled={ocupado}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
             }}
@@ -145,10 +150,31 @@ export function NumberPanel({
             autoComplete="off"
           />
         </div>
-        <Button type="button" onClick={submit} disabled={disabled}>
-          <HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={2} aria-hidden /> Buscar
+        <Button
+          type="button"
+          onClick={submit}
+          disabled={ocupado}
+          aria-busy={loading}
+        >
+          <HugeiconsIcon
+            icon={loading ? Loading02Icon : Search01Icon}
+            size={16}
+            strokeWidth={2}
+            className={loading ? "animate-spin" : undefined}
+            aria-hidden
+          />{" "}
+          {loading ? "Buscando…" : "Buscar"}
         </Button>
       </Panel>
+      {loading ? (
+        <p
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          Buscando el comprobante en Intelisis…
+        </p>
+      ) : null}
       {error ? (
         <Alert variant="destructive">
           <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />

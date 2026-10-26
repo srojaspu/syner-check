@@ -330,7 +330,7 @@ export default function IntelisisUfePage({
         />
       ) : (
         <NumberPanel
-          disabled={ufe.loading}
+          loading={ufe.loading}
           label="Numero de comprobante"
           placeholder="Ej. B710-00004539"
           hint="Busca el comprobante por su numero oficial (prefijo de tipo, serie y correlativo), sin periodo."

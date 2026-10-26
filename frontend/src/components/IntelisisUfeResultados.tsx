@@ -172,26 +172,47 @@ export function IntelisisUfeResultados({
     >
       <>
         {!hayConsulta ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={CalendarDaysIcon} strokeWidth={2} />
-              </EmptyMedia>
-              <EmptyTitle>Aun no hay consulta</EmptyTitle>
-              <EmptyDescription>
-                {modo === "range" ? (
-                  <>
-                    Elige el periodo y pulsa <b>Consultar</b>. No se consulta
-                    nada hasta que lo pidas.
-                  </>
-                ) : (
-                  <>
-                    Escribe el numero de comprobante y pulsa <b>Buscar</b>.
-                  </>
-                )}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          loading ? (
+            <div
+              className="flex flex-col items-center gap-2 py-12"
+              role="status"
+              aria-live="polite"
+            >
+              <HugeiconsIcon
+                icon={Loading02Icon}
+                size={22}
+                strokeWidth={2}
+                className="animate-spin text-muted-foreground"
+                aria-hidden
+              />
+              <p className="text-sm text-muted-foreground">
+                {modo === "range"
+                  ? "Consultando el período…"
+                  : "Buscando el comprobante…"}
+              </p>
+            </div>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={CalendarDaysIcon} strokeWidth={2} />
+                </EmptyMedia>
+                <EmptyTitle>Aun no hay consulta</EmptyTitle>
+                <EmptyDescription>
+                  {modo === "range" ? (
+                    <>
+                      Elige el periodo y pulsa <b>Consultar</b>. No se consulta
+                      nada hasta que lo pidas.
+                    </>
+                  ) : (
+                    <>
+                      Escribe el numero de comprobante y pulsa <b>Buscar</b>.
+                    </>
+                  )}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )
         ) : (
           <DataTable.Root
             key={`${modo}-${periodo.desde}-${periodo.hasta}`}

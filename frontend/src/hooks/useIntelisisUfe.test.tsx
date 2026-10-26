@@ -187,6 +187,35 @@ describe("useIntelisisUfe", () => {
     expect(result.current.detalleLoading).toBe(false);
   });
 
+  it("cerrar el detalle no borra los resultados de la busqueda", async () => {
+    buscarMock.mockResolvedValue({
+      documento_buscado: "B602-00142702",
+      intelisis_enabled: true,
+      encontrados: 1,
+      rows: [fila()],
+    });
+    detalleMock.mockResolvedValue({
+      id_venta: 7466462,
+      venta: fila(),
+      intentos: [],
+      sunat: null,
+      estado_sunat: "SUNAT SIN CONSULTA",
+    });
+    const { result } = renderHook(() => useIntelisisUfe(vi.fn()));
+
+    await act(async () => {
+      await result.current.buscar("B602-00142702");
+    });
+    await act(async () => {
+      await result.current.abrirDetalle(7466462);
+    });
+    act(() => result.current.cerrarDetalle());
+
+    expect(result.current.detalle).toBeNull();
+    // En modo numero la tabla se alimenta de la busqueda.
+    expect(result.current.busqueda?.rows).toHaveLength(1);
+  });
+
   it("actualiza la fila al validar en SUNAT", async () => {
     getMock.mockResolvedValue(respuesta());
     validarMock.mockResolvedValue({
