@@ -119,13 +119,51 @@ listado de 31 días devolvía **17,7 MB**.
 - [x] Clasificación con paridad o con diferencias explicadas (D13, D14, D19, D21, D25).
 - [x] Validación individual contra SUNAT con resultado real.
 - [x] Payload del listado acotado: 31 días sin filtro 3,2 MB (antes 17,7 MB), filtrado 0,19 MB.
-- [x] 281 tests Python + 86 vitest en verde; `tsc` limpio; build de producción OK.
-- [x] 252 tests Python + 77 vitest en verde; `tsc` limpio; build de producción OK.
+- [x] Eje ERP: el total de la tarjeta cierra con los cuatro estados (433 = 409+8+16+0;
+      19.036 = 18.601+35+304+96).
+- [x] Ventas sin documentar: 304 en 31 días, separadas en 288 sin documento y 16 con
+      documento inválido.
+- [x] 426 tests Python + 170 vitest en verde; `tsc` limpio; `ruff` limpio.
 - [ ] Contraste visual contra la pantalla PHP para un mismo día (requiere que César
       abra la pestaña FE con el mismo período).
 - [ ] Reenvío (fase 2): requiere la credencial de escritura y la ventana de prueba.
 
-## 7. Cómo repetir este QA
+## 7. Rediseño del eje ERP (verificación 2026-10-26)
+
+Qué cambia: la tarjeta de Intelisis muestra el **total real del eje** (los cuatro estados de
+`dbo.Venta`), su desglose y un puente con los documentos del listado. La grilla no cambia:
+sigue mostrando solo documentos electrónicos (CONCLUIDO/PENDIENTE).
+
+Medición de solo lectura, misma ventana del corte:
+
+| Período | Ventas del eje | CONCLUIDO | PENDIENTE | SINAFECTAR | CANCELADO | Documentos en la grilla |
+|---|---|---|---|---|---|---|
+| 2026-10-25 | 433 | 409 | 8 | 16 | 0 | 417 |
+| 2026-09-25 → 2026-10-25 (31 días) | 19.036 | 18.601 | 35 | 304 | 96 | — |
+
+Comprobaciones:
+
+- `409 + 8 + 16 + 0 = 433`: la tarjeta ya no muestra 409 (solo concluidos) como si fueran
+  todas las ventas del día.
+- `417 = 409 + 8`: el listado coincide con los dos estados que sí tienen comprobante.
+- `19.036 = 18.601 + 35 + 304 + 96`: el desglose cierra también en el período largo.
+- **SINAFECTAR (304)** no está en el listado porque no tiene comprobante electrónico: no se
+  puede validar en SUNAT ni reenviar. Se consulta en el diálogo "Ventas sin documentar".
+- **CANCELADO (96)** solo se informa; no forma parte del listado.
+
+Situación documental de las 304 ventas SINAFECTAR: **288** sin ninguna fila en la bitácora y
+**16** solo con un documento inválido (`159-00000000`, `OMITIDO_VALIDACION`). Además: **189**
+sin folio (`MovID`), **51** sin líneas de detalle y **304** con `FechaRegistro` nula. Por eso
+el diálogo habla de "sin documento emitido", no de "documento nulo": en 16 casos hay un
+`Documento` en la bitácora, pero no es un comprobante.
+
+Los dos estados derivados del Validador (`sin_traza`, `pendientes_conclusion`) y los de SUNAT
+se explican en su popover, pero **no filtran**: la API no acepta esos filtros.
+
+Verificación automática de esta ronda: **426 tests Python + 170 vitest** en verde,
+`tsc --noEmit` limpio y `ruff check src tests` limpio.
+
+## 8. Cómo repetir este QA
 
 ```powershell
 # 1) Paridad del universo (14 días)

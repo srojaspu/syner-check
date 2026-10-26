@@ -77,6 +77,23 @@ def _flow_key(tipo_canon: str, receipt_norm: str, fecha10: str) -> tuple[str, st
     )
 
 
+# Orden de preferencia del estatus del ERP cuando dos filas comparten la
+# misma clave (tipo, documento, fecha).
+_PRIORIDAD_ESTATUS_INTELISIS = {
+    "CONCLUIDO": 0,
+    "PENDIENTE": 1,
+    "SINAFECTAR": 2,
+    "CANCELADO": 3,
+}
+
+
+def _prioridad_estatus(prow: dict) -> int:
+    estatus = str(prow.get("EstatusIntelisis") or "").strip().upper()
+    return _PRIORIDAD_ESTATUS_INTELISIS.get(
+        estatus, len(_PRIORIDAD_ESTATUS_INTELISIS)
+    )
+
+
 def _intelisis_index(rows: object) -> dict[tuple[str, str, str], dict]:
     """Index Intelisis/Venta headers by (tipo, receipt_norm, fecha)."""
     by_key: dict[tuple[str, str, str], dict] = {}
@@ -91,7 +108,12 @@ def _intelisis_index(rows: object) -> dict[tuple[str, str, str], dict]:
             _norm_receipt(prow.get("ReceiptNumber")),
             str(prow.get("FechaEmision", ""))[:10],
         )
-        by_key.setdefault(key, prow)
+        actual = by_key.get(key)
+        # Varias filas del ERP pueden compartir documento (p. ej. la venta
+        # original y su cancelacion). Gana la mas avanzada: el badge muestra
+        # el estado real de la venta y no la primera fila que llego.
+        if actual is None or _prioridad_estatus(prow) < _prioridad_estatus(actual):
+            by_key[key] = prow
     return by_key
 
 

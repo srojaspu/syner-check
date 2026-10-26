@@ -636,5 +636,43 @@ class DetailTests(unittest.TestCase):
             )
 
 
+class IntelisisIndexTests(unittest.TestCase):
+    """SynerPos: el badge del ERP debe mostrar la fila mas avanzada."""
+
+    def _row(self, estatus: str, id_: str) -> dict:
+        return {
+            "IntelisisID": id_,
+            "Mov": "E-Factura",
+            "MovID": f"X-{id_}",
+            "StoreName": "Tienda",
+            "TransactionType": "factura",
+            "ReceiptNumber": "F001-00000001",
+            "FechaEmision": "2026-10-15",
+            "EstatusIntelisis": estatus,
+        }
+
+    def test_prefiere_concluido_sobre_cancelado_con_la_misma_clave(self):
+        from src.application.use_cases import _intelisis_index
+
+        # El orden de llegada no manda: antes `setdefault` conservaba la
+        # CANCELADO solo por venir primero.
+        index = _intelisis_index(
+            [self._row("CANCELADO", "1"), self._row("CONCLUIDO", "2")]
+        )
+
+        fila = index[("FACTURA", "F1-1", "2026-10-15")]
+        self.assertEqual(fila["EstatusIntelisis"], "CONCLUIDO")
+
+    def test_un_estatus_desconocido_no_desplaza_al_conocido(self):
+        from src.application.use_cases import _intelisis_index
+
+        index = _intelisis_index(
+            [self._row("CONCLUIDO", "1"), self._row("", "2")]
+        )
+
+        fila = index[("FACTURA", "F1-1", "2026-10-15")]
+        self.assertEqual(fila["EstatusIntelisis"], "CONCLUIDO")
+
+
 if __name__ == "__main__":
     unittest.main()

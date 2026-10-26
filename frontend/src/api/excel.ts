@@ -1,5 +1,6 @@
 import { formatDateTime, formatMoney, toISODate } from "../api/format";
-import type { IntelisisUfeRow, Voucher } from "../api/types";
+import { ERP_ESTADO_LABEL } from "../components/IntelisisUfeEstados";
+import type { IntelisisUfeRow, UfeEstatusErp, Voucher } from "../api/types";
 
 function canceladoONConcluido(doc: Voucher): string {
   const raw = doc.intelisis;
@@ -106,6 +107,8 @@ export async function exportIntelisisUfeExcel(
       Tienda: row.sucursal_nombre,
       Cliente: row.cliente,
       "Estatus ERP": row.estatus_erp,
+      "Estatus ERP (texto)":
+        ERP_ESTADO_LABEL[row.estatus_erp as UfeEstatusErp] ?? row.estatus_erp,
       Total: row.total,
       Generador: row.generador,
       "Estado generacion": row.estado_generacion,
@@ -118,6 +121,7 @@ export async function exportIntelisisUfeExcel(
       Detalle: row.detalle_incidencia ?? "",
       "Documento que acredita": row.referencia,
       "ID ERP": row.id_venta,
+      "¿Es documento?": row.comprobante || row.documento ? "Sí" : "No",
     })),
   );
   if (opciones.truncado) {
@@ -139,6 +143,7 @@ export async function exportIntelisisUfeExcel(
     { wch: 28 },
     { wch: 32 },
     { wch: 14 },
+    { wch: 18 },
     { wch: 14 },
     { wch: 16 },
     { wch: 20 },
@@ -151,6 +156,7 @@ export async function exportIntelisisUfeExcel(
     { wch: 40 },
     { wch: 24 },
     { wch: 12 },
+    { wch: 14 },
   ];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Intelisis UFE");

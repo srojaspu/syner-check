@@ -3,12 +3,15 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate, formatMoney } from "../api/format";
 import {
+  ERP_ESTADO_DESC,
+  ERP_ESTADO_LABEL,
   ESTADO_GENERACION_LABEL,
   ESTADO_SUNAT_LABEL,
 } from "./IntelisisUfeEstados";
 import type {
   IntelisisUfeRow,
   UfeEstadoSunat,
+  UfeEstatusErp,
   UfeGenerador,
 } from "../api/types";
 
@@ -33,6 +36,43 @@ function sunatVariant(estado: UfeEstadoSunat): BadgeVariant {
     return "destructive";
   }
   return "outline";
+}
+
+/** Estilo del badge ERP: el texto en español va siempre, el color acompaña. */
+const ERP_BADGE: Record<
+  UfeEstatusErp,
+  { variant: BadgeVariant; className?: string }
+> = {
+  CONCLUIDO: { variant: "default" },
+  PENDIENTE: {
+    variant: "outline",
+    className: "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
+  SINAFECTAR: { variant: "secondary" },
+  CANCELADO: { variant: "outline", className: "text-muted-foreground" },
+};
+
+/**
+ * Solo un comprobante concluido se puede reenviar. El backend lo rechaza
+ * igual (`validar_encolado`): deshabilitar el checkbox evita el viaje inútil.
+ */
+function puedeReenviar(fila: IntelisisUfeRow): boolean {
+  return fila.estatus_erp === "CONCLUIDO";
+}
+
+function ErpBadge({ fila }: { fila: IntelisisUfeRow }) {
+  const estatus = fila.estatus_erp as UfeEstatusErp;
+  const estilo = ERP_BADGE[estatus];
+  const etiqueta = ERP_ESTADO_LABEL[estatus] ?? fila.estatus_erp ?? "—";
+  return (
+    <Badge
+      variant={estilo?.variant ?? "outline"}
+      className={estilo?.className}
+      title={ERP_ESTADO_DESC[estatus] ?? `Estatus ERP: ${fila.estatus_erp}`}
+    >
+      {etiqueta}
+    </Badge>
+  );
 }
 
 /**
@@ -143,9 +183,7 @@ export function intelisisUfeColumns(
       header: "ERP",
       accessorFn: (doc) => doc.estatus_erp,
       meta: { priority: "lg" },
-      cell: ({ row }) => (
-        <Badge variant="outline">{row.original.estatus_erp || "—"}</Badge>
-      ),
+      cell: ({ row }) => <ErpBadge fila={row.original} />,
     },
     {
       id: "total",
@@ -234,14 +272,18 @@ export function intelisisUfeColumns(
       id: "seleccion",
       header: ({ table }) => {
         const pagina = table.getRowModel().rows.map((row) => row.original);
-        const marcados = pagina.filter((fila) =>
+        // Solo los concluidos se pueden reenviar: la cabecera no marca los
+        // que luego el backend rechazaria.
+        const elegibles = pagina.filter(puedeReenviar);
+        const marcados = elegibles.filter((fila) =>
           selection.seleccionados.has(fila.id_venta),
         ).length;
-        const todos = pagina.length > 0 && marcados === pagina.length;
+        const todos = elegibles.length > 0 && marcados === elegibles.length;
         return (
           <Checkbox
             checked={todos}
             indeterminate={marcados > 0 && !todos}
+            disabled={elegibles.length === 0}
             aria-label={
               todos
                 ? "Quitar la selección de esta página"
@@ -249,7 +291,7 @@ export function intelisisUfeColumns(
             }
             onClick={(event) => event.stopPropagation()}
             onCheckedChange={(checked) =>
-              selection.onTogglePagina(pagina, checked === true)
+              selection.onTogglePagina(elegibles, checked === true)
             }
           />
         );
@@ -258,14 +300,23 @@ export function intelisisUfeColumns(
       meta: { priority: "always" },
       cell: ({ row }) => {
         const doc = row.original;
+        const habilitado = puedeReenviar(doc);
         return (
           <span
             className="flex items-center"
             onClick={(event) => event.stopPropagation()}
           >
             <Checkbox
-              checked={selection.seleccionados.has(doc.id_venta)}
+              checked={
+                habilitado && selection.seleccionados.has(doc.id_venta)
+              }
+              disabled={!habilitado}
               aria-label={`Seleccionar ${doc.comprobante || doc.documento}`}
+              title={
+                habilitado
+                  ? undefined
+                  : "Solo se pueden reenviar comprobantes concluidos"
+              }
               onCheckedChange={(checked) =>
                 selection.onToggle(doc.id_venta, checked === true)
               }
