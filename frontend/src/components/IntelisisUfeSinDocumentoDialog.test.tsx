@@ -122,11 +122,21 @@ describe("IntelisisUfeSinDocumentoDialog", () => {
     ).toBeTruthy();
   });
 
-  it("no inventa folio ni comprobante: muestra —", () => {
+  it("rotula el folio del ERP para que no se lea como comprobante", () => {
+    view({ rows: [fila({ mov_id: "160-35875", documento: null })] });
+
+    const row = filaDe(900);
+    expect(within(row).getByText("Folio 160-35875")).toBeTruthy();
+    expect(
+      within(row).getByTitle(/Folio del movimiento en Intelisis/),
+    ).toBeTruthy();
+  });
+
+  it("no inventa folio ni comprobante cuando no hay folio", () => {
     view({ rows: [fila({ mov_id: null, documento_invalido: null })] });
 
     const row = filaDe(900);
-    expect(within(row).getByText("—")).toBeTruthy();
+    expect(within(row).getByText("Sin folio")).toBeTruthy();
     expect(within(row).queryByText(/00000000/)).toBeNull();
   });
 

@@ -66,7 +66,7 @@ function Fila({
       <TableCell className="tabular-nums">
         {formatDate(fila.fecha_emision)}
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal">
         <span title={`${fila.sucursal} · ${fila.sucursal_nombre}`}>
           <span className="font-medium">{fila.sucursal}</span>{" "}
           <span className="text-muted-foreground">
@@ -77,8 +77,18 @@ function Fila({
       <TableCell className="text-muted-foreground">
         <span className="flex flex-col">
           <span>{fila.mov}</span>
-          {/* Sin folio no se inventa un número: nunca se muestra como documento. */}
-          <small className="tabular-nums">{fila.mov_id ?? "—"}</small>
+          {/* El folio del ERP no es el número del comprobante: se rotula para
+              que no se lea como un CPE emitido. Sin folio no se inventa uno. */}
+          <small
+            className="tabular-nums"
+            title={
+              fila.mov_id
+                ? "Folio del movimiento en Intelisis; no es el número del comprobante electrónico."
+                : "El movimiento no llegó a tener folio en Intelisis."
+            }
+          >
+            {fila.mov_id ? `Folio ${fila.mov_id}` : "Sin folio"}
+          </small>
         </span>
       </TableCell>
       <TableCell className="tabular-nums">{fila.id_venta}</TableCell>
@@ -130,7 +140,7 @@ export function IntelisisUfeSinDocumentoDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-6xl">
         <DialogHeader>
           <DialogTitle>Ventas sin documentar</DialogTitle>
           <DialogDescription>
@@ -179,7 +189,7 @@ export function IntelisisUfeSinDocumentoDialog({
             </p>
           </div>
         ) : (
-          <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+          <div className="max-h-[60vh] min-w-0 overflow-y-auto rounded-lg border">
             <Table aria-label="Ventas sin documentar">
               <TableHeader className="sticky top-0 z-10 bg-popover">
                 <TableRow>
