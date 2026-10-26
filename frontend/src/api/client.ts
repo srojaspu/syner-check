@@ -182,6 +182,8 @@ export function getIntelisisUfe(
     resultado?: string;
     estado?: string;
     incidencia?: string;
+    /** Estado derivado del card Validador. */
+    derivado?: string;
     /** Tipos de documento de la consulta (los chips del panel). */
     tipos?: string[];
     generador?: string;
@@ -197,6 +199,7 @@ export function getIntelisisUfe(
   qs.set("hasta", params.hasta);
   if (params.resultado) qs.set("resultado", params.resultado);
   if (params.estado) qs.set("estado", params.estado);
+  if (params.derivado) qs.set("derivado", params.derivado);
   if (params.incidencia) qs.set("incidencia", params.incidencia);
   // El tipo de documento es una lista: los filtros de la fila de la tabla
   // (incluido el Tipo por columna) se aplican en el navegador y no viajan.

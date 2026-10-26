@@ -123,7 +123,7 @@ listado de 31 días devolvía **17,7 MB**.
       19.036 = 18.601+35+304+96).
 - [x] Ventas sin documentar: 304 en 31 días, separadas en 288 sin documento y 16 con
       documento inválido.
-- [x] 430 tests Python + 169 vitest en verde; `tsc` limpio; `ruff` limpio.
+- [x] 435 tests Python + 172 vitest en verde; `tsc` limpio; `ruff` limpio.
 - [ ] Contraste visual contra la pantalla PHP para un mismo día (requiere que César
       abra la pestaña FE con el mismo período).
 - [ ] Reenvío (fase 2): requiere la credencial de escritura y la ventana de prueba.
@@ -161,10 +161,12 @@ El detalle de líneas no se consulta: el login de lectura no tiene `SELECT` sobr
 `dbo.VentaD` (error 229, verificado el 2026-10-26). La medición externa daba 51 ventas sin
 detalle, pero el diálogo no depende de un grant nuevo para funcionar.
 
-Los dos estados derivados del Validador (`sin_traza`, `pendientes_conclusion`) y los de SUNAT
-se explican en su popover, pero **no filtran**: la API no acepta esos filtros.
+Los cuatro estados derivados del Validador (`sin_traza`, `pendientes_conclusion`, `en_espera`,
+`no_aplica`) se pueden filtrar desde su card: viajan en el parámetro `derivado` (no en
+`estado`) y usan el mismo criterio que los KPIs, así que el número del card coincide con las
+filas que devuelve la tabla. Los estados SUNAT filtran con `sunat`.
 
-Verificación automática de esta ronda: **430 tests Python + 169 vitest** en verde,
+Verificación automática de esta ronda: **435 tests Python + 172 vitest** en verde,
 `tsc --noEmit` limpio y `ruff check src tests` limpio.
 
 ## 8. Cómo repetir este QA

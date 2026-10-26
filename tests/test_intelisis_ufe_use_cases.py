@@ -476,6 +476,76 @@ class TestListadoServidor:
 
         assert [fila["id_venta"] for fila in out["rows"]] == [1]
 
+    @pytest.mark.parametrize(
+        ("derivado", "fila", "momento"),
+        [
+            (
+                "sin_traza",
+                _fila(
+                    id_venta=1,
+                    estatus="CONCLUIDO",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                ),
+                AHORA,
+            ),
+            (
+                "pendientes_conclusion",
+                _fila(
+                    id_venta=2,
+                    estatus="PENDIENTE",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                ),
+                AHORA,
+            ),
+            (
+                "en_espera",
+                _fila(
+                    id_venta=3,
+                    estatus="CONCLUIDO",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                ),
+                datetime(2026, 10, 21, 2, 0, 0),
+            ),
+            (
+                "no_aplica",
+                _fila(
+                    id_venta=4,
+                    tipo_documento_pu="07",
+                    referencia="SE-Boleta 104-00038062",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                ),
+                AHORA,
+            ),
+        ],
+    )
+    def test_el_filtro_derivado_coincide_con_el_kpi(
+        self, derivado: str, fila: dict, momento: datetime
+    ) -> None:
+        """Un card no puede mostrar 2 y filtrar otra cosa: mismo criterio."""
+        out = listar_ufe(
+            _Reader([fila]),
+            start_iso="2026-10-21",
+            end_iso="2026-10-21",
+            now=momento,
+            derivado=derivado,
+        )
+
+        assert out["kpis"][derivado] == 1
+        assert out["filtrados"] == 1
+        assert [item["id_venta"] for item in out["rows"]] == [fila["IDVenta"]]
+
     def test_los_kpis_desglosan_los_tres_ejes(self) -> None:
         reader = _Reader(
             [

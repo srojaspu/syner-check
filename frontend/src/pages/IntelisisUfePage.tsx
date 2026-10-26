@@ -158,7 +158,7 @@ export default function IntelisisUfePage({
   }, [range, borrador, tipos]);
 
   const alternar = useCallback(
-    (clave: "estatus" | "estado" | "sunat", valor: string) => {
+    (clave: "estatus" | "estado" | "derivado" | "sunat", valor: string) => {
       setBorrador((prev) => {
         const esIgual = String(prev[clave] ?? "") === valor;
         // Los filtros de los cards son excluyentes entre si: el estado que
@@ -168,6 +168,7 @@ export default function IntelisisUfePage({
         const siguiente: IntelisisUfeFiltros = { ...prev };
         delete siguiente.estatus;
         delete siguiente.estado;
+        delete siguiente.derivado;
         delete siguiente.sunat;
         if (!esIgual) siguiente[clave] = valor;
         return siguiente;

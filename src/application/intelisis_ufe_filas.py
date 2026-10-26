@@ -199,6 +199,7 @@ def aplica_filtros(
     *,
     resultado: str = "",
     estados: Sequence[str] = (),
+    derivado: str = "",
     incidencia: str = "",
     tipos: Sequence[str] = (),
     generador: str = "",
@@ -211,6 +212,8 @@ def aplica_filtros(
     if resultado and texto(fila.get("resultado")).upper() != resultado.upper():
         return False
     if estados and texto(fila.get("estado_generacion")) not in estados:
+        return False
+    if derivado and not dominio.cumple_derivado(fila, derivado):
         return False
     if incidencia:
         buscada = incidencia.strip().upper()
@@ -272,17 +275,9 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
     ``estado_generacion`` y las PENDIENTE inflaban el "sin traza".
     """
     conformes = sum(1 for f in filas if f["resultado"] == "CONFORME")
-    sin_traza = sum(
-        1
-        for f in filas
-        if dominio.INCIDENCIA_SIN_TRAZA in (f.get("incidencias") or [])
-    )
+    sin_traza = sum(1 for f in filas if dominio.es_sin_traza(f))
     pendientes_conclusion = sum(
-        1
-        for f in filas
-        if texto(f.get("estatus_erp")).upper() == "PENDIENTE"
-        and f.get("estado_generacion") == dominio.ESTADO_SIN_REGISTRO
-        and not f.get("exento_generador")
+        1 for f in filas if dominio.es_pendiente_conclusion(f)
     )
     sin_cobertura = sum(
         1 for f in filas if f["estado_sunat"] == dominio.SUNAT_SIN_CONSULTA
@@ -308,8 +303,8 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
         "con_incidencia": len(filas) - conformes,
         "sin_traza": sin_traza,
         "pendientes_conclusion": pendientes_conclusion,
-        "en_espera": sum(1 for f in filas if f["en_espera"]),
-        "no_aplica": sum(1 for f in filas if f["exento_generador"]),
+        "en_espera": sum(1 for f in filas if dominio.es_en_espera(f)),
+        "no_aplica": sum(1 for f in filas if dominio.es_no_aplica(f)),
         "sin_cobertura_sunat": sin_cobertura,
         # Documentos que SUNAT puede consultar (los que tienen tipo valido).
         "sunat_consultables": sum(1 for f in filas if f.get("tipo_sunat")),
@@ -346,7 +341,7 @@ def cobertura_por_dia(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
             },
         )
         item["documentos"] += 1
-        if dominio.INCIDENCIA_SIN_TRAZA in (fila.get("incidencias") or []):
+        if dominio.es_sin_traza(fila):
             item["sin_traza"] += 1
         if fila["resultado"] != dominio.RESULTADO_CONFORME:
             item["con_incidencia"] += 1

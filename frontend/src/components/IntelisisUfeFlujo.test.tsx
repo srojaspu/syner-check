@@ -223,12 +223,13 @@ describe("IntelisisUfeFlujo · Validador y SUNAT", () => {
     fireEvent.click(tarjeta);
     await screen.findByText("Validador · desglose");
 
+    // Los derivados ya filtran: la nota vieja confundia al usuario.
     expect(
-      within(panel()).getByText("Los estados derivados no filtran la tabla."),
-    ).toBeTruthy();
+      within(panel()).queryByText("Los estados derivados no filtran la tabla."),
+    ).toBeNull();
   });
 
-  it("un estado derivado se explica pero no filtra", async () => {
+  it("un estado derivado filtra la tabla con la clave derivado", async () => {
     const { onAlternar } = renderFlujo({
       sin_traza: 2,
       por_estado_generacion: [
@@ -248,10 +249,33 @@ describe("IntelisisUfeFlujo · Validador y SUNAT", () => {
         "Concluida en el ERP sin registro en la bitácora: es un fallo del generador.",
       ),
     ).toBeTruthy();
-    expect(
-      within(contenido).queryByRole("button", { name: /^Sin traza/ }),
-    ).toBeNull();
-    expect(onAlternar).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(contenido).getByRole("button", { name: /^Sin traza/ }),
+    );
+
+    expect(onAlternar).toHaveBeenCalledWith("derivado", "sin_traza");
+    // El popover se cierra, igual que con un estado tecnico.
+    expect(screen.queryByText("Validador · desglose")).toBeNull();
+  });
+
+  it("Pendiente de conclusión también filtra", async () => {
+    const { onAlternar } = renderFlujo();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Validador: ver desglose" }),
+    );
+    await screen.findByText("Validador · desglose");
+
+    fireEvent.click(
+      within(panel()).getByRole("button", {
+        name: /^Pendiente de conclusión/,
+      }),
+    );
+
+    expect(onAlternar).toHaveBeenCalledWith(
+      "derivado",
+      "pendientes_conclusion",
+    );
   });
 
   it("SUNAT expone el puente de consultables", () => {

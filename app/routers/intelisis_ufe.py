@@ -46,6 +46,14 @@ UFE_ESTADOS = {
     "fuera_de_bitacora",
 }
 UFE_TIPOS = {"BO", "FA", "NC", "ND"}
+# Estados derivados del card Validador: agrupan por el mismo criterio que los
+# KPIs, no por `estado_generacion`.
+UFE_DERIVADOS = {
+    "sin_traza",
+    "pendientes_conclusion",
+    "en_espera",
+    "no_aplica",
+}
 UFE_GENERADORES = {"OK REGISTRADO", "SIN OK", "SIN TRAZA", "NO APLICA"}
 UFE_SUNAT = {
     "ACEPTADO",
@@ -76,6 +84,7 @@ async def listar_ufe(
     hasta: str = Query(..., min_length=10, max_length=10),
     resultado: str = Query("", max_length=20),
     estado: str = Query("", max_length=200),
+    derivado: str = Query("", max_length=32),
     incidencia: str = Query("", max_length=60),
     tipo: str = Query("", max_length=20),
     generador: str = Query("", max_length=20),
@@ -95,6 +104,8 @@ async def listar_ufe(
     unknown = [item for item in estados if item not in UFE_ESTADOS]
     if unknown:
         raise HTTPException(400, "Estado de generacion invalido.")
+    if derivado and derivado not in UFE_DERIVADOS:
+        raise HTTPException(400, "Estado derivado invalido.")
     if resultado and resultado.upper() not in {"CONFORME", "REVISAR"}:
         raise HTTPException(400, "Resultado invalido.")
     tipos = [item.strip().upper() for item in tipo.split(",") if item.strip()]
@@ -112,6 +123,7 @@ async def listar_ufe(
             hasta,
             resultado=resultado.upper(),
             estados=estados,
+            derivado=derivado,
             incidencia=incidencia,
             tipos=tipos,
             generador=generador.upper(),

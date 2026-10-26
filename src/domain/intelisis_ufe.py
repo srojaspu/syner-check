@@ -58,6 +58,24 @@ INCIDENCIA_GENERADOR_SIN_OK = "GENERADOR SIN OK"
 # cual es la buena (paridad con `CRUCE AMBIGUO` del PHP).
 INCIDENCIA_CRUCE_AMBIGUO = "CRUCE AMBIGUO"
 
+# --- Estados derivados del validador ---------------------------------------
+#
+# Los segmentos del card Validador agrupan las filas con el mismo criterio con
+# el que se calculan los KPIs. No son valores de ``estado_generacion``, asi
+# que se filtran con ``derivado`` y no con ``estado`` (si no, el conteo del
+# card no coincidiria con las filas que devuelve el listado).
+DERIVADO_SIN_TRAZA = "sin_traza"
+DERIVADO_PENDIENTES_CONCLUSION = "pendientes_conclusion"
+DERIVADO_EN_ESPERA = "en_espera"
+DERIVADO_NO_APLICA = "no_aplica"
+
+DERIVADOS: tuple[str, ...] = (
+    DERIVADO_SIN_TRAZA,
+    DERIVADO_PENDIENTES_CONCLUSION,
+    DERIVADO_EN_ESPERA,
+    DERIVADO_NO_APLICA,
+)
+
 # ``Venta.Estatus``: el dominio real de la tabla (PUnidas). Los dos ultimos
 # (CONFIRMAR / AFECTANDO) son residuales de 2016-2024 y no aparecen en el
 # periodo, por eso el eje se mide con los cuatro primeros.
@@ -108,6 +126,48 @@ _SUNAT_NEGATIVOS = {
 
 def _normaliza(texto: Any) -> str:
     return str(texto if texto is not None else "").strip()
+
+
+def es_sin_traza(fila: Mapping[str, Any]) -> bool:
+    """Incidencia D19: CONCLUIDO sin registro en la bitacora (fuera de gracia)."""
+    return INCIDENCIA_SIN_TRAZA in (fila.get("incidencias") or [])
+
+
+def es_pendiente_conclusion(fila: Mapping[str, Any]) -> bool:
+    """PENDIENTE sin registro: todavia no debia pasar por el generador (D19)."""
+    return (
+        _normaliza(fila.get("estatus_erp")).upper() == "PENDIENTE"
+        and fila.get("estado_generacion") == ESTADO_SIN_REGISTRO
+        and not fila.get("exento_generador")
+    )
+
+
+def es_en_espera(fila: Mapping[str, Any]) -> bool:
+    """Emitida hoy dentro de la ventana de gracia del generador."""
+    return bool(fila.get("en_espera"))
+
+
+def es_no_aplica(fila: Mapping[str, Any]) -> bool:
+    """El generador no aplica (NC que acredita un documento de SynerPOS)."""
+    return bool(fila.get("exento_generador"))
+
+
+_DERIVADO_PREDICADOS: dict[str, Any] = {
+    DERIVADO_SIN_TRAZA: es_sin_traza,
+    DERIVADO_PENDIENTES_CONCLUSION: es_pendiente_conclusion,
+    DERIVADO_EN_ESPERA: es_en_espera,
+    DERIVADO_NO_APLICA: es_no_aplica,
+}
+
+
+def cumple_derivado(fila: Mapping[str, Any], derivado: str) -> bool:
+    """True si la fila pertenece al estado derivado indicado.
+
+    Un valor desconocido no coincide con ninguna fila: el router valida el
+    parametro antes de llegar aca.
+    """
+    predicado = _DERIVADO_PREDICADOS.get(_normaliza(derivado))
+    return bool(predicado and predicado(fila))
 
 
 # Letra de tipo que lleva el comprobante: F (factura), B (boleta), N (nota).

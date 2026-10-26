@@ -82,6 +82,31 @@ const OPCIONES_SUNAT = [
 ];
 
 /**
+ * Mismo criterio que usa el servidor para los KPIs derivados del Validador.
+ *
+ * No son valores de `estado_generacion`: agrupan filas por incidencia, por
+ * estatus del ERP, por la ventana de gracia o por exención del generador.
+ */
+function cumpleDerivado(fila: IntelisisUfeRow, derivado: string): boolean {
+  switch (derivado) {
+    case "sin_traza":
+      return fila.incidencias.includes("SIN TRAZA");
+    case "pendientes_conclusion":
+      return (
+        fila.estatus_erp === "PENDIENTE" &&
+        fila.estado_generacion === "sin_registro" &&
+        !fila.exento_generador
+      );
+    case "en_espera":
+      return fila.en_espera;
+    case "no_aplica":
+      return fila.exento_generador;
+    default:
+      return false;
+  }
+}
+
+/**
  * Filtra las filas cargadas en el navegador (al instante).
  *
  * Son los filtros de la fila de la tabla. El tipo de documento del panel de
@@ -97,6 +122,9 @@ export function filtraUfeFilas(
 
   return filas.filter((fila) => {
     if (filtros.estado && fila.estado_generacion !== filtros.estado) {
+      return false;
+    }
+    if (filtros.derivado && !cumpleDerivado(fila, filtros.derivado)) {
       return false;
     }
     if (filtros.tipo && fila.tipo !== filtros.tipo) return false;

@@ -35,7 +35,12 @@ import {
 } from "./IntelisisUfeEstados";
 import type { IntelisisUfeFiltros, IntelisisUfeKpis } from "../api/types";
 
-type Clave = "estatus" | "estado" | "sunat";
+type Clave = "estatus" | "estado" | "derivado" | "sunat";
+
+/** Las claves derivadas se filtran con `derivado`, no con `estado`. */
+function esEstadoDerivado(key: string): key is keyof typeof DERIVADO_LABEL {
+  return key in DERIVADO_LABEL;
+}
 
 interface Segmento {
   key: string;
@@ -467,8 +472,8 @@ export function IntelisisUfeFlujo({
     count,
     tono: DERIVADO_TONO[key],
     desc: DERIVADO_DESC[key],
-    // No son estados del generador: la API no los acepta como filtro.
-    filtrable: false,
+    // No son estados del generador: viajan en `derivado`, no en `estado`.
+    filtrable: true,
   });
 
   const validadorSegmentos = [
@@ -543,10 +548,14 @@ export function IntelisisUfeFlujo({
           segmentos={validadorSegmentos}
           total={documentos}
           unidad="documentos"
-          seleccionado={filtros.estado}
-          onSeleccionar={(key) => onAlternar("estado", key)}
+          seleccionado={filtros.estado ?? filtros.derivado}
+          onSeleccionar={(key) =>
+            onAlternar(
+              esEstadoDerivado(key) ? "derivado" : "estado",
+              key,
+            )
+          }
           onLimpiar={onLimpiar}
-          notaPie="Los estados derivados no filtran la tabla."
           vacio="Sin documentos en el período."
           loading={loading}
           abierto={abierto === "estado"}

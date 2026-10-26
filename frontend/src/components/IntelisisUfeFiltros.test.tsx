@@ -87,6 +87,52 @@ describe("filtraUfeFilas", () => {
     expect(out.map((f) => f.id_venta)).toEqual([1]);
   });
 
+  it("filtra por los estados derivados del Validador", () => {
+    const sinTraza = fila({
+      id_venta: 3,
+      estado_generacion: "sin_registro",
+      generador: "SIN TRAZA",
+      incidencias: ["SIN TRAZA"],
+    });
+    const pendiente = fila({
+      id_venta: 4,
+      estatus_erp: "PENDIENTE",
+      estado_generacion: "sin_registro",
+      generador: "SIN TRAZA",
+      incidencias: [],
+    });
+    const espera = fila({
+      id_venta: 5,
+      estado_generacion: "sin_registro",
+      generador: "SIN TRAZA",
+      incidencias: [],
+      en_espera: true,
+    });
+    const noAplica = fila({
+      id_venta: 6,
+      estado_generacion: "sin_registro",
+      generador: "NO APLICA",
+      incidencias: [],
+      exento_generador: true,
+    });
+    const filas = [sinTraza, pendiente, espera, noAplica];
+
+    expect(
+      filtraUfeFilas(filas, { derivado: "sin_traza" }).map((f) => f.id_venta),
+    ).toEqual([3]);
+    expect(
+      filtraUfeFilas(filas, { derivado: "pendientes_conclusion" }).map(
+        (f) => f.id_venta,
+      ),
+    ).toEqual([4]);
+    expect(
+      filtraUfeFilas(filas, { derivado: "en_espera" }).map((f) => f.id_venta),
+    ).toEqual([5]);
+    expect(
+      filtraUfeFilas(filas, { derivado: "no_aplica" }).map((f) => f.id_venta),
+    ).toEqual([6]);
+  });
+
   it("filtra por sucursal", () => {
     const out = filtraUfeFilas(FILAS, { sucursal: 202 });
     expect(out.map((f) => f.id_venta)).toEqual([2]);

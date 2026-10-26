@@ -478,6 +478,31 @@ describe("IntelisisUfePage", () => {
     expect(ultima?.[2]).toMatchObject({ estado: "generado" });
   });
 
+  it("filtra por un estado derivado y lo envia como derivado", async () => {
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Validador: ver desglose" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /^Pendiente de conclusión/,
+      }),
+    );
+
+    expect(screen.queryByText("Validador · desglose")).toBeNull();
+    expect(mocks.ufe.run).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    const llamadas = mocks.ufe.run.mock.calls;
+    const ultima = llamadas[llamadas.length - 1];
+    expect(ultima?.[2]).toMatchObject({
+      derivado: "pendientes_conclusion",
+    });
+    expect(ultima?.[2]).not.toHaveProperty("estado");
+  });
+
   it("el filtro de un card reemplaza al de los otros ejes", async () => {
     const user = userEvent.setup();
     mocks.ufe.kpis = kpis({

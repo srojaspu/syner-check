@@ -120,6 +120,19 @@ def test_estado_sunat_invalido_es_400(autenticado) -> None:
     assert response.status_code == 400
 
 
+def test_estado_derivado_invalido_es_400(autenticado) -> None:
+    response = autenticado.get(
+        "/api/intelisis/ufe",
+        params={
+            "desde": "2026-10-20",
+            "hasta": "2026-10-20",
+            "derivado": "no-existe",
+        },
+    )
+    assert response.status_code == 400
+    assert "derivado" in response.json()["detail"].lower()
+
+
 def test_periodo_mayor_a_31_dias_es_400(autenticado) -> None:
     response = autenticado.get(
         "/api/intelisis/ufe",

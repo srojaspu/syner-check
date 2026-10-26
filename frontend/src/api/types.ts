@@ -393,6 +393,8 @@ export interface IntelisisUfeKpis {
  */
 export interface IntelisisUfeFiltros {
   estado?: string;
+  /** Estado derivado del card Validador (sin traza, pendientes, etc.). */
+  derivado?: string;
   /** Estatus de la venta en el ERP (columna ERP). */
   estatus?: string;
   /** Tipo de la fila de filtros de la tabla: no viaja al servidor. */
