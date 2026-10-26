@@ -19,6 +19,7 @@ Fuentes de verdad:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any, Mapping, Sequence
 
@@ -152,7 +153,9 @@ def es_no_aplica(fila: Mapping[str, Any]) -> bool:
     return bool(fila.get("exento_generador"))
 
 
-_DERIVADO_PREDICADOS: dict[str, Any] = {
+_DERIVADO_PREDICADOS: dict[
+    str, Callable[[Mapping[str, Any]], bool]
+] = {
     DERIVADO_SIN_TRAZA: es_sin_traza,
     DERIVADO_PENDIENTES_CONCLUSION: es_pendiente_conclusion,
     DERIVADO_EN_ESPERA: es_en_espera,

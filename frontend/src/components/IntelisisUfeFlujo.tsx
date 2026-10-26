@@ -39,7 +39,7 @@ type Clave = "estatus" | "estado" | "derivado" | "sunat";
 
 /** Las claves derivadas se filtran con `derivado`, no con `estado`. */
 function esEstadoDerivado(key: string): key is keyof typeof DERIVADO_LABEL {
-  return key in DERIVADO_LABEL;
+  return Object.prototype.hasOwnProperty.call(DERIVADO_LABEL, key);
 }
 
 interface Segmento {
@@ -203,7 +203,6 @@ function TarjetaEje({
   onLimpiar,
   onSinDocumento,
   pie,
-  notaPie,
   vacio,
   loading,
   abierto,
@@ -222,7 +221,6 @@ function TarjetaEje({
   onLimpiar: () => void;
   onSinDocumento?: () => void;
   pie?: ReactNode;
-  notaPie?: string;
   vacio: string;
   loading?: boolean;
   abierto: boolean;
@@ -371,12 +369,6 @@ function TarjetaEje({
           {pie ? (
             <p className="border-t border-border/60 pt-2 text-[11px] leading-snug text-muted-foreground">
               {pie}
-            </p>
-          ) : null}
-
-          {notaPie ? (
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              {notaPie}
             </p>
           ) : null}
 
@@ -548,7 +540,7 @@ export function IntelisisUfeFlujo({
           segmentos={validadorSegmentos}
           total={documentos}
           unidad="documentos"
-          seleccionado={filtros.estado ?? filtros.derivado}
+          seleccionado={filtros.estado || filtros.derivado}
           onSeleccionar={(key) =>
             onAlternar(
               esEstadoDerivado(key) ? "derivado" : "estado",

@@ -21,6 +21,7 @@ from app.executor import run_blocking
 from app.logging_setup import request_id_var
 from app.security import read_json_limited
 from app.config import MAX_REQUEST_BYTES
+from src.domain.intelisis_ufe import DERIVADOS, ESTADOS_GENERACION
 from src.interfaces.wiring import (
     intelisis_reenvio_encolar as clean_intelisis_reenvio_encolar,
     intelisis_reenvio_resolver as clean_intelisis_reenvio_resolver,
@@ -36,24 +37,11 @@ logger = logging.getLogger("syner_check")
 
 router = APIRouter(prefix="/api/intelisis/ufe", tags=["intelisis-ufe"])
 
-UFE_ESTADOS = {
-    "generado",
-    "error_validacion",
-    "omitido_validacion",
-    "sin_bloque",
-    "en_proceso",
-    "sin_registro",
-    "fuera_de_bitacora",
-}
+UFE_ESTADOS = set(ESTADOS_GENERACION)
 UFE_TIPOS = {"BO", "FA", "NC", "ND"}
 # Estados derivados del card Validador: agrupan por el mismo criterio que los
 # KPIs, no por `estado_generacion`.
-UFE_DERIVADOS = {
-    "sin_traza",
-    "pendientes_conclusion",
-    "en_espera",
-    "no_aplica",
-}
+UFE_DERIVADOS = set(DERIVADOS)
 UFE_GENERADORES = {"OK REGISTRADO", "SIN OK", "SIN TRAZA", "NO APLICA"}
 UFE_SUNAT = {
     "ACEPTADO",
