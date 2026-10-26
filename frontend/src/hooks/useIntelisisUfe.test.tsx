@@ -239,6 +239,35 @@ describe("useIntelisisUfe", () => {
     expect(result.current.validando).toBeNull();
   });
 
+  it("actualiza el detalle abierto al validar en SUNAT", async () => {
+    detalleMock.mockResolvedValue({
+      id_venta: 7466462,
+      venta: fila(),
+      intentos: [],
+      sunat: null,
+      estado_sunat: "SUNAT SIN CONSULTA",
+    });
+    validarMock.mockResolvedValue({
+      id_venta: 7466462,
+      documento: "602-00142702",
+      comprobante: "B602-00142702",
+      estado: "ACEPTADO",
+      resultado: { estado: "ACEPTADO" },
+    });
+    const { result } = renderHook(() => useIntelisisUfe(vi.fn()));
+
+    await act(async () => {
+      await result.current.abrirDetalle(7466462);
+    });
+    await act(async () => {
+      await result.current.validar(7466462);
+    });
+
+    // El drawer pinta `detalle.venta.estado_sunat`, no solo el envoltorio.
+    expect(result.current.detalle?.venta.estado_sunat).toBe("ACEPTADO");
+    expect(result.current.detalle?.estado_sunat).toBe("ACEPTADO");
+  });
+
   it("deja el error de validacion a la vista", async () => {
     validarMock.mockRejectedValue(new Error("SUNAT no responde."));
     const { result } = renderHook(() => useIntelisisUfe(vi.fn()));

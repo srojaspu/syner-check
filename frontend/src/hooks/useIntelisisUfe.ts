@@ -285,6 +285,9 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
           detalle: prev.detalle
             ? {
                 ...prev.detalle,
+                // El drawer pinta `venta.estado_sunat`: hay que actualizar la
+                // fila anidada, no solo el estado del envoltorio.
+                venta: actualizada(prev.detalle.venta),
                 estado_sunat: (data.estado ||
                   prev.detalle.estado_sunat) as IntelisisUfeDetalle["estado_sunat"],
                 sunat: {

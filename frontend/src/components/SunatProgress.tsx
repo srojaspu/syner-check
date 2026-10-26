@@ -178,7 +178,8 @@ export function SunatProgress({
                   <span>
                     {progress.procesados} de {progress.total || "?"} procesados
                   </span>
-                  <span>{progress.exitosos} válidos</span>
+                  {/* "exitosos" incluye NO_EXISTE/ANULADO: no es "aceptado". */}
+                  <span>{progress.exitosos} con respuesta</span>
                   {progress.errores > 0 ? (
                     <span className="text-destructive">
                       {progress.errores} con error

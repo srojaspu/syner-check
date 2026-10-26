@@ -348,6 +348,9 @@ export function useSunat(onAuthFailure: () => void) {
             number: doc.number,
             date: doc.date,
             crossTotal: doc.crossTotal,
+            // Monto declarado a SUNAT por el generador: el backend lo prefiere
+            // sobre crossTotal (sin el, la validacion usa la suma del ERP).
+            importe_sunat: doc.importe_sunat,
           })),
           alcance,
           signal,

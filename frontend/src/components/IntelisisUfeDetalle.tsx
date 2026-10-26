@@ -264,6 +264,12 @@ export function IntelisisUfeDetalle({
               />
               <Field label="Estatus ERP" value={venta.estatus_erp} />
               <Field label="Total" value={formatMoney(venta.total, "PEN")} />
+              {venta.importe_sunat !== venta.total ? (
+                <Field
+                  label="Importe SUNAT"
+                  value={formatMoney(venta.importe_sunat, "PEN")}
+                />
+              ) : null}
               <Field label="Cliente" value={venta.cliente} />
               {venta.referencia ? (
                 <Field label="Documento que acredita" value={venta.referencia} />
