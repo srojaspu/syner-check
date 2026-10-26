@@ -19,6 +19,7 @@ import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialo
 import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel";
 import { IntelisisUfeResolverDialog } from "@/components/IntelisisUfeResolverDialog";
 import { IntelisisUfeResultados } from "@/components/IntelisisUfeResultados";
+import { IntelisisUfeSinDocumentoDialog } from "@/components/IntelisisUfeSinDocumentoDialog";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
@@ -35,6 +36,7 @@ import type {
 } from "../api/types";
 import { useIntelisisReenvio } from "../hooks/useIntelisisReenvio";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
+import { useIntelisisUfeSinDocumento } from "../hooks/useIntelisisUfeSinDocumento";
 import { useSunat } from "../hooks/useSunat";
 import { SUNAT_LOTE_MAX } from "../api/client";
 
@@ -99,6 +101,13 @@ export default function IntelisisUfePage({
   const [reenvioDialogOpen, setReenvioDialogOpen] = useState(false);
   const [resolviendoFila, setResolviendoFila] =
     useState<IntelisisReenvioFila | null>(null);
+  const [sinDocumentoOpen, setSinDocumentoOpen] = useState(false);
+  const sinDocumento = useIntelisisUfeSinDocumento({
+    open: sinDocumentoOpen,
+    desde: ufe.desde,
+    hasta: ufe.hasta,
+    onAuthFailure,
+  });
 
   // Cambiar de modo arranca una consulta distinta: los filtros de la tabla
   // del modo anterior no deben seguir aplicandose en silencio.
@@ -365,6 +374,7 @@ export default function IntelisisUfePage({
           filtros={borrador}
           onAlternar={alternar}
           onLimpiar={() => setBorrador({})}
+          onSinDocumento={() => setSinDocumentoOpen(true)}
           loading={ufe.loading}
         />
       ) : null}
@@ -490,6 +500,19 @@ export default function IntelisisUfePage({
             if (ok) setResolviendoFila(null);
           });
         }}
+      />
+
+      <IntelisisUfeSinDocumentoDialog
+        open={sinDocumentoOpen}
+        onOpenChange={setSinDocumentoOpen}
+        desde={ufe.desde}
+        hasta={ufe.hasta}
+        rows={sinDocumento.rows}
+        loading={sinDocumento.loading}
+        error={sinDocumento.error}
+        truncado={sinDocumento.truncado}
+        maxFilas={sinDocumento.maxFilas}
+        onReintentar={() => void sinDocumento.recargar()}
       />
 
       <SunatConfirmDialog

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SUNAT_LOTE_MAX } from "../api/client";
-import type { IntelisisReenvioFila, IntelisisUfeRow } from "../api/types";
+import type { IntelisisReenvioFila, IntelisisUfeRow, IntelisisUfeSinDocumentoRow } from "../api/types";
 
 const mocks = vi.hoisted(() => ({
   ufe: {
@@ -46,6 +46,14 @@ const mocks = vi.hoisted(() => ({
       },
     ),
   },
+  sinDocumento: {
+    rows: [] as IntelisisUfeSinDocumentoRow[],
+    loading: false,
+    error: null as string | null,
+    truncado: false,
+    maxFilas: 1000,
+    recargar: vi.fn(),
+  },
   reenvio: {
     panel: null as unknown,
     panelLoading: false,
@@ -73,6 +81,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../hooks/useIntelisisUfe", () => ({
   useIntelisisUfe: () => mocks.ufe,
+}));
+
+vi.mock("../hooks/useIntelisisUfeSinDocumento", () => ({
+  useIntelisisUfeSinDocumento: () => mocks.sinDocumento,
 }));
 
 vi.mock("../hooks/useSunat", () => ({
@@ -242,6 +254,12 @@ describe("IntelisisUfePage", () => {
     mocks.sunat.warning = null;
     mocks.sunat.error = null;
     mocks.sunat.runBatch.mockClear();
+    mocks.sinDocumento.rows = [];
+    mocks.sinDocumento.loading = false;
+    mocks.sinDocumento.error = null;
+    mocks.sinDocumento.truncado = false;
+    mocks.sinDocumento.maxFilas = 1000;
+    mocks.sinDocumento.recargar.mockClear();
     mocks.reenvio.panel = null;
     mocks.reenvio.panelError = null;
     mocks.reenvio.enviando = false;
@@ -552,6 +570,57 @@ describe("IntelisisUfePage", () => {
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
     expect(screen.getByText("B602-00000002")).toBeTruthy();
+  });
+
+  it("abre el diálogo de ventas sin documentar desde la tarjeta ERP", async () => {
+    const user = userEvent.setup();
+    mocks.ufe.kpis = kpis({
+      total: 417,
+      total_ventas: 433,
+      por_estatus: [
+        { key: "CONCLUIDO", count: 409 },
+        { key: "PENDIENTE", count: 8 },
+        { key: "SINAFECTAR", count: 16 },
+        { key: "CANCELADO", count: 0 },
+      ],
+    });
+    mocks.sinDocumento.rows = [
+      {
+        id_venta: 7471973,
+        mov: "E-Boleta",
+        mov_id: null,
+        documento: null,
+        documento_invalido: null,
+        situacion: "sin_documento",
+        fecha_emision: "2026-10-20",
+        sucursal: 175,
+        sucursal_nombre: "Tienda Norte",
+        cliente: "CLIENTE UNO",
+        total: 118,
+        tiene_lineas: true,
+      },
+    ];
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+
+    expect(
+      screen.queryByRole("heading", { name: "Ventas sin documentar" }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Intelisis: ver desglose" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Ver ventas sin documentar" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Ventas sin documentar" }),
+    ).toBeTruthy();
+    expect(screen.getByText("7471973")).toBeTruthy();
+    // Abrir el diálogo no relanza el listado del período.
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
   });
 
   it("filtra por el estatus del ERP desde la columna", async () => {
