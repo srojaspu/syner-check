@@ -68,7 +68,10 @@ class TestIdentidadSunat:
         assert ufe.prefijo_documento("03") == "B"
         assert ufe.prefijo_documento("07", "E-Boleta 109-85534") == "B"
         assert ufe.prefijo_documento("07", "E-Factura 710 1-211848") == "F"
-        assert ufe.prefijo_documento("07", "SE-Boleta 104-00038062") == "N"
+        # La nota hereda la letra del documento que acredita, tambien cuando
+        # ese documento nacio en SynerPOS (SE-*).
+        assert ufe.prefijo_documento("07", "SE-Boleta 104-00038365") == "B"
+        assert ufe.prefijo_documento("07", "SE-Factura 1-211848") == "F"
 
     def test_serie_sunat_usa_la_regla_del_txt(self):
         # Sucursal 0 o 1: la serie del punto de venta.
@@ -92,6 +95,14 @@ class TestIdentidadSunat:
         assert (
             ufe.comprobante_sunat("07", "E-Boleta 109-85534", "", 109, "", "109-2689")
             == "B109-00002689"
+        )
+        # Nota de credito que acredita una venta de SynerPOS: la serie SUNAT
+        # lleva la letra del documento acreditado, no "N".
+        assert (
+            ufe.comprobante_sunat(
+                "07", "SE-Boleta 104-00038365", "", 104, "", "104-3282"
+            )
+            == "B104-00003282"
         )
 
 

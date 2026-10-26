@@ -184,6 +184,11 @@ PREFIX_REFERENCIA: dict[str, str] = {
     "E-FA": "F",
     "FACT": "F",
     "DE-F": "F",
+    # Ventas de SynerPOS que una nota de credito de Intelisis acredita. Sin
+    # estas dos claves la nota heredaba "N" y SUNAT rechazaba la serie
+    # ("Numero de Serie es incorrecta"): N104-3282 vs B104-00003282.
+    "SE-B": "B",
+    "SE-F": "F",
 }
 
 
