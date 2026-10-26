@@ -95,6 +95,33 @@ describe("IntelisisUfeColumns · badge ERP", () => {
   });
 });
 
+describe("IntelisisUfeColumns · total", () => {
+  it("muestra el importe declarado a SUNAT cuando la bitacora lo trae", () => {
+    const { container } = renderCelda(
+      "total",
+      fila({ total: 149.25, importe_sunat: 149.24 }),
+    );
+
+    expect(container.textContent).toContain("149.24");
+    expect(container.textContent).not.toContain("149.25");
+    expect(
+      screen.getByTitle("Importe declarado a SUNAT por el generador."),
+    ).toBeTruthy();
+  });
+
+  it("sin importe declarado muestra la suma de importe + IGV", () => {
+    const { container } = renderCelda(
+      "total",
+      fila({ total: 149.25, importe_sunat: 149.25 }),
+    );
+
+    expect(container.textContent).toContain("149.25");
+    expect(
+      screen.getByTitle("Suma de importe + IGV del ERP."),
+    ).toBeTruthy();
+  });
+});
+
 describe("IntelisisUfeColumns · selección para reenvío", () => {
   const selection = (): IntelisisUfeSelection => ({
     seleccionados: new Set<number>(),

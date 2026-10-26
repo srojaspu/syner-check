@@ -188,13 +188,26 @@ export function intelisisUfeColumns(
     {
       id: "total",
       header: "Total ERP",
-      accessorFn: (doc) => doc.total,
+      // Se muestra el importe declarado a SUNAT por el generador; si la
+      // bitacora no lo trae, la suma de importe + IGV como antes.
+      accessorFn: (doc) => doc.importe_sunat ?? doc.total,
       meta: { priority: "lg" },
-      cell: ({ row }) => (
-        <span className="amount text-right font-medium tabular-nums">
-          {formatMoney(row.original.total, "PEN")}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const suma = row.original.total;
+        const importe = row.original.importe_sunat ?? suma;
+        return (
+          <span
+            className="amount text-right font-medium tabular-nums"
+            title={
+              importe !== suma
+                ? "Importe declarado a SUNAT por el generador."
+                : "Suma de importe + IGV del ERP."
+            }
+          >
+            {formatMoney(importe, "PEN")}
+          </span>
+        );
+      },
     },
     {
       id: "generador",

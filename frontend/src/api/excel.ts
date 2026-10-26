@@ -109,7 +109,7 @@ export async function exportIntelisisUfeExcel(
       "Estatus ERP": row.estatus_erp,
       "Estatus ERP (texto)":
         ERP_ESTADO_LABEL[row.estatus_erp as UfeEstatusErp] ?? row.estatus_erp,
-      Total: row.total,
+      Total: row.importe_sunat ?? row.total,
       Generador: row.generador,
       "Estado generacion": row.estado_generacion,
       Intentos: row.intentos,
