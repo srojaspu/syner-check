@@ -8,8 +8,10 @@ import pytest
 
 from src.application.intelisis_ufe_filas import CAMPOS_LISTA, MAX_FILAS_LISTADO
 from src.application.intelisis_ufe import (
+    MAX_SIN_DOCUMENTO,
     RangoInvalidoError,
     detalle_ufe,
+    listar_sin_documento,
     listar_ufe,
     validar_ufe,
     validar_rango,
@@ -20,13 +22,39 @@ AHORA = datetime(2026, 10, 21, 18, 0, 0)
 
 
 class _Reader:
-    def __init__(self, rows: list[dict]) -> None:
+    def __init__(
+        self,
+        rows: list[dict],
+        *,
+        erp: list[dict] | None = None,
+        sin_documento: list[dict] | None = None,
+    ) -> None:
         self.rows = rows
         self.calls: list[tuple[str, str]] = []
+        self.erp = erp
+        self.sin_documento = sin_documento or []
+        self.sin_documento_calls: list[tuple[str, str]] = []
 
     def fetch_rows(self, start_iso: str, end_iso: str) -> list[dict]:
         self.calls.append((start_iso, end_iso))
         return self.rows
+
+    def fetch_resumen_erp(self, _start_iso: str, _end_iso: str) -> list[dict]:
+        if self.erp is not None:
+            return self.erp
+        # Por defecto el agregado coincide con las filas: los estados sin
+        # documento solo aparecen cuando la prueba los declara.
+        conteo: dict[str, int] = {}
+        for row in self.rows:
+            clave = str(row.get("Estatus") or "").strip().upper()
+            conteo[clave] = conteo.get(clave, 0) + 1
+        return [{"Estatus": clave, "n": total} for clave, total in conteo.items()]
+
+    def fetch_sin_documento(
+        self, start_iso: str, end_iso: str
+    ) -> list[dict]:
+        self.sin_documento_calls.append((start_iso, end_iso))
+        return self.sin_documento
 
     def fetch_row(self, id_venta: int) -> list[dict]:
         return [row for row in self.rows if row["IDVenta"] == id_venta]
@@ -468,9 +496,64 @@ class TestListadoServidor:
         def conteo(clave: str) -> dict[str, int]:
             return {item["key"]: item["count"] for item in kpis[clave]}
 
-        assert conteo("por_estatus") == {"CONCLUIDO": 1, "PENDIENTE": 1}
+        # La tarjeta siempre muestra los cuatro estados del ERP, aunque el
+        # periodo no tenga ventas en alguno: si faltara una clave, la UI
+        # tendria que inventar el cero.
+        assert conteo("por_estatus") == {
+            "CONCLUIDO": 1,
+            "PENDIENTE": 1,
+            "SINAFECTAR": 0,
+            "CANCELADO": 0,
+        }
         assert conteo("por_estado_generacion") == {"generado": 2}
         assert conteo("por_estado_sunat") == {"SUNAT SIN CONSULTA": 2}
+
+    def test_el_total_ventas_es_el_del_erp_no_el_del_listado(self) -> None:
+        """SINAFECTAR y CANCELADO no traen documento, pero son parte del eje."""
+        reader = _Reader(
+            [
+                _fila(id_venta=1, estatus="CONCLUIDO"),
+                _fila(id_venta=2, estatus="PENDIENTE"),
+            ],
+            erp=[
+                {"Estatus": "CONCLUIDO", "n": 409},
+                {"Estatus": "PENDIENTE", "n": 8},
+                {"Estatus": "SINAFECTAR", "n": 16},
+                {"Estatus": "CANCELADO", "n": 0},
+            ],
+        )
+
+        out = listar_ufe(
+            reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA
+        )
+
+        kpis = out["kpis"]
+        assert kpis["total_ventas"] == 433
+        assert kpis["por_estatus"] == [
+            {"key": "CONCLUIDO", "count": 409},
+            {"key": "PENDIENTE", "count": 8},
+            {"key": "SINAFECTAR", "count": 16},
+            {"key": "CANCELADO", "count": 0},
+        ]
+
+    def test_por_estatus_listado_solo_los_documentados(self) -> None:
+        """El filtro de la grilla no ofrece estados que nunca devuelve."""
+        reader = _Reader(
+            [
+                _fila(id_venta=1, estatus="CONCLUIDO"),
+                _fila(id_venta=2, estatus="PENDIENTE"),
+            ],
+            erp=[{"Estatus": "SINAFECTAR", "n": 16}],
+        )
+
+        out = listar_ufe(
+            reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA
+        )
+
+        assert out["kpis"]["por_estatus_listado"] == [
+            {"key": "CONCLUIDO", "count": 1},
+            {"key": "PENDIENTE", "count": 1},
+        ]
 
     def test_filtra_por_lista_de_tipos(self) -> None:
         reader = _Reader(
@@ -528,6 +611,155 @@ class TestListadoServidor:
         assert len(por_dia) == 1
         assert por_dia[0]["documentos"] == 2
         assert por_dia[0]["con_incidencia"] == 1
+
+    def test_pendiente_sin_bitacora_no_es_sin_traza(self) -> None:
+        """D19: una PENDIENTE todavia no debia pasar por el generador."""
+        reader = _Reader(
+            [
+                _fila(
+                    id_venta=1,
+                    estatus="PENDIENTE",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                )
+            ]
+        )
+
+        out = listar_ufe(
+            reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA
+        )
+
+        kpis = out["kpis"]
+        fila = out["rows"][0]
+        assert fila["estado_generacion"] == "sin_registro"
+        assert "SIN TRAZA" not in fila["incidencias"]
+        assert fila["resultado"] == "CONFORME"
+        assert kpis["sin_traza"] == 0
+        assert kpis["pendientes_conclusion"] == 1
+        assert kpis["por_dia"][0]["sin_traza"] == 0
+
+    def test_concluido_sin_bitacora_si_es_sin_traza(self) -> None:
+        """D19: una CONCLUIDA sin registro es un fallo real del generador."""
+        reader = _Reader(
+            [
+                _fila(
+                    id_venta=1,
+                    estatus="CONCLUIDO",
+                    log_id=None,
+                    estado_intento=None,
+                    etapa=None,
+                    documento="",
+                )
+            ]
+        )
+
+        out = listar_ufe(
+            reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA
+        )
+
+        kpis = out["kpis"]
+        fila = out["rows"][0]
+        assert "SIN TRAZA" in fila["incidencias"]
+        assert fila["resultado"] == "REVISAR"
+        assert kpis["sin_traza"] == 1
+        assert kpis["pendientes_conclusion"] == 0
+        assert kpis["por_dia"][0]["sin_traza"] == 1
+
+    def test_sunat_consultables_cuenta_los_que_tienen_tipo(self) -> None:
+        reader = _Reader(
+            [
+                _fila(id_venta=1, tipo_documento_pu="03"),
+                _fila(id_venta=2, mov_id="602-142703", tipo_documento_pu=""),
+            ]
+        )
+
+        out = listar_ufe(
+            reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA
+        )
+
+        assert out["kpis"]["total"] == 2
+        assert out["kpis"]["sunat_consultables"] == 1
+
+
+class TestVentasSinDocumento:
+    """Dialogo "Ventas sin documentar": SINAFECTAR, fuera de la grilla."""
+
+    def test_mapea_las_dos_situaciones_reales(self) -> None:
+        reader = _Reader(
+            [],
+            sin_documento=[
+                {
+                    "IDVenta": 10,
+                    "Mov": "VTAS.F",
+                    "MovID": "175-13",
+                    "FechaEmision": "2026-10-20",
+                    "Estatus": "SINAFECTAR",
+                    "Sucursal": 175,
+                    "SucursalNombre": "Tienda Norte",
+                    "ClienteNombre": "CLIENTE UNO",
+                    "Importe": 100.0,
+                    "Impuestos": 18.0,
+                    "Documento": "",
+                    "DocumentoInvalido": "",
+                    "Lineas": 2,
+                },
+                {
+                    "IDVenta": 11,
+                    "Mov": "VTAS.F",
+                    "MovID": "175-14",
+                    "FechaEmision": "2026-10-20",
+                    "Estatus": "SINAFECTAR",
+                    "Sucursal": 175,
+                    "SucursalNombre": "Tienda Norte",
+                    "ClienteNombre": "CLIENTE DOS",
+                    "Importe": 50.0,
+                    "Impuestos": 9.0,
+                    "Documento": "",
+                    "DocumentoInvalido": "175-00000000",
+                    "Lineas": 1,
+                },
+            ],
+        )
+
+        out = listar_sin_documento(
+            reader, start_iso="2026-10-20", end_iso="2026-10-20"
+        )
+
+        assert out["total"] == 2
+        assert out["truncado"] is False
+        assert out["max_filas"] == MAX_SIN_DOCUMENTO
+        primera, segunda = out["rows"]
+        assert primera["situacion"] == "sin_documento"
+        assert primera["documento"] is None
+        assert primera["total"] == 118.0
+        assert primera["tiene_lineas"] is True
+        # Un numero con ocho ceros no es un comprobante: se informa aparte.
+        assert segunda["situacion"] == "documento_invalido"
+        assert segunda["documento_invalido"] == "175-00000000"
+        assert segunda["documento"] is None
+
+    def test_valida_el_rango_y_no_consulta_si_es_invalido(self) -> None:
+        reader = _Reader([], sin_documento=[])
+
+        with pytest.raises(RangoInvalidoError):
+            listar_sin_documento(
+                reader, start_iso="2026-09-01", end_iso="2026-10-20"
+            )
+
+        assert reader.sin_documento_calls == []
+
+    def test_pide_el_periodo_al_lector(self) -> None:
+        reader = _Reader([], sin_documento=[])
+
+        listar_sin_documento(
+            reader, start_iso="2026-10-20", end_iso="2026-10-21"
+        )
+
+        assert reader.sin_documento_calls == [
+            ("2026-10-20", "2026-10-21")
+        ]
 
 
 def test_una_factura_y_su_nota_no_son_cruce() -> None:

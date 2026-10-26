@@ -29,6 +29,7 @@ from src.application.intelisis_ufe import (
     RangoInvalidoError,
     buscar_ufe,
     detalle_ufe,
+    listar_sin_documento,
     listar_ufe,
     validar_ufe,
 )
@@ -305,13 +306,17 @@ def intelisis_ufe_list(
             "bitacora_desde": "",
             "kpis": {
                 "total": 0,
+                "total_ventas": 0,
                 "conformes": 0,
                 "con_incidencia": 0,
                 "sin_traza": 0,
+                "pendientes_conclusion": 0,
                 "en_espera": 0,
                 "no_aplica": 0,
                 "sin_cobertura_sunat": 0,
+                "sunat_consultables": 0,
                 "por_estatus": [],
+                "por_estatus_listado": [],
                 "por_estado_generacion": [],
                 "por_estado_sunat": [],
                 "por_generador": [],
@@ -320,6 +325,7 @@ def intelisis_ufe_list(
                 "por_dia": [],
             },
             "filtrados": 0,
+            "filtrados_total": 0,
             "truncado": False,
             "max_filas": 0,
             "rows": [],
@@ -349,6 +355,29 @@ def intelisis_ufe_list(
         logger.exception("Intelisis UFE read failure")
         raise HTTPException(
             502, "No fue posible consultar los comprobantes de Intelisis."
+        )
+
+
+def intelisis_ufe_sin_documento(
+    start_iso: str, end_iso: str, correlation_id: str = ""
+) -> dict:
+    """Ventas SINAFECTAR del periodo (dialogo "Ventas sin documentar")."""
+    reader = _intelisis_ufe_reader()
+    if reader is None:
+        raise HTTPException(503, "Intelisis no disponible.")
+    try:
+        return listar_sin_documento(
+            reader,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            correlation_id=correlation_id,
+        )
+    except RangoInvalidoError as exc:
+        raise HTTPException(400, str(exc) or "Periodo invalido.")
+    except UpstreamError:
+        logger.exception("Intelisis UFE sin-documento failure")
+        raise HTTPException(
+            502, "No fue posible consultar las ventas sin documentar."
         )
 
 

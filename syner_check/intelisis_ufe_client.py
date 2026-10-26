@@ -10,8 +10,9 @@ Solo lectura: nunca ejecuta procedimientos almacenados.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterator
 
 from .db_client import _to_iso_date, _to_str
 # --- Intelisis (Punidas): comprobantes del universo UFE --------------------
@@ -41,6 +42,25 @@ INTELISIS_UFE_SCOPE_RANGO = (
     "V.FechaEmision >= ? AND V.FechaEmision < DATEADD(DAY, 1, ?)"
 )
 INTELISIS_UFE_SCOPE_ID = "V.ID = ?"
+
+# Comun a las consultas del eje de ventas (resumen ERP y ventas sin
+# documento). Es exactamente el mismo universo que el listado, pero sin los
+# joins de cliente ni de bitacora: aca solo se cuentan ventas del ERP.
+_UFE_MOVS_EXCLUIDOS = (
+    "'RECIBO GIFT CARD', 'Reversion N-Credito', 'Reversion Vta', "
+    "'SE-Boleta', 'SE-Factura', 'SE-Nota Credito', 'Recibo'"
+)
+_UFE_CLAVES_COMPROBANTE = (
+    "'VTAS.F', 'VTAS.FC', 'VTAS.B', 'VTAS.FB', 'VTAS.D', 'VTAS.DC', 'VTAS.FG'"
+)
+_UFE_UNIVERSO = f"""
+      AND V.Empresa = 'PU'
+      AND V.Mov NOT IN ({_UFE_MOVS_EXCLUIDOS})
+      AND EXISTS (
+            SELECT 1
+            FROM dbo.MovTipo X WITH (NOLOCK)
+            WHERE X.Modulo = 'VTAS' AND X.Mov = V.Mov
+              AND X.Clave IN ({_UFE_CLAVES_COMPROBANTE}))"""
 
 _INTELISIS_UFE_BASE = """
 WITH Ufe AS (
@@ -153,6 +173,59 @@ ORDER BY U.FechaEmision DESC, U.Sucursal, U.MovID
 INTELISIS_UFE_QUERY = _INTELISIS_UFE_BASE.format(scope=INTELISIS_UFE_SCOPE_RANGO)
 # Un comprobante puntual (detalle y trazabilidad).
 INTELISIS_UFE_ONE_QUERY = _INTELISIS_UFE_BASE.format(scope=INTELISIS_UFE_SCOPE_ID)
+
+# --- Eje de ventas del ERP: los 4 estados -------------------------------
+#
+# El listado solo puede devolver CONCLUIDO/PENDIENTE (es el universo de
+# ``PUSP_ControlFac``). SINAFECTAR y CANCELADO existen en ``dbo.Venta`` y
+# son parte del total del eje, pero no tienen comprobante: se cuentan aparte
+# con estas dos consultas, sin joins de cliente ni de bitacora.
+
+INTELISIS_UFE_RESUMEN_ERP_QUERY = f"""
+SELECT V.Estatus AS Estatus, COUNT(*) AS n
+FROM dbo.Venta V WITH (NOLOCK)
+WHERE V.FechaEmision >= ? AND V.FechaEmision < DATEADD(DAY, 1, ?)
+  AND V.Estatus IN ('CONCLUIDO', 'PENDIENTE', 'SINAFECTAR', 'CANCELADO')
+{_UFE_UNIVERSO}
+GROUP BY V.Estatus
+"""
+
+# Un documento de la bitacora termina en ocho ceros cuando el generador no
+# pudo construir un numero valido (``175-00000000`` + OMITIDO_VALIDACION).
+# Esos no son comprobantes emitidos: se informan como documento invalido.
+_DOCUMENTO_INVALIDO = "Documento IS NOT NULL AND Documento LIKE '%00000000'"
+_DOCUMENTO_VALIDO = "Documento IS NOT NULL AND Documento NOT LIKE '%00000000'"
+
+INTELISIS_UFE_SIN_DOCUMENTO_QUERY = f"""
+SELECT
+    V.ID AS IDVenta,
+    V.Mov,
+    V.MovID,
+    V.FechaEmision,
+    V.Estatus,
+    V.Sucursal,
+    SucursalNombre = LTRIM(RTRIM(S.Nombre)),
+    ClienteNombre = LTRIM(RTRIM(C.Nombre)),
+    V.Importe,
+    V.Impuestos,
+    Documento = (
+        SELECT MAX(L.Documento)
+        FROM dbo.SPPUFE_EjecucionLog L WITH (NOLOCK)
+        WHERE L.IDVenta = V.ID AND {_DOCUMENTO_VALIDO}),
+    DocumentoInvalido = (
+        SELECT MAX(L.Documento)
+        FROM dbo.SPPUFE_EjecucionLog L WITH (NOLOCK)
+        WHERE L.IDVenta = V.ID AND {_DOCUMENTO_INVALIDO}),
+    Lineas = (
+        SELECT COUNT(*) FROM dbo.VentaD D WITH (NOLOCK) WHERE D.ID = V.ID)
+FROM dbo.Venta V WITH (NOLOCK)
+LEFT JOIN dbo.Sucursal S WITH (NOLOCK) ON S.Sucursal = V.Sucursal
+LEFT JOIN dbo.Cte C WITH (NOLOCK) ON C.Cliente = V.Cliente
+WHERE V.Estatus = 'SINAFECTAR'
+  AND V.FechaEmision >= ? AND V.FechaEmision < DATEADD(DAY, 1, ?)
+{_UFE_UNIVERSO}
+ORDER BY V.FechaEmision DESC, V.Sucursal, V.MovID
+"""
 
 # Todos los intentos de un comprobante (la fila mas reciente primero).
 INTELISIS_UFE_ATTEMPTS_QUERY = """
@@ -309,8 +382,9 @@ def _to_iso_datetime(value: Any) -> str:
 # Filas por viaje a la base. El valor por defecto de pyodbc (1) pide una
 # fila por ida y vuelta: con 31 dias (~18.000 filas) eso son segundos de
 # espera que no tienen nada que ver con la consulta.
-def _query_rows(sql: str, *params: Any) -> list[dict[str, Any]]:
-    """Ejecuta una consulta del lector UFE y normaliza sus filas."""
+@contextmanager
+def _lectura(sql: str, *params: Any) -> Iterator[Any]:
+    """Cursor ya ejecutado, sobre la conexion de solo lectura."""
     from .config import get_intelisis_config, get_intelisis_password
     from .db_pool import FETCH_BATCH, pooled_connection
 
@@ -320,7 +394,74 @@ def _query_rows(sql: str, *params: Any) -> list[dict[str, Any]]:
         cursor = connection.cursor()
         cursor.arraysize = FETCH_BATCH
         cursor.execute(sql, *params)
+        yield cursor
+
+
+def _query_rows(sql: str, *params: Any) -> list[dict[str, Any]]:
+    """Ejecuta una consulta del lector UFE y normaliza sus filas."""
+    with _lectura(sql, *params) as cursor:
         return _ufe_rows(cursor)
+
+
+def _query_dicts(sql: str, *params: Any) -> list[dict[str, Any]]:
+    """Filas crudas por nombre de columna (agregados y dialogos).
+
+    No usa ``_ufe_rows`` porque estas consultas no devuelven todas las
+    columnas del universo: se normalizan en el ``fetch`` que las expone.
+    """
+    with _lectura(sql, *params) as cursor:
+        columnas = [col[0] for col in cursor.description]
+        return [dict(zip(columnas, record)) for record in cursor.fetchall()]
+
+
+def fetch_intelisis_ufe_resumen_erp(
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Ventas del eje agrupadas por ``Venta.Estatus`` (los 4 estados).
+
+    Es el total honesto del periodo: incluye las que no tienen comprobante
+    (SINAFECTAR / CANCELADO), que el listado nunca devuelve.
+    """
+    filas = _query_dicts(
+        INTELISIS_UFE_RESUMEN_ERP_QUERY, start_date, end_date
+    )
+    return [
+        {"Estatus": _to_str(row.get("Estatus")), "n": _to_int(row.get("n"))}
+        for row in filas
+    ]
+
+
+def fetch_intelisis_ufe_sin_documento(
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Ventas SINAFECTAR del periodo, para el dialogo de sin documento.
+
+    ``Documento`` solo trae numeros validos; ``DocumentoInvalido`` recoge el
+    ``175-00000000`` que deja una validacion fallida (no es un comprobante).
+    """
+    filas = _query_dicts(
+        INTELISIS_UFE_SIN_DOCUMENTO_QUERY, start_date, end_date
+    )
+    return [
+        {
+            "IDVenta": _to_int(row.get("IDVenta")),
+            "Mov": _to_str(row.get("Mov")),
+            "MovID": _to_str(row.get("MovID")),
+            "FechaEmision": _to_iso_date(row.get("FechaEmision")),
+            "Estatus": _to_str(row.get("Estatus")),
+            "Sucursal": _to_int(row.get("Sucursal")),
+            "SucursalNombre": _to_str(row.get("SucursalNombre")),
+            "ClienteNombre": _to_str(row.get("ClienteNombre")),
+            "Importe": _to_float(row.get("Importe")),
+            "Impuestos": _to_float(row.get("Impuestos")),
+            "Documento": _to_str(row.get("Documento")),
+            "DocumentoInvalido": _to_str(row.get("DocumentoInvalido")),
+            "Lineas": _to_int(row.get("Lineas")),
+        }
+        for row in filas
+    ]
 
 
 def fetch_intelisis_ufe_rows(

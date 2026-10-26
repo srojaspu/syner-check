@@ -51,6 +51,18 @@ class IntelisisUfeReader(Protocol):
         """Candidates whose correlativo matches (document search)."""
         ...
 
+    def fetch_resumen_erp(self, start_iso: str, end_iso: str) -> list[dict]:
+        """Ventas del eje agrupadas por ``Venta.Estatus`` (los 4 estados).
+
+        Universo completo del periodo, sin joins de cliente ni de bitacora:
+        incluye las ventas que no tienen comprobante electronico.
+        """
+        ...
+
+    def fetch_sin_documento(self, start_iso: str, end_iso: str) -> list[dict]:
+        """Ventas SINAFECTAR del periodo (sin comprobante emitido)."""
+        ...
+
 
 class IntelisisReenvioQueue(Protocol):
     """Cola de reenvios del ERP (``dbo.FE_Reenvio`` de PUnidas).

@@ -310,3 +310,133 @@ def test_lectura_de_los_intentos_de_un_comprobante(monkeypatch) -> None:
     assert "FROM dbo.SPPUFE_EjecucionLog" in sql
     assert connection.cursor_obj.params[-1] == (7466462,)
 
+
+_RESUMEN_COLUMNAS = [("Estatus",), ("n",)]
+_SIN_DOCUMENTO_COLUMNAS = [
+    ("IDVenta",),
+    ("Mov",),
+    ("MovID",),
+    ("FechaEmision",),
+    ("Estatus",),
+    ("Sucursal",),
+    ("SucursalNombre",),
+    ("ClienteNombre",),
+    ("Importe",),
+    ("Impuestos",),
+    ("Documento",),
+    ("DocumentoInvalido",),
+    ("Lineas",),
+]
+
+
+def test_resumen_erp_cuenta_los_cuatro_estados(monkeypatch) -> None:
+    """El total de la tarjeta no puede salir del listado: le faltan dos."""
+    connection = _install(
+        monkeypatch,
+        [
+            ("CONCLUIDO", 409),
+            ("PENDIENTE", 8),
+            ("SINAFECTAR", 16),
+            ("CANCELADO", Decimal("0")),
+        ],
+    )
+    connection.cursor_obj.description = _RESUMEN_COLUMNAS
+
+    filas = intelisis_ufe_client.fetch_intelisis_ufe_resumen_erp(
+        "2026-10-20", "2026-10-20"
+    )
+
+    assert filas == [
+        {"Estatus": "CONCLUIDO", "n": 409},
+        {"Estatus": "PENDIENTE", "n": 8},
+        {"Estatus": "SINAFECTAR", "n": 16},
+        {"Estatus": "CANCELADO", "n": 0},
+    ]
+    sql = connection.cursor_obj.statements[-1]
+    assert "GROUP BY V.Estatus" in sql
+    assert "'SINAFECTAR', 'CANCELADO'" in sql
+    assert "V.Empresa = 'PU'" in sql
+    # Sin joins de bitacora: es el universo de ventas, no el de documentos.
+    assert "SPPUFE_EjecucionLog" not in sql
+    assert connection.cursor_obj.params[-1] == ("2026-10-20", "2026-10-20")
+
+
+def test_sin_documento_separa_el_numero_invalido(monkeypatch) -> None:
+    connection = _install(
+        monkeypatch,
+        [
+            (
+                900,
+                "VTAS.F",
+                "175-13",
+                date(2026, 10, 20),
+                "SINAFECTAR",
+                175,
+                "Tienda Norte",
+                "CLIENTE UNO",
+                Decimal("100.0000"),
+                Decimal("18.0000"),
+                None,
+                None,
+                2,
+            ),
+            (
+                901,
+                "VTAS.F",
+                "175-14",
+                date(2026, 10, 20),
+                "SINAFECTAR",
+                175,
+                "Tienda Norte",
+                "CLIENTE DOS",
+                Decimal("50.0000"),
+                Decimal("9.0000"),
+                None,
+                "175-00000000",
+                1,
+            ),
+        ],
+    )
+    connection.cursor_obj.description = _SIN_DOCUMENTO_COLUMNAS
+
+    filas = intelisis_ufe_client.fetch_intelisis_ufe_sin_documento(
+        "2026-10-20", "2026-10-20"
+    )
+
+    assert filas[0]["IDVenta"] == 900
+    assert filas[0]["FechaEmision"] == "2026-10-20"
+    assert filas[0]["Documento"] == ""
+    assert filas[0]["DocumentoInvalido"] == ""
+    assert filas[0]["Importe"] == pytest.approx(100.0)
+    assert filas[0]["Lineas"] == 2
+    assert filas[1]["DocumentoInvalido"] == "175-00000000"
+    sql = connection.cursor_obj.statements[-1]
+    assert "V.Estatus = 'SINAFECTAR'" in sql
+    # El documento valido y el invalido se piden por separado.
+    assert "Documento NOT LIKE '%00000000'" in sql
+    assert "Documento LIKE '%00000000'" in sql
+    assert "PUSP_ControlFac" not in sql
+    assert connection.cursor_obj.params[-1] == ("2026-10-20", "2026-10-20")
+
+
+def test_el_adaptador_expone_las_dos_consultas_nuevas(monkeypatch) -> None:
+    monkeypatch.setattr(
+        intelisis_db,
+        "fetch_ufe_resumen_erp",
+        lambda _s, _e: [{"Estatus": "CONCLUIDO", "n": 1}],
+    )
+    monkeypatch.setattr(
+        intelisis_db,
+        "fetch_ufe_sin_documento",
+        lambda _s, _e: [{"IDVenta": 1}],
+    )
+
+    adapter = IntelisisUfeReaderAdapter()
+
+    assert adapter.fetch_resumen_erp("2026-10-20", "2026-10-20") == [
+        {"Estatus": "CONCLUIDO", "n": 1}
+    ]
+    assert adapter.fetch_sin_documento("2026-10-20", "2026-10-20") == [
+        {"IDVenta": 1}
+    ]
+

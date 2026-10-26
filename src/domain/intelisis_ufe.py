@@ -58,6 +58,18 @@ INCIDENCIA_GENERADOR_SIN_OK = "GENERADOR SIN OK"
 # cual es la buena (paridad con `CRUCE AMBIGUO` del PHP).
 INCIDENCIA_CRUCE_AMBIGUO = "CRUCE AMBIGUO"
 
+# ``Venta.Estatus``: el dominio real de la tabla (PUnidas). Los dos ultimos
+# (CONFIRMAR / AFECTANDO) son residuales de 2016-2024 y no aparecen en el
+# periodo, por eso el eje se mide con los cuatro primeros.
+ESTATUS_ERP: tuple[str, ...] = (
+    "CONCLUIDO",
+    "PENDIENTE",
+    "SINAFECTAR",
+    "CANCELADO",
+)
+# Los dos unicos que tienen comprobante electronico (universo del listado).
+ESTATUS_CON_DOCUMENTO: tuple[str, ...] = ("CONCLUIDO", "PENDIENTE")
+
 SUNAT_ACEPTADO = "ACEPTADO"
 SUNAT_NO_ENCONTRADO = "SUNAT NO ENCONTRADO"
 SUNAT_NO_ACEPTADO = "SUNAT NO ACEPTADO"

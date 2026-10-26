@@ -18,8 +18,10 @@ from syner_check.config import (
 from syner_check.intelisis_ufe_client import (
     fetch_intelisis_ufe_attempts,
     fetch_intelisis_ufe_documento,
+    fetch_intelisis_ufe_resumen_erp,
     fetch_intelisis_ufe_row,
     fetch_intelisis_ufe_rows,
+    fetch_intelisis_ufe_sin_documento,
 )
 
 
@@ -88,11 +90,45 @@ def fetch_ufe_attempts(id_venta: int) -> list[dict[str, Any]]:
         ) from exc
 
 
+def fetch_ufe_resumen_erp(
+    start_date: str, end_date: str
+) -> list[dict[str, Any]]:
+    """Ventas del eje agrupadas por estatus del ERP (los 4 estados)."""
+    if not is_intelisis_configured():
+        raise UpstreamError("Intelisis no configurado.")
+    try:
+        return fetch_intelisis_ufe_resumen_erp(start_date, end_date)
+    except UpstreamError:
+        raise
+    except Exception as exc:
+        raise UpstreamError(
+            f"Intelisis read failed: {type(exc).__name__}."
+        ) from exc
+
+
+def fetch_ufe_sin_documento(
+    start_date: str, end_date: str
+) -> list[dict[str, Any]]:
+    """Ventas SINAFECTAR del periodo (dialogo "Ventas sin documentar")."""
+    if not is_intelisis_configured():
+        raise UpstreamError("Intelisis no configurado.")
+    try:
+        return fetch_intelisis_ufe_sin_documento(start_date, end_date)
+    except UpstreamError:
+        raise
+    except Exception as exc:
+        raise UpstreamError(
+            f"Intelisis read failed: {type(exc).__name__}."
+        ) from exc
+
+
 __all__ = [
     "fetch_ufe_attempts",
     "fetch_ufe_documento",
+    "fetch_ufe_resumen_erp",
     "fetch_ufe_row",
     "fetch_ufe_rows",
+    "fetch_ufe_sin_documento",
     "get_intelisis_config",
     "get_intelisis_password",
     "intelisis_enabled",

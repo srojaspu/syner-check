@@ -28,6 +28,7 @@ from src.interfaces.wiring import (
     intelisis_ufe_buscar as clean_intelisis_ufe_buscar,
     intelisis_ufe_detail as clean_intelisis_ufe_detail,
     intelisis_ufe_list as clean_intelisis_ufe_list,
+    intelisis_ufe_sin_documento as clean_intelisis_ufe_sin_documento,
     intelisis_ufe_validate as clean_intelisis_ufe_validate,
 )
 
@@ -254,6 +255,35 @@ async def resolver_reenvio_ufe(request: Request, queue_id: int):
     except Exception as exc:
         logger.exception("Intelisis UFE resend resolve failed")
         raise HTTPException(502, "No fue posible resolver el reenvío.") from exc
+
+
+@router.get("/sin-documento")
+async def ventas_sin_documento(
+    request: Request,
+    desde: str = Query(..., min_length=10, max_length=10),
+    hasta: str = Query(..., min_length=10, max_length=10),
+):
+    """Ventas del periodo que no tienen comprobante electronico.
+
+    Declarada antes de ``/{id_venta}``: si no, FastAPI intentaria leer
+    "sin-documento" como identificador. Se carga solo al abrir el dialogo:
+    no forma parte del listado ni de sus KPIs.
+    """
+    _protected(request)
+    try:
+        return await run_blocking(
+            clean_intelisis_ufe_sin_documento,
+            desde,
+            hasta,
+            request_id_var.get(),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Intelisis UFE sin-documento failed")
+        raise HTTPException(
+            502, "No fue posible consultar las ventas sin documentar."
+        ) from exc
 
 
 @router.get("/{id_venta}")

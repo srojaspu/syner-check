@@ -27,8 +27,10 @@ from src.application.intelisis_ufe_filas import (
     MAX_FILAS_LISTADO,
     aplica_filtros,
     cobertura_por_dia,
+    entero,
     fila_documento,
     fila_intento,
+    fila_sin_documento,
     proyecto_lista,
     resumen,
     texto,
@@ -47,8 +49,11 @@ logger = logging.getLogger("syner_check.intelisis_ufe")
 
 # Tope del periodo: el PHP exige 1..31 dias.
 MAX_DIAS = 31
-# Tope de ventas por periodo (mismo tope que el PHP).
-MAX_VENTAS = 20_000
+# Tope de ventas por periodo. El PHP aborta en 20.000; 31 dias ya miden
+# ~19.000 ventas y diciembre crece, asi que el margen es 25.000.
+MAX_VENTAS = 25_000
+# Tope del dialogo de ventas sin documentar (hoy el periodo llega a ~300).
+MAX_SIN_DOCUMENTO = 1_000
 
 
 class RangoInvalidoError(ValueError):
@@ -208,6 +213,21 @@ def listar_ufe(
     kpis = resumen(filas)
     kpis["por_dia"] = cobertura_por_dia(filas)
 
+    # El eje ERP completo (4 estados) no se puede calcular con las filas: el
+    # listado solo trae los dos estados con documento. Se cuenta aparte, sin
+    # joins, y se arma siempre en el mismo orden para que la tarjeta no baile.
+    erp = {
+        texto(item.get("Estatus")).upper(): entero(item.get("n"))
+        for item in reader.fetch_resumen_erp(
+            inicio.isoformat(), fin.isoformat()
+        )
+    }
+    kpis["por_estatus"] = [
+        {"key": estatus, "count": erp.get(estatus, 0)}
+        for estatus in dominio.ESTATUS_ERP
+    ]
+    kpis["total_ventas"] = sum(item["count"] for item in kpis["por_estatus"])
+
     filtradas = [
         fila
         for fila in filas
@@ -233,11 +253,21 @@ def listar_ufe(
 
     logger.info(
         "Intelisis UFE list correlation_id=%s desde=%s hasta=%s filas=%d "
-        "filtrados=%d truncado=%s duracion_ms=%d",
+        "ventas_erp=%d sin_afectar=%d filtrados=%d truncado=%s "
+        "duracion_ms=%d",
         correlation_id,
         inicio.isoformat(),
         fin.isoformat(),
         kpis["total"],
+        kpis["total_ventas"],
+        next(
+            (
+                item["count"]
+                for item in kpis["por_estatus"]
+                if item["key"] == "SINAFECTAR"
+            ),
+            0,
+        ),
         len(filtradas),
         truncado,
         int((time.perf_counter() - started) * 1000),
@@ -307,6 +337,56 @@ def buscar_ufe(
         "documento_buscado": documento,
         "intelisis_enabled": True,
         "encontrados": len(filas),
+        "rows": filas,
+    }
+
+
+def listar_sin_documento(
+    reader: IntelisisUfeReader,
+    *,
+    start_iso: str,
+    end_iso: str,
+    correlation_id: str = "",
+) -> dict[str, Any]:
+    """Ventas registradas en Intelisis que no llegaron a afectarse.
+
+    Alimenta el dialogo "Ventas sin documentar": son ventas del eje que no
+    tienen comprobante electronico, por lo que no se pueden validar en SUNAT
+    ni reenviar. Solo lectura; se carga al abrir el dialogo (no engorda el
+    listado principal).
+    """
+    inicio, fin = validar_rango(start_iso, end_iso)
+    started = time.perf_counter()
+    filas = [
+        fila_sin_documento(row)
+        for row in reader.fetch_sin_documento(
+            inicio.isoformat(), fin.isoformat()
+        )
+    ]
+    total = len(filas)
+    truncado = total > MAX_SIN_DOCUMENTO
+    if truncado:
+        filas = filas[:MAX_SIN_DOCUMENTO]
+    sin_documento = sum(1 for f in filas if f["situacion"] == "sin_documento")
+    logger.info(
+        "Intelisis UFE sin-documento correlation_id=%s desde=%s hasta=%s "
+        "filas=%d sin_documento=%d invalido=%d truncado=%s duracion_ms=%d",
+        correlation_id,
+        inicio.isoformat(),
+        fin.isoformat(),
+        total,
+        sin_documento,
+        total - sin_documento,
+        truncado,
+        int((time.perf_counter() - started) * 1000),
+    )
+    return {
+        "desde": inicio.isoformat(),
+        "hasta": fin.isoformat(),
+        "intelisis_enabled": True,
+        "total": total,
+        "max_filas": MAX_SIN_DOCUMENTO,
+        "truncado": truncado,
         "rows": filas,
     }
 

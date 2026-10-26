@@ -61,3 +61,31 @@ class IntelisisUfeReaderAdapter:
             raise UpstreamError(
                 f"Intelisis UFE read failed: {type(exc).__name__}."
             ) from exc
+
+    def fetch_resumen_erp(
+        self, start_iso: str, end_iso: str
+    ) -> list[dict[str, Any]]:
+        from app import intelisis_db
+
+        try:
+            return intelisis_db.fetch_ufe_resumen_erp(start_iso, end_iso)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"Intelisis UFE read failed: {type(exc).__name__}."
+            ) from exc
+
+    def fetch_sin_documento(
+        self, start_iso: str, end_iso: str
+    ) -> list[dict[str, Any]]:
+        from app import intelisis_db
+
+        try:
+            return intelisis_db.fetch_ufe_sin_documento(start_iso, end_iso)
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            raise UpstreamError(
+                f"Intelisis UFE read failed: {type(exc).__name__}."
+            ) from exc

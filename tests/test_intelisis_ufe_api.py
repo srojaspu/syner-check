@@ -20,6 +20,12 @@ class _ReaderVacio:
     def fetch_rows(self, _start: str, _end: str) -> list[dict]:
         return []
 
+    def fetch_resumen_erp(self, _start: str, _end: str) -> list[dict]:
+        return []
+
+    def fetch_sin_documento(self, _start: str, _end: str) -> list[dict]:
+        return []
+
     def fetch_row(self, _id_venta: int) -> list[dict]:
         return []
 
@@ -37,20 +43,53 @@ def autenticado(monkeypatch):
     return client
 
 
-def test_listado_exige_sesion() -> None:
-    response = client.get(
+@pytest.fixture()
+def anonimo():
+    """Cliente sin cookies: el login de otra prueba no debe filtrarse."""
+    return TestClient(app)
+
+
+def test_listado_exige_sesion(anonimo) -> None:
+    response = anonimo.get(
         "/api/intelisis/ufe",
         params={"desde": "2026-10-20", "hasta": "2026-10-20"},
     )
     assert response.status_code == 401
 
 
-def test_detalle_exige_sesion() -> None:
-    assert client.get("/api/intelisis/ufe/7466462").status_code == 401
+def test_detalle_exige_sesion(anonimo) -> None:
+    assert anonimo.get("/api/intelisis/ufe/7466462").status_code == 401
 
 
-def test_validar_exige_sesion() -> None:
-    response = client.post(
+def test_sin_documento_exige_sesion(anonimo) -> None:
+    response = anonimo.get(
+        "/api/intelisis/ufe/sin-documento",
+        params={"desde": "2026-10-20", "hasta": "2026-10-20"},
+    )
+    assert response.status_code == 401
+
+
+def test_sin_documento_no_se_confunde_con_el_detalle(autenticado) -> None:
+    """/sin-documento va antes de /{id_venta}: si no, seria un 422."""
+    response = autenticado.get(
+        "/api/intelisis/ufe/sin-documento",
+        params={"desde": "2026-10-20", "hasta": "2026-10-20"},
+    )
+    assert response.status_code == 200
+    assert response.json()["rows"] == []
+    assert response.json()["total"] == 0
+
+
+def test_sin_documento_valida_el_periodo(autenticado) -> None:
+    response = autenticado.get(
+        "/api/intelisis/ufe/sin-documento",
+        params={"desde": "2026-09-01", "hasta": "2026-10-20"},
+    )
+    assert response.status_code == 400
+
+
+def test_validar_exige_sesion(anonimo) -> None:
+    response = anonimo.post(
         "/api/intelisis/ufe/validar", json={"id_venta": 7466462}
     )
     assert response.status_code == 401

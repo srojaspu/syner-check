@@ -264,13 +264,25 @@ def _por_campo(
 
 
 def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
-    """KPIs del periodo (se calculan sobre el periodo, no sobre el filtro)."""
+    """KPIs del periodo (se calculan sobre el periodo, no sobre el filtro).
+
+    ``sin_traza`` cuenta la **incidencia** de D19, no el estado tecnico: una
+    venta PENDIENTE sin registro todavia no debia pasar por el generador, asi
+    que se informa aparte en ``pendientes_conclusion``. Antes se contaba por
+    ``estado_generacion`` y las PENDIENTE inflaban el "sin traza".
+    """
     conformes = sum(1 for f in filas if f["resultado"] == "CONFORME")
     sin_traza = sum(
         1
         for f in filas
-        if f["estado_generacion"] == dominio.ESTADO_SIN_REGISTRO
-        and not f["exento_generador"]
+        if dominio.INCIDENCIA_SIN_TRAZA in (f.get("incidencias") or [])
+    )
+    pendientes_conclusion = sum(
+        1
+        for f in filas
+        if texto(f.get("estatus_erp")).upper() == "PENDIENTE"
+        and f.get("estado_generacion") == dominio.ESTADO_SIN_REGISTRO
+        and not f.get("exento_generador")
     )
     sin_cobertura = sum(
         1 for f in filas if f["estado_sunat"] == dominio.SUNAT_SIN_CONSULTA
@@ -295,10 +307,14 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
         "conformes": conformes,
         "con_incidencia": len(filas) - conformes,
         "sin_traza": sin_traza,
+        "pendientes_conclusion": pendientes_conclusion,
         "en_espera": sum(1 for f in filas if f["en_espera"]),
         "no_aplica": sum(1 for f in filas if f["exento_generador"]),
         "sin_cobertura_sunat": sin_cobertura,
-        "por_estatus": _por_campo(filas, "estatus_erp"),
+        # Documentos que SUNAT puede consultar (los que tienen tipo valido).
+        "sunat_consultables": sum(1 for f in filas if f.get("tipo_sunat")),
+        # Lo que la grilla puede devolver: los dos estados con documento.
+        "por_estatus_listado": _por_campo(filas, "estatus_erp"),
         "por_estado_generacion": _por_campo(filas, "estado_generacion"),
         "por_estado_sunat": _por_campo(filas, "estado_sunat"),
         "por_generador": dominio.resumen_por_generador(filas),
@@ -310,7 +326,11 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def cobertura_por_dia(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Emitidos, sin traza y con incidencia, dia por dia."""
+    """Emitidos, sin traza y con incidencia, dia por dia.
+
+    ``sin_traza`` es la incidencia de D19 (solo CONCLUIDO): un documento
+    PENDIENTE sin bitacora no es una falla del generador.
+    """
     dias: dict[str, dict[str, Any]] = {}
     for fila in filas:
         dia = texto(fila.get("fecha_emision"))
@@ -326,11 +346,38 @@ def cobertura_por_dia(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
             },
         )
         item["documentos"] += 1
-        if fila["estado_generacion"] == dominio.ESTADO_SIN_REGISTRO:
+        if dominio.INCIDENCIA_SIN_TRAZA in (fila.get("incidencias") or []):
             item["sin_traza"] += 1
         if fila["resultado"] != dominio.RESULTADO_CONFORME:
             item["con_incidencia"] += 1
     return [dias[dia] for dia in sorted(dias, reverse=True)]
+
+
+def fila_sin_documento(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Una venta SINAFECTAR, lista para el dialogo de "Ventas sin documentar".
+
+    ``situacion`` distingue las dos causas reales: ``sin_documento`` (nunca
+    llego a la bitacora) y ``documento_invalido`` (el generador lo intento y
+    el numero no era valido, p. ej. ``175-00000000``). Nunca se expone un
+    numero invalido como si fuera un comprobante.
+    """
+    invalido = texto(row.get("DocumentoInvalido"))
+    return {
+        "id_venta": entero(row.get("IDVenta")),
+        "mov": texto(row.get("Mov")),
+        "mov_id": texto(row.get("MovID")) or None,
+        "documento": texto(row.get("Documento")) or None,
+        "documento_invalido": invalido or None,
+        "situacion": "documento_invalido" if invalido else "sin_documento",
+        "fecha_emision": texto(row.get("FechaEmision"))[:10],
+        "sucursal": entero(row.get("Sucursal")),
+        "sucursal_nombre": texto(row.get("SucursalNombre")) or "Sin nombre",
+        "cliente": texto(row.get("ClienteNombre")),
+        "total": round(
+            numero(row.get("Importe")) + numero(row.get("Impuestos")), 2
+        ),
+        "tiene_lineas": entero(row.get("Lineas")) > 0,
+    }
 
 
 def proyecto_lista(fila: Mapping[str, Any]) -> dict[str, Any]:
