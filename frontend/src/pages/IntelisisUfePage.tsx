@@ -7,7 +7,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
-import { IntelisisUfeCobertura } from "@/components/IntelisisUfeCobertura";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import {
   creaRenderFiltro,
@@ -400,10 +399,6 @@ export default function IntelisisUfePage({
           warning={sunat.warning}
           error={sunat.error}
         />
-      ) : null}
-
-      {modo === "range" && kpis?.por_dia?.length ? (
-        <IntelisisUfeCobertura dias={kpis.por_dia} />
       ) : null}
 
       <IntelisisUfeResultados

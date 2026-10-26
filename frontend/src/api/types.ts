@@ -347,14 +347,6 @@ export interface IntelisisUfeSucursal {
   incidencias: number;
 }
 
-/** Cobertura del generador por dia (el equivalente al bloque "cobertura" del PHP). */
-export interface IntelisisUfeDia {
-  dia: string;
-  documentos: number;
-  sin_traza: number;
-  con_incidencia: number;
-}
-
 export interface IntelisisUfeKpis {
   /** Documentos en la grilla (solo CONCLUIDO/PENDIENTE). */
   total: number;
@@ -382,7 +374,6 @@ export interface IntelisisUfeKpis {
   por_generador: { key: string; count: number }[];
   por_incidencia: { key: string; count: number }[];
   por_sucursal: IntelisisUfeSucursal[];
-  por_dia?: IntelisisUfeDia[];
 }
 
 /**

@@ -2,8 +2,8 @@
 
 Funciones puras sobre la fila que devuelve el puerto ``IntelisisUfeReader``:
 no tocan la base ni el reloj (la hora llega como argumento). Aqui viven la
-fila de la grilla, los KPIs, la cobertura por dia y los filtros; los casos
-de uso estan en ``src.application.intelisis_ufe``.
+fila de la grilla, los KPIs y los filtros; los casos de uso estan en
+``src.application.intelisis_ufe``.
 """
 
 from __future__ import annotations
@@ -318,34 +318,6 @@ def resumen(filas: list[dict[str, Any]]) -> dict[str, Any]:
             por_sucursal.values(), key=lambda item: item["sucursal"]
         ),
     }
-
-
-def cobertura_por_dia(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Emitidos, sin traza y con incidencia, dia por dia.
-
-    ``sin_traza`` es la incidencia de D19 (solo CONCLUIDO): un documento
-    PENDIENTE sin bitacora no es una falla del generador.
-    """
-    dias: dict[str, dict[str, Any]] = {}
-    for fila in filas:
-        dia = texto(fila.get("fecha_emision"))
-        if not dia:
-            continue
-        item = dias.setdefault(
-            dia,
-            {
-                "dia": dia,
-                "documentos": 0,
-                "sin_traza": 0,
-                "con_incidencia": 0,
-            },
-        )
-        item["documentos"] += 1
-        if dominio.es_sin_traza(fila):
-            item["sin_traza"] += 1
-        if fila["resultado"] != dominio.RESULTADO_CONFORME:
-            item["con_incidencia"] += 1
-    return [dias[dia] for dia in sorted(dias, reverse=True)]
 
 
 def fila_sin_documento(row: Mapping[str, Any]) -> dict[str, Any]:

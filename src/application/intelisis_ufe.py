@@ -26,7 +26,6 @@ from typing import Any, Sequence
 from src.application.intelisis_ufe_filas import (
     MAX_FILAS_LISTADO,
     aplica_filtros,
-    cobertura_por_dia,
     entero,
     fila_documento,
     fila_intento,
@@ -173,9 +172,9 @@ def listar_ufe(
 ) -> dict[str, Any]:
     """Lista los comprobantes del universo UFE del periodo, con su estado.
 
-    Los KPIs y la cobertura por dia se calculan sobre el periodo completo
-    (como en el PHP); los filtros acotan las filas de la tabla y se aplican
-    en el servidor, que es lo que hace usable un periodo de 31 dias.
+    Los KPIs se calculan sobre el periodo completo (como en el PHP); los
+    filtros acotan las filas de la tabla y se aplican en el servidor, que es
+    lo que hace usable un periodo de 31 dias.
     """
     inicio, fin = validar_rango(start_iso, end_iso)
     momento = now or datetime.now()
@@ -212,7 +211,6 @@ def listar_ufe(
                 fila["resultado"] = dominio.RESULTADO_REVISAR
 
     kpis = resumen(filas)
-    kpis["por_dia"] = cobertura_por_dia(filas)
 
     # El eje ERP completo (4 estados) no se puede calcular con las filas: el
     # listado solo trae los dos estados con documento. Se cuenta aparte, sin

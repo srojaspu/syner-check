@@ -141,7 +141,7 @@ def main() -> None:
         filas = datos["rows"]
         print(
             f"       {kpis['total']} documentos · {kpis['con_incidencia']} con "
-            f"incidencia · {kpis['sin_traza']} sin traza · {len(kpis['por_dia'])} dias"
+            f"incidencia · {kpis['sin_traza']} sin traza"
         )
         verificar(len(filas) > 0, "el listado trae documentos")
         verificar(

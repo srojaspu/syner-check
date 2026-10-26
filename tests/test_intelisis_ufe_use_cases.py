@@ -661,27 +661,6 @@ class TestListadoServidor:
         assert out["truncado"] is False
         assert out["max_filas"] == MAX_FILAS_LISTADO
 
-    def test_la_cobertura_por_dia_agrupa(self) -> None:
-        reader = _Reader(
-            [
-                _fila(id_venta=1, mov_id="602-142702"),
-                _fila(
-                    id_venta=2,
-                    mov_id="602-142703",
-                    estado_intento="OMITIDO_VALIDACION",
-                    etapa="VALIDACION_DOCUMENTO",
-                    documento="",
-                ),
-            ]
-        )
-
-        out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
-
-        por_dia = out["kpis"]["por_dia"]
-        assert len(por_dia) == 1
-        assert por_dia[0]["documentos"] == 2
-        assert por_dia[0]["con_incidencia"] == 1
-
     def test_pendiente_sin_bitacora_no_es_sin_traza(self) -> None:
         """D19: una PENDIENTE todavia no debia pasar por el generador."""
         reader = _Reader(
@@ -708,7 +687,6 @@ class TestListadoServidor:
         assert fila["resultado"] == "CONFORME"
         assert kpis["sin_traza"] == 0
         assert kpis["pendientes_conclusion"] == 1
-        assert kpis["por_dia"][0]["sin_traza"] == 0
 
     def test_concluido_sin_bitacora_si_es_sin_traza(self) -> None:
         """D19: una CONCLUIDA sin registro es un fallo real del generador."""
@@ -735,7 +713,6 @@ class TestListadoServidor:
         assert fila["resultado"] == "REVISAR"
         assert kpis["sin_traza"] == 1
         assert kpis["pendientes_conclusion"] == 0
-        assert kpis["por_dia"][0]["sin_traza"] == 1
 
     def test_sunat_consultables_cuenta_los_que_tienen_tipo(self) -> None:
         reader = _Reader(

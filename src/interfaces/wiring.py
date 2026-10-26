@@ -323,7 +323,6 @@ def intelisis_ufe_list(
                 "por_generador": [],
                 "por_incidencia": [],
                 "por_sucursal": [],
-                "por_dia": [],
             },
             "filtrados": 0,
             "filtrados_total": 0,
