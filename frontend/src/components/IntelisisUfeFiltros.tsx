@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { ERP_ESTADO_LABEL } from "./IntelisisUfeEstados";
+import { ERP_ESTADO_LABEL, ESTADOS_SUNAT, ESTADO_SUNAT_LABEL } from "./IntelisisUfeEstados";
 import type {
   IntelisisUfeFiltros,
   IntelisisUfeKpis,
@@ -74,12 +74,27 @@ const OPCIONES_TIPO = [
   { value: "ND", label: "Nota de débito" },
 ];
 
-const OPCIONES_SUNAT = [
-  { value: "ACEPTADO", label: "Aceptado" },
-  { value: "SUNAT NO ENCONTRADO", label: "No encontrado" },
-  { value: "SUNAT NO ACEPTADO", label: "No aceptado" },
-  { value: "SUNAT SIN CONSULTA", label: "Sin consulta" },
-];
+/**
+ * Opciones del filtro SUNAT: el catálogo completo de estados + los que traiga
+ * el KPI y no estén en el catálogo (para no perder un estado nuevo).
+ *
+ * Se listan todos aunque el período no traiga ninguno: el filtro debe poder
+ * aislar un error sin depender de que el KPI lo haya contado antes.
+ */
+export function opcionesSunat(
+  presentes: readonly { key: string; count: number }[] = [],
+): { value: string; label: string }[] {
+  const opciones: { value: string; label: string }[] = ESTADOS_SUNAT.map(
+    (key) => ({ value: key, label: ESTADO_SUNAT_LABEL[key] }),
+  );
+  const conocidos = new Set<string>(ESTADOS_SUNAT);
+  for (const item of presentes) {
+    if (!item.key || conocidos.has(item.key)) continue;
+    conocidos.add(item.key);
+    opciones.push({ value: item.key, label: item.key });
+  }
+  return opciones;
+}
 
 /**
  * Mismo criterio que usa el servidor para los KPIs derivados del Validador.
@@ -223,7 +238,7 @@ export function creaRenderFiltro(
             label="SUNAT"
             value={filtros.sunat ?? ""}
             placeholder="Todos"
-            options={OPCIONES_SUNAT}
+            options={opcionesSunat(kpis?.por_estado_sunat)}
             onChange={(valor) => alternar("sunat", valor)}
           />
         );

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { filtraUfeFilas } from "./IntelisisUfeFiltros";
+import { filtraUfeFilas, opcionesSunat } from "./IntelisisUfeFiltros";
 import type { IntelisisUfeRow } from "../api/types";
 
 function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
@@ -146,6 +146,39 @@ describe("filtraUfeFilas", () => {
   it("filtra por estado SUNAT", () => {
     const out = filtraUfeFilas(FILAS, { sunat: "SUNAT SIN CONSULTA" });
     expect(out).toHaveLength(2);
+  });
+
+  it("aísla la que falló en SUNAT", () => {
+    const filas = [
+      ...FILAS,
+      fila({ id_venta: 9, estado_sunat: "ERROR" }),
+    ];
+    const out = filtraUfeFilas(filas, { sunat: "ERROR" });
+    expect(out.map((f) => f.id_venta)).toEqual([9]);
+  });
+
+  it("ofrece todos los estados de SUNAT, incluido el error", () => {
+    expect(opcionesSunat([]).map((o) => o.value)).toEqual([
+      "ACEPTADO",
+      "AUTORIZADO",
+      "PENDIENTE",
+      "PROCESANDO",
+      "SUNAT NO ENCONTRADO",
+      "SUNAT NO ACEPTADO",
+      "ERROR",
+      "SUNAT SIN CONSULTA",
+    ]);
+  });
+
+  it("agrega los estados nuevos que solo trae el KPI, sin duplicar", () => {
+    const opciones = opcionesSunat([
+      { key: "ACEPTADO", count: 3 },
+      { key: "ESTADO NUEVO", count: 1 },
+    ]);
+    expect(opciones.map((o) => o.value)).toContain("ESTADO NUEVO");
+    expect(
+      opciones.filter((o) => o.value === "ACEPTADO"),
+    ).toHaveLength(1);
   });
 
   it("busca por documento, cliente o id", () => {

@@ -288,6 +288,26 @@ describe("IntelisisUfeFlujo · Validador y SUNAT", () => {
     expect(within(tarjeta).getByText("Sin consulta")).toBeTruthy();
   });
 
+  it("SUNAT muestra el error de validación y lo filtra", async () => {
+    const { onAlternar } = renderFlujo({
+      por_estado_sunat: [
+        { key: "SUNAT SIN CONSULTA", count: 416 },
+        { key: "ERROR", count: 1 },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "SUNAT: ver desglose" }),
+    );
+    await screen.findByText("SUNAT · desglose");
+
+    fireEvent.click(
+      within(panel()).getByRole("button", { name: /^Error de validación/ }),
+    );
+
+    expect(onAlternar).toHaveBeenCalledWith("sunat", "ERROR");
+  });
+
   it("sin ventas en el período lo dice, sin inventar ceros", () => {
     renderFlujo({
       total: 0,

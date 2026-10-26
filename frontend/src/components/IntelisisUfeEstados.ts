@@ -22,8 +22,12 @@ export const ESTADO_GENERACION_LABEL: Record<UfeEstadoGeneracion, string> = {
 /** Etiquetas del estado SUNAT. */
 export const ESTADO_SUNAT_LABEL: Record<UfeEstadoSunat, string> = {
   ACEPTADO: "Aceptado",
+  AUTORIZADO: "Autorizado",
+  PENDIENTE: "En cola",
+  PROCESANDO: "Procesando",
   "SUNAT NO ENCONTRADO": "No encontrado",
   "SUNAT NO ACEPTADO": "No aceptado",
+  ERROR: "Error de validación",
   "SUNAT SIN CONSULTA": "Sin consulta",
 };
 
@@ -40,8 +44,12 @@ export const ESTADOS_GENERACION: UfeEstadoGeneracion[] = [
 
 export const ESTADOS_SUNAT: UfeEstadoSunat[] = [
   "ACEPTADO",
+  "AUTORIZADO",
+  "PENDIENTE",
+  "PROCESANDO",
   "SUNAT NO ENCONTRADO",
   "SUNAT NO ACEPTADO",
+  "ERROR",
   "SUNAT SIN CONSULTA",
 ];
 
@@ -142,15 +150,24 @@ export const DERIVADO_DESC: Record<UfeEstadoDerivado, string> = {
 
 export const ESTADO_SUNAT_TONO: Record<UfeEstadoSunat, UfeTono> = {
   ACEPTADO: "ok",
+  AUTORIZADO: "ok",
+  PENDIENTE: "muted",
+  PROCESANDO: "neutral",
   "SUNAT NO ACEPTADO": "bad",
   "SUNAT NO ENCONTRADO": "bad",
+  ERROR: "bad",
   "SUNAT SIN CONSULTA": "muted",
 };
 
 export const ESTADO_SUNAT_DESC: Record<UfeEstadoSunat, string> = {
   ACEPTADO: "SUNAT aceptó el comprobante.",
+  AUTORIZADO: "SUNAT autorizó el comprobante.",
+  PENDIENTE: "El lote está en cola en SUNAT.",
+  PROCESANDO: "SUNAT está procesando el lote.",
   "SUNAT NO ACEPTADO": "SUNAT rechazó el comprobante.",
   "SUNAT NO ENCONTRADO": "El comprobante no existe en SUNAT.",
+  ERROR:
+    "El validador rechazó la consulta: revisa la serie y el número enviados.",
   "SUNAT SIN CONSULTA": "Todavía no se consultó en SUNAT.",
 };
 

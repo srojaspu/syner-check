@@ -287,8 +287,12 @@ export type IntelisisUfeSituacion = "sin_documento" | "documento_invalido";
 /** Estado SUNAT: reemplaza al estado del portal de Carvajal (D15). */
 export type UfeEstadoSunat =
   | "ACEPTADO"
+  | "AUTORIZADO"
+  | "PENDIENTE"
+  | "PROCESANDO"
   | "SUNAT NO ENCONTRADO"
   | "SUNAT NO ACEPTADO"
+  | "ERROR"
   | "SUNAT SIN CONSULTA";
 
 export interface IntelisisUfeRow {
