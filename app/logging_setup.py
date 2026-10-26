@@ -8,10 +8,12 @@ through every function signature.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import sys
+from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
@@ -69,3 +71,41 @@ def configure_logging() -> None:
     # Every request is already logged with a request_id; uvicorn's access log
     # would duplicate it in a different (non-JSON) format.
     logging.getLogger("uvicorn.access").disabled = True
+
+
+def es_desconexion_benigna(exc: BaseException | None) -> bool:
+    """True for a peer that closed the socket before we finished writing.
+
+    The Proactor event loop on Windows raises ``ConnectionResetError`` from
+    ``_call_connection_lost`` when the peer vanished (a closed browser tab, a
+    preconnect, a probe). Nothing can be written at that point: it is not an
+    application error and does not need a traceback.
+    """
+    return isinstance(exc, (ConnectionResetError, ConnectionAbortedError))
+
+
+def install_asyncio_exception_filter(
+    loop: asyncio.AbstractEventLoop,
+) -> Callable[[asyncio.AbstractEventLoop, dict], object] | None:
+    """Downgrade benign socket resets to DEBUG; delegate everything else.
+
+    Uvicorn does not install its own handler, but any previous handler is
+    preserved and restored by the caller on shutdown.
+    """
+    previous = loop.get_exception_handler()
+
+    def handler(loop_: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        if es_desconexion_benigna(exc):
+            logging.getLogger("asyncio").debug(
+                "Cliente desconectado antes de terminar la respuesta: %s",
+                context.get("message") or exc,
+            )
+            return
+        if previous is not None:
+            previous(loop_, context)
+        else:
+            loop_.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+    return previous

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import unittest
@@ -11,7 +12,13 @@ from fastapi.testclient import TestClient
 from app.config import BASE_DIR
 from app.executor import run_blocking
 from app.http_cache import cache_control_for
-from app.logging_setup import JsonFormatter, RequestIdFilter, request_id_var
+from app.logging_setup import (
+    JsonFormatter,
+    RequestIdFilter,
+    es_desconexion_benigna,
+    install_asyncio_exception_filter,
+    request_id_var,
+)
 from app.main import app
 
 # No context manager: the suite shares one app and the bounded executor.
@@ -41,6 +48,21 @@ class HttpSurfaceTest(unittest.TestCase):
             record
             for record in captured.records
             if record.getMessage().startswith("GET /health ")
+        ]
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0].levelno, logging.DEBUG)
+
+    def test_chrome_devtools_probe_is_a_quiet_404(self) -> None:
+        """Chrome pide su config de workspace al abrir DevTools: 404 normal."""
+        with self.assertLogs("syner_check", level="DEBUG") as captured:
+            response = client.get(
+                "/.well-known/appspecific/com.chrome.devtools.json"
+            )
+        self.assertEqual(response.status_code, 404)
+        probes = [
+            record
+            for record in captured.records
+            if "com.chrome.devtools.json" in record.getMessage()
         ]
         self.assertEqual(len(probes), 1)
         self.assertEqual(probes[0].levelno, logging.DEBUG)
@@ -126,6 +148,45 @@ class HttpSurfaceTest(unittest.TestCase):
         response = client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-cache")
+
+
+class AsyncioNoiseTest(unittest.TestCase):
+    """Windows: un navegador que cierra la conexion no es un error de la app."""
+
+    def test_clasifica_solo_los_cortes_de_conexion(self) -> None:
+        self.assertTrue(es_desconexion_benigna(ConnectionResetError(10054, "x")))
+        self.assertTrue(es_desconexion_benigna(ConnectionAbortedError(10053, "x")))
+        self.assertFalse(es_desconexion_benigna(ValueError("boom")))
+        self.assertFalse(es_desconexion_benigna(None))
+
+    def test_un_corte_de_conexion_se_registra_en_debug(self) -> None:
+        loop = asyncio.new_event_loop()
+        self.addCleanup(loop.close)
+        self.assertIsNone(install_asyncio_exception_filter(loop))
+
+        with self.assertLogs("asyncio", level="DEBUG") as captured:
+            loop.call_exception_handler(
+                {
+                    "message": "Exception in callback _call_connection_lost()",
+                    "exception": ConnectionResetError(10054, "reset"),
+                }
+            )
+
+        self.assertEqual(
+            [record.levelno for record in captured.records], [logging.DEBUG]
+        )
+
+    def test_otros_errores_conservan_el_handler_por_defecto(self) -> None:
+        loop = asyncio.new_event_loop()
+        self.addCleanup(loop.close)
+        install_asyncio_exception_filter(loop)
+
+        with self.assertLogs("asyncio", level="ERROR") as captured:
+            loop.call_exception_handler(
+                {"message": "boom", "exception": ValueError("boom")}
+            )
+
+        self.assertEqual(captured.records[0].levelno, logging.ERROR)
 
 
 class CachePolicyTest(unittest.TestCase):

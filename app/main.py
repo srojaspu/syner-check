@@ -16,7 +16,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from .auth import callback, current_user, login, logout
 from .executor import run_blocking, shutdown_executor
 from .http_cache import cache_control_for
-from .logging_setup import configure_logging, request_id_var
+from .logging_setup import (
+    configure_logging,
+    install_asyncio_exception_filter,
+    request_id_var,
+)
 from .security import (
     BodySizeLimitMiddleware,
     OriginCheckMiddleware,
@@ -167,6 +171,12 @@ def _sunat_worker_task(stop: asyncio.Event) -> asyncio.Task | None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Windows: el event loop Proactor registra los cortes de conexión del
+    # navegador como ERROR con traceback. Son benignos y no aportan nada al
+    # operador; se bajan a DEBUG y se restaura el handler al apagar.
+    loop = asyncio.get_running_loop()
+    previous_exception_handler = install_asyncio_exception_filter(loop)
+
     # Antes de aceptar peticiones: si el reenvío manual está habilitado, deja
     # en el log a qué tabla escribe. Es lo que distingue un smoke de QA de una
     # escritura real en producción sin tener que adivinar el .env.
@@ -208,6 +218,7 @@ async def lifespan(_app: FastAPI):
         if pending_submissions:
             await asyncio.gather(*pending_submissions, return_exceptions=True)
         shutdown_executor()
+        loop.set_exception_handler(previous_exception_handler)
 
 
 app = FastAPI(
@@ -278,12 +289,15 @@ async def security_and_request_middleware(request: Request, call_next):
         if cache_control:
             response.headers["Cache-Control"] = cache_control
         # Docker/Dockploy probe /health every 30s: a successful probe is not
-        # worth an INFO line, but a failing one must stay visible.
-        healthy_probe = (
-            request.url.path == "/health" and response.status_code < 400
-        )
+        # worth an INFO line, but a failing one must stay visible. Chrome pide
+        # su configuracion de workspace al abrir DevTools: el 404 es la
+        # respuesta esperada y tampoco merece una linea.
+        ruta = request.url.path
+        silencioso = (
+            ruta == "/health" and response.status_code < 400
+        ) or ruta == "/.well-known/appspecific/com.chrome.devtools.json"
         logger.log(
-            logging.DEBUG if healthy_probe else logging.INFO,
+            logging.DEBUG if silencioso else logging.INFO,
             "%s %s status=%s %.0fms",
             request.method,
             request.url.path,
