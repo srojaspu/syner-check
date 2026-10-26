@@ -6,6 +6,7 @@ import type {
   IntelisisUfeBusqueda,
   IntelisisUfeDetalle,
   IntelisisUfeResponse,
+  IntelisisUfeSinDocumentoResponse,
   IntelisisUfeValidacion,
   MovSynerPosRequestDocumento,
   MovSynerPosResponse,
@@ -214,6 +215,27 @@ export function getIntelisisUfeDetalle(
   signal?: AbortSignal,
 ): Promise<IntelisisUfeDetalle> {
   return api(`/api/intelisis/ufe/${encodeURIComponent(idVenta)}`, { signal });
+}
+
+/**
+ * Ventas del período sin comprobante electrónico (SINAFECTAR).
+ *
+ * Es el origen del diálogo "Ventas sin documentar": se pide solo al abrir
+ * el diálogo, no engorda el listado principal.
+ */
+export function getIntelisisUfeSinDocumento(
+  params: { desde: string; hasta: string },
+  signal?: AbortSignal,
+): Promise<IntelisisUfeSinDocumentoResponse> {
+  const qs = new URLSearchParams({
+    desde: params.desde,
+    hasta: params.hasta,
+  });
+  return api(
+    `/api/intelisis/ufe/sin-documento?${qs}`,
+    { signal },
+    LONG_TIMEOUT_MS,
+  );
 }
 
 /** Busca un comprobante UFE por su numero oficial (sin periodo). */

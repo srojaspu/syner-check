@@ -7,6 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { ERP_ESTADO_LABEL } from "./IntelisisUfeEstados";
 import type {
   IntelisisUfeFiltros,
   IntelisisUfeKpis,
@@ -204,9 +205,12 @@ export function creaRenderFiltro(
             label="ERP"
             value={filtros.estatus ?? ""}
             placeholder="Todos"
-            options={(kpis?.por_estatus ?? []).map((item) => ({
+            options={(kpis?.por_estatus_listado ?? []).map((item) => ({
               value: item.key,
-              label: item.key,
+              label:
+                ERP_ESTADO_LABEL[
+                  item.key as keyof typeof ERP_ESTADO_LABEL
+                ] ?? item.key,
             }))}
             onChange={(valor) => alternar("estatus", valor)}
           />

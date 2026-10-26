@@ -274,6 +274,16 @@ export type UfeGenerador =
 /** Resultado de la revision: CONFORME o REVISAR. */
 export type UfeResultado = "CONFORME" | "REVISAR";
 
+/** Estado de la venta en el ERP (`dbo.Venta.Estatus`). */
+export type UfeEstatusErp =
+  | "CONCLUIDO"
+  | "PENDIENTE"
+  | "SINAFECTAR"
+  | "CANCELADO";
+
+/** Situación documental de una venta sin comprobante electrónico. */
+export type IntelisisUfeSituacion = "sin_documento" | "documento_invalido";
+
 /** Estado SUNAT: reemplaza al estado del portal de Carvajal (D15). */
 export type UfeEstadoSunat =
   | "ACEPTADO"
@@ -346,15 +356,25 @@ export interface IntelisisUfeDia {
 }
 
 export interface IntelisisUfeKpis {
+  /** Documentos en la grilla (solo CONCLUIDO/PENDIENTE). */
   total: number;
+  /** Ventas del eje en el ERP: los cuatro estados (incluye las que no tienen documento). */
+  total_ventas: number;
   conformes: number;
   con_incidencia: number;
+  /** Incidencia D19: solo CONCLUIDO sin registro en la bitácora. */
   sin_traza: number;
+  /** PENDIENTE sin registro: todavía no debía pasar por el generador. */
+  pendientes_conclusion: number;
   en_espera: number;
   no_aplica: number;
   sin_cobertura_sunat: number;
-  /** Desglose por estatus de la venta en el ERP (columna ERP). */
+  /** Documentos con tipo SUNAT válido (los que se pueden consultar). */
+  sunat_consultables: number;
+  /** Desglose por estatus del ERP: los cuatro estados del período. */
   por_estatus: { key: string; count: number }[];
+  /** Lo que la grilla puede devolver (CONCLUIDO/PENDIENTE): alimenta el filtro. */
+  por_estatus_listado: { key: string; count: number }[];
   /** Desglose por estado del generador (columna Estado). */
   por_estado_generacion: { key: string; count: number }[];
   /** Desglose por estado SUNAT. */
@@ -399,6 +419,40 @@ export interface IntelisisUfeResponse {
   truncado?: boolean;
   max_filas?: number;
   rows: IntelisisUfeRow[];
+}
+
+/**
+ * Una venta registrada en Intelisis que nunca llegó a afectarse.
+ *
+ * `situacion` distingue las dos causas: nunca pasó por la bitácora
+ * (`sin_documento`) o el generador dejó un número inválido
+ * (`documento_invalido`, p. ej. `175-00000000`), que no es un comprobante.
+ */
+export interface IntelisisUfeSinDocumentoRow {
+  id_venta: number;
+  mov: string;
+  /** Folio del movimiento: 189 de 304 no tienen (`null`). */
+  mov_id: string | null;
+  documento: string | null;
+  documento_invalido: string | null;
+  situacion: IntelisisUfeSituacion;
+  fecha_emision: string;
+  sucursal: number;
+  sucursal_nombre: string;
+  cliente: string;
+  total: number;
+  /** La venta quedó creada sin detalle (51 de 304). */
+  tiene_lineas: boolean;
+}
+
+export interface IntelisisUfeSinDocumentoResponse {
+  desde: string;
+  hasta: string;
+  intelisis_enabled: boolean;
+  total: number;
+  max_filas: number;
+  truncado: boolean;
+  rows: IntelisisUfeSinDocumentoRow[];
 }
 
 /** Un intento del generador en la bitacora. */

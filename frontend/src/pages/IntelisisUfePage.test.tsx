@@ -177,13 +177,25 @@ function filaReenvio(
 function kpis(overrides: Record<string, unknown> = {}) {
   return {
     total: 2,
+    total_ventas: 3,
     conformes: 1,
     con_incidencia: 1,
     sin_traza: 1,
+    pendientes_conclusion: 1,
     en_espera: 0,
     no_aplica: 0,
     sin_cobertura_sunat: 2,
-    por_estatus: [{ key: "CONCLUIDO", count: 2 }],
+    sunat_consultables: 2,
+    por_estatus: [
+      { key: "CONCLUIDO", count: 2 },
+      { key: "PENDIENTE", count: 1 },
+      { key: "SINAFECTAR", count: 0 },
+      { key: "CANCELADO", count: 0 },
+    ],
+    por_estatus_listado: [
+      { key: "CONCLUIDO", count: 2 },
+      { key: "PENDIENTE", count: 1 },
+    ],
     por_estado_generacion: [
       { key: "generado", count: 1 },
       { key: "sin_registro", count: 1 },
@@ -249,13 +261,13 @@ describe("IntelisisUfePage", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     expect(
-      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+      screen.getByRole("button", { name: "Intelisis: ver desglose" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Validador: ver estados" }),
+      screen.getByRole("button", { name: "Validador: ver desglose" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "SUNAT: ver estados" }),
+      screen.getByRole("button", { name: "SUNAT: ver desglose" }),
     ).toBeTruthy();
   });
 
@@ -299,11 +311,11 @@ describe("IntelisisUfePage", () => {
 
     // El detalle tecnico aparece solo cuando "SIN OK" / "SIN TRAZA" no
     // alcanzan para saber que paso.
-    expect(screen.getByText("Error de validación")).toBeTruthy();
-    expect(screen.getByText("Fuera de bitácora")).toBeTruthy();
+    expect(within(tabla).getByText("Error de validación")).toBeTruthy();
+    expect(within(tabla).getByText("Fuera de bitácora")).toBeTruthy();
     // "Generado" (OK REGISTRADO) y "Sin traza" no repiten la etiqueta.
-    expect(screen.queryByText("Generado")).toBeNull();
-    expect(screen.queryByText("Sin traza")).toBeNull();
+    expect(within(tabla).queryByText("Generado")).toBeNull();
+    expect(within(tabla).queryByText("Sin traza")).toBeNull();
   });
 
   it("abre la trazabilidad al hacer clic en un comprobante", () => {
@@ -426,16 +438,14 @@ describe("IntelisisUfePage", () => {
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Validador: ver estados" }),
+      screen.getByRole("button", { name: "Validador: ver desglose" }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: /Sin traza/ }),
+      await screen.findByRole("button", { name: /^Generado/ }),
     );
 
     // Elegir un estado aplica el filtro y cierra el popover.
-    expect(
-      screen.queryByText("Selecciona un estado para filtrar la tabla."),
-    ).toBeNull();
+    expect(screen.queryByText("Validador · desglose")).toBeNull();
 
     // El filtro queda en borrador: todavia no se consulta.
     expect(mocks.ufe.run).not.toHaveBeenCalled();
@@ -447,7 +457,7 @@ describe("IntelisisUfePage", () => {
     const llamadas = mocks.ufe.run.mock.calls;
     const ultima = llamadas[llamadas.length - 1];
     // El estado del generador viaja como `filtros.estado` (card Validador).
-    expect(ultima?.[2]).toMatchObject({ estado: "sin_registro" });
+    expect(ultima?.[2]).toMatchObject({ estado: "generado" });
   });
 
   it("el filtro de un card reemplaza al de los otros ejes", async () => {
@@ -456,6 +466,16 @@ describe("IntelisisUfePage", () => {
       por_estatus: [
         { key: "CONCLUIDO", count: 1 },
         { key: "PENDIENTE", count: 1 },
+        { key: "SINAFECTAR", count: 0 },
+        { key: "CANCELADO", count: 0 },
+      ],
+      por_estatus_listado: [
+        { key: "CONCLUIDO", count: 1 },
+        { key: "PENDIENTE", count: 1 },
+      ],
+      por_estado_sunat: [
+        { key: "ACEPTADO", count: 1 },
+        { key: "SUNAT SIN CONSULTA", count: 1 },
       ],
     });
     mocks.ufe.rows = [
@@ -463,36 +483,37 @@ describe("IntelisisUfePage", () => {
         id_venta: 1,
         comprobante: "B602-00000001",
         estatus_erp: "CONCLUIDO",
-        estado_generacion: "sin_registro",
-        generador: "SIN TRAZA",
+        estado_sunat: "SUNAT SIN CONSULTA",
+        sunat: null,
       }),
       fila({
         id_venta: 2,
         comprobante: "B602-00000002",
         estatus_erp: "PENDIENTE",
-        estado_generacion: "generado",
-        generador: "OK REGISTRADO",
+        estado_sunat: "ACEPTADO",
       }),
     ];
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
-    // Primero Intelisis = PENDIENTE: queda solo la fila pendiente.
+    // Primero Intelisis = Pendiente: queda solo la fila pendiente.
     await user.click(
-      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+      screen.getByRole("button", { name: "Intelisis: ver desglose" }),
     );
-    await user.click(await screen.findByRole("button", { name: /PENDIENTE/ }));
+    await user.click(await screen.findByRole("button", { name: /^Pendiente/ }));
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
     expect(screen.getByText("B602-00000002")).toBeTruthy();
 
-    // Luego Validador = Sin traza: reemplaza al filtro de Intelisis, no se
+    // Luego SUNAT = Sin consulta: reemplaza al filtro de Intelisis, no se
     // combinan (con los dos activos no quedaria ninguna fila).
     await user.click(
-      screen.getByRole("button", { name: "Validador: ver estados" }),
+      screen.getByRole("button", { name: "SUNAT: ver desglose" }),
     );
-    await user.click(await screen.findByRole("button", { name: /Sin traza/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /^Sin consulta/ }),
+    );
 
     expect(screen.getByText("B602-00000001")).toBeTruthy();
     expect(screen.queryByText("B602-00000002")).toBeNull();
@@ -502,6 +523,12 @@ describe("IntelisisUfePage", () => {
     const user = userEvent.setup();
     mocks.ufe.kpis = kpis({
       por_estatus: [
+        { key: "CONCLUIDO", count: 1 },
+        { key: "PENDIENTE", count: 1 },
+        { key: "SINAFECTAR", count: 0 },
+        { key: "CANCELADO", count: 0 },
+      ],
+      por_estatus_listado: [
         { key: "CONCLUIDO", count: 1 },
         { key: "PENDIENTE", count: 1 },
       ],
@@ -519,9 +546,9 @@ describe("IntelisisUfePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
     await user.click(
-      screen.getByRole("button", { name: "Intelisis: ver estados" }),
+      screen.getByRole("button", { name: "Intelisis: ver desglose" }),
     );
-    await user.click(await screen.findByRole("button", { name: /PENDIENTE/ }));
+    await user.click(await screen.findByRole("button", { name: /^Pendiente/ }));
 
     expect(screen.queryByText("B602-00000001")).toBeNull();
     expect(screen.getByText("B602-00000002")).toBeTruthy();
@@ -542,7 +569,7 @@ describe("IntelisisUfePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
 
     await user.click(screen.getByRole("combobox", { name: "ERP" }));
-    await user.click(await screen.findByRole("option", { name: "CONCLUIDO" }));
+    await user.click(await screen.findByRole("option", { name: "Concluida" }));
 
     expect(screen.queryByText("B602-00000002")).toBeNull();
     expect(screen.getByText("B602-00000001")).toBeTruthy();
