@@ -325,7 +325,6 @@ _SIN_DOCUMENTO_COLUMNAS = [
     ("Impuestos",),
     ("Documento",),
     ("DocumentoInvalido",),
-    ("Lineas",),
 ]
 
 
@@ -378,7 +377,6 @@ def test_sin_documento_separa_el_numero_invalido(monkeypatch) -> None:
                 Decimal("18.0000"),
                 None,
                 None,
-                2,
             ),
             (
                 901,
@@ -393,7 +391,6 @@ def test_sin_documento_separa_el_numero_invalido(monkeypatch) -> None:
                 Decimal("9.0000"),
                 None,
                 "175-00000000",
-                1,
             ),
         ],
     )
@@ -408,10 +405,11 @@ def test_sin_documento_separa_el_numero_invalido(monkeypatch) -> None:
     assert filas[0]["Documento"] == ""
     assert filas[0]["DocumentoInvalido"] == ""
     assert filas[0]["Importe"] == pytest.approx(100.0)
-    assert filas[0]["Lineas"] == 2
     assert filas[1]["DocumentoInvalido"] == "175-00000000"
     sql = connection.cursor_obj.statements[-1]
     assert "V.Estatus = 'SINAFECTAR'" in sql
+    # El login de lectura no tiene SELECT sobre VentaD: no se consulta.
+    assert "VentaD" not in sql
     # El documento valido y el invalido se piden por separado.
     assert "Documento NOT LIKE '%00000000'" in sql
     assert "Documento LIKE '%00000000'" in sql

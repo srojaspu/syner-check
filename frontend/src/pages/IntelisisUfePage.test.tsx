@@ -597,7 +597,6 @@ describe("IntelisisUfePage", () => {
         sucursal_nombre: "Tienda Norte",
         cliente: "CLIENTE UNO",
         total: 118,
-        tiene_lineas: true,
       },
     ];
 

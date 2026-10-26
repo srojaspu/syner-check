@@ -196,6 +196,10 @@ GROUP BY V.Estatus
 _DOCUMENTO_INVALIDO = "Documento IS NOT NULL AND Documento LIKE '%00000000'"
 _DOCUMENTO_VALIDO = "Documento IS NOT NULL AND Documento NOT LIKE '%00000000'"
 
+# No se consulta dbo.VentaD para contar lineas: el login de lectura no tiene
+# SELECT sobre esa tabla (229, verificado 2026-10-26). Ese conteo no es parte
+# del universo documental; el dialogo no debe depender de un grant nuevo.
+
 INTELISIS_UFE_SIN_DOCUMENTO_QUERY = f"""
 SELECT
     V.ID AS IDVenta,
@@ -215,9 +219,7 @@ SELECT
     DocumentoInvalido = (
         SELECT MAX(L.Documento)
         FROM dbo.SPPUFE_EjecucionLog L WITH (NOLOCK)
-        WHERE L.IDVenta = V.ID AND {_DOCUMENTO_INVALIDO}),
-    Lineas = (
-        SELECT COUNT(*) FROM dbo.VentaD D WITH (NOLOCK) WHERE D.ID = V.ID)
+        WHERE L.IDVenta = V.ID AND {_DOCUMENTO_INVALIDO})
 FROM dbo.Venta V WITH (NOLOCK)
 LEFT JOIN dbo.Sucursal S WITH (NOLOCK) ON S.Sucursal = V.Sucursal
 LEFT JOIN dbo.Cte C WITH (NOLOCK) ON C.Cliente = V.Cliente
@@ -458,7 +460,6 @@ def fetch_intelisis_ufe_sin_documento(
             "Impuestos": _to_float(row.get("Impuestos")),
             "Documento": _to_str(row.get("Documento")),
             "DocumentoInvalido": _to_str(row.get("DocumentoInvalido")),
-            "Lineas": _to_int(row.get("Lineas")),
         }
         for row in filas
     ]

@@ -21,7 +21,6 @@ function fila(
     sucursal_nombre: "Tienda Norte",
     cliente: "CLIENTE UNO",
     total: 118,
-    tiene_lineas: true,
     ...overrides,
   };
 }
@@ -129,18 +128,6 @@ describe("IntelisisUfeSinDocumentoDialog", () => {
     const row = filaDe(900);
     expect(within(row).getByText("—")).toBeTruthy();
     expect(within(row).queryByText(/00000000/)).toBeNull();
-  });
-
-  it("marca las ventas que quedaron sin detalle", () => {
-    view({
-      rows: [
-        fila({ tiene_lineas: true }),
-        fila({ id_venta: 901, tiene_lineas: false }),
-      ],
-    });
-
-    expect(within(filaDe(900)).queryByText("Sin líneas")).toBeNull();
-    expect(within(filaDe(901)).getByText("Sin líneas")).toBeTruthy();
   });
 
   it("muestra el total real, incluido S/ 0.00", () => {

@@ -441,8 +441,6 @@ export interface IntelisisUfeSinDocumentoRow {
   sucursal_nombre: string;
   cliente: string;
   total: number;
-  /** La venta quedó creada sin detalle (51 de 304). */
-  tiene_lineas: boolean;
 }
 
 export interface IntelisisUfeSinDocumentoResponse {

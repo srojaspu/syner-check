@@ -376,7 +376,6 @@ def fila_sin_documento(row: Mapping[str, Any]) -> dict[str, Any]:
         "total": round(
             numero(row.get("Importe")) + numero(row.get("Impuestos")), 2
         ),
-        "tiene_lineas": entero(row.get("Lineas")) > 0,
     }
 
 

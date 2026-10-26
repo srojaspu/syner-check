@@ -703,7 +703,6 @@ class TestVentasSinDocumento:
                     "Impuestos": 18.0,
                     "Documento": "",
                     "DocumentoInvalido": "",
-                    "Lineas": 2,
                 },
                 {
                     "IDVenta": 11,
@@ -718,7 +717,6 @@ class TestVentasSinDocumento:
                     "Impuestos": 9.0,
                     "Documento": "",
                     "DocumentoInvalido": "175-00000000",
-                    "Lineas": 1,
                 },
             ],
         )
@@ -734,7 +732,6 @@ class TestVentasSinDocumento:
         assert primera["situacion"] == "sin_documento"
         assert primera["documento"] is None
         assert primera["total"] == 118.0
-        assert primera["tiene_lineas"] is True
         # Un numero con ocho ceros no es un comprobante: se informa aparte.
         assert segunda["situacion"] == "documento_invalido"
         assert segunda["documento_invalido"] == "175-00000000"

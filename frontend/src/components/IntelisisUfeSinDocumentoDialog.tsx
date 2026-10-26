@@ -89,17 +89,7 @@ function Fila({
         {formatMoney(fila.total, "PEN")}
       </TableCell>
       <TableCell>
-        <span className="flex flex-wrap items-center gap-1.5">
-          <SituacionBadge fila={fila} />
-          {fila.tiene_lineas ? null : (
-            <Badge
-              variant="secondary"
-              title="La venta quedó creada sin detalle."
-            >
-              Sin líneas
-            </Badge>
-          )}
-        </span>
+        <SituacionBadge fila={fila} />
       </TableCell>
     </TableRow>
   );

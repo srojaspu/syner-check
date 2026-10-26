@@ -123,7 +123,7 @@ listado de 31 días devolvía **17,7 MB**.
       19.036 = 18.601+35+304+96).
 - [x] Ventas sin documentar: 304 en 31 días, separadas en 288 sin documento y 16 con
       documento inválido.
-- [x] 426 tests Python + 170 vitest en verde; `tsc` limpio; `ruff` limpio.
+- [x] 430 tests Python + 169 vitest en verde; `tsc` limpio; `ruff` limpio.
 - [ ] Contraste visual contra la pantalla PHP para un mismo día (requiere que César
       abra la pestaña FE con el mismo período).
 - [ ] Reenvío (fase 2): requiere la credencial de escritura y la ventana de prueba.
@@ -153,14 +153,18 @@ Comprobaciones:
 
 Situación documental de las 304 ventas SINAFECTAR: **288** sin ninguna fila en la bitácora y
 **16** solo con un documento inválido (`159-00000000`, `OMITIDO_VALIDACION`). Además: **189**
-sin folio (`MovID`), **51** sin líneas de detalle y **304** con `FechaRegistro` nula. Por eso
-el diálogo habla de "sin documento emitido", no de "documento nulo": en 16 casos hay un
-`Documento` en la bitácora, pero no es un comprobante.
+sin folio (`MovID`) y **304** con `FechaRegistro` nula. Por eso el diálogo habla de "sin
+documento emitido", no de "documento nulo": en 16 casos hay un `Documento` en la bitácora, pero
+no es un comprobante.
+
+El detalle de líneas no se consulta: el login de lectura no tiene `SELECT` sobre
+`dbo.VentaD` (error 229, verificado el 2026-10-26). La medición externa daba 51 ventas sin
+detalle, pero el diálogo no depende de un grant nuevo para funcionar.
 
 Los dos estados derivados del Validador (`sin_traza`, `pendientes_conclusion`) y los de SUNAT
 se explican en su popover, pero **no filtran**: la API no acepta esos filtros.
 
-Verificación automática de esta ronda: **426 tests Python + 170 vitest** en verde,
+Verificación automática de esta ronda: **430 tests Python + 169 vitest** en verde,
 `tsc --noEmit` limpio y `ruff check src tests` limpio.
 
 ## 8. Cómo repetir este QA
