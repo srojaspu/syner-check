@@ -144,7 +144,8 @@ SELECT
     L.DuracionMs,
     L.AutocorridarolSalida,
     C.Intentos,
-    C.OkRegistrados
+    C.OkRegistrados,
+    A.ImporteTotal
 FROM Ufe U
 OUTER APPLY (
     SELECT TOP 1
@@ -165,6 +166,16 @@ OUTER APPLY (
     WHERE L2.IDVenta = U.IDVenta
     ORDER BY L2.FechaInicio DESC, L2.LogID DESC
 ) L
+-- Monto que el generador declaro a SUNAT (Carvajal). Se toma el ultimo
+-- intento que lo haya escrito: un reintento fallido posterior no debe tapar
+-- el importe ya declarado.
+OUTER APPLY (
+    SELECT TOP 1 A2.ImporteTotal
+    FROM dbo.SPPUFE_EjecucionLog A2 WITH (NOLOCK)
+    WHERE A2.IDVenta = U.IDVenta
+      AND A2.ImporteTotal IS NOT NULL
+    ORDER BY A2.LogID DESC
+) A
 LEFT JOIN Conteos C ON C.IDVenta = U.IDVenta
 ORDER BY U.FechaEmision DESC, U.Sucursal, U.MovID
 """
@@ -332,7 +343,8 @@ SELECT
     L.DuracionMs,
     L.AutocorridarolSalida,
     C.Intentos,
-    C.OkRegistrados
+    C.OkRegistrados,
+    A.ImporteTotal
 FROM Ufe U
 OUTER APPLY (
     SELECT TOP 1
@@ -343,6 +355,16 @@ OUTER APPLY (
     WHERE L2.IDVenta = U.IDVenta
     ORDER BY L2.FechaInicio DESC, L2.LogID DESC
 ) L
+-- Monto que el generador declaro a SUNAT (Carvajal). Se toma el ultimo
+-- intento que lo haya escrito: un reintento fallido posterior no debe tapar
+-- el importe ya declarado.
+OUTER APPLY (
+    SELECT TOP 1 A2.ImporteTotal
+    FROM dbo.SPPUFE_EjecucionLog A2 WITH (NOLOCK)
+    WHERE A2.IDVenta = U.IDVenta
+      AND A2.ImporteTotal IS NOT NULL
+    ORDER BY A2.LogID DESC
+) A
 LEFT JOIN (
     SELECT
         L3.IDVenta,
@@ -579,6 +601,7 @@ _COLUMNAS_UFE: tuple[str, ...] = (
     "AutocorridarolSalida",
     "Intentos",
     "OkRegistrados",
+    "ImporteTotal",
 )
 
 
@@ -630,6 +653,7 @@ def _ufe_rows(cursor) -> list[dict[str, Any]]:
             hash_salida,
             intentos,
             ok_registrados,
+            importe_total,
         ) = record
         rows.append(
             {
@@ -666,6 +690,11 @@ def _ufe_rows(cursor) -> list[dict[str, Any]]:
                 "HashSalida": _to_str(hash_salida),
                 "Intentos": _to_int(intentos),
                 "OkRegistrados": _to_int(ok_registrados),
+                # Monto declarado a SUNAT; NULL en los documentos generados
+                # antes de que el generador empezara a escribirlo.
+                "ImporteTotal": (
+                    None if importe_total is None else _to_float(importe_total)
+                ),
             }
         )
     return rows

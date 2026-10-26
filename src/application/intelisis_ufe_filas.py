@@ -33,6 +33,7 @@ CAMPOS_LISTA: tuple[str, ...] = (
     "sucursal_nombre",
     "cliente",
     "total",
+    "importe_sunat",
     "estatus_erp",
     "referencia",
     "estado_generacion",
@@ -122,6 +123,17 @@ def fila_documento(row: Mapping[str, Any], ahora: datetime) -> dict[str, Any]:
         referencia=referencia,
     )
 
+    total = round(
+        numero(row.get("Importe")) + numero(row.get("Impuestos")), 2
+    )
+    # Monto que el generador declaro a SUNAT (Carvajal). El total de cabecera
+    # solo es respaldo mientras el campo viene vacio: documentos anteriores al
+    # cambio o pendientes del proceso retroactivo.
+    importe_declarado = row.get("ImporteTotal")
+    importe_sunat = (
+        total if importe_declarado is None else round(numero(importe_declarado), 2)
+    )
+
     return {
         "id_venta": entero(row.get("IDVenta")),
         "tipo": dominio.TIPO_MOVIMIENTO.get(tipo_documento_pu, "NN"),
@@ -140,8 +152,10 @@ def fila_documento(row: Mapping[str, Any], ahora: datetime) -> dict[str, Any]:
         "ruc": texto(row.get("ClienteRfc")),
         "importe": numero(row.get("Importe")),
         "impuestos": numero(row.get("Impuestos")),
-        "total": round(
-            numero(row.get("Importe")) + numero(row.get("Impuestos")), 2
+        "total": total,
+        "importe_sunat": importe_sunat,
+        "importe_sunat_origen": (
+            "bitacora" if importe_declarado is not None else "total"
         ),
         "estatus_erp": texto(row.get("Estatus")),
         "referencia": referencia,

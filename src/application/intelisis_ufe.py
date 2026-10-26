@@ -458,11 +458,13 @@ def validar_ufe(
     started = time.perf_counter()
     logger.info(
         "Intelisis UFE validate start correlation_id=%s actor=%s id_venta=%d "
-        "documento=%s",
+        "documento=%s importe=%.2f importe_origen=%s",
         correlation_id,
         usuario,
         int(id_venta),
         fila["comprobante"],
+        fila["importe_sunat"],
+        fila["importe_sunat_origen"],
     )
     resultado = sunat_revalidate(
         validator,
@@ -470,7 +472,7 @@ def validar_ufe(
         tipo=fila["tipo_sunat"],
         number=fila["comprobante"],
         date_iso=fila["fecha_emision"],
-        importe=fila["total"],
+        importe=fila["importe_sunat"],
         usuario=usuario,
         ruc=sunat_ruc,
     )

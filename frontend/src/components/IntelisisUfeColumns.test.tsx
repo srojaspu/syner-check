@@ -30,6 +30,7 @@ function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
     importe: 129.5,
     impuestos: 19.75,
     total: 149.25,
+    importe_sunat: 149.25,
     estatus_erp: "CONCLUIDO",
     referencia: "",
     estado_generacion: "generado",

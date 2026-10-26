@@ -223,6 +223,34 @@ class SubmitTests(unittest.TestCase):
             "crossTotal": 100.0,
         }
 
+    def test_prefiere_el_importe_declarado_sobre_el_cross_total(self):
+        validator = FakeValidator()
+        store = FakeStore()
+        res = submit_sunat_batch(
+            validator,
+            store,
+            documentos=[{**self._doc(), "importe_sunat": 99.99}],
+            usuario="u@x.pe",
+            ruc="20101031773",
+            now=self.NOW,
+        )
+        self.assertEqual(res["enviados"], 1)
+        # El payload al validador lleva el monto declarado, no el total ERP.
+        self.assertEqual(validator.submits[0][0]["importe"], 99.99)
+
+    def test_sin_importe_declarado_usa_el_cross_total(self):
+        validator = FakeValidator()
+        store = FakeStore()
+        submit_sunat_batch(
+            validator,
+            store,
+            documentos=[self._doc()],
+            usuario="u@x.pe",
+            ruc="20101031773",
+            now=self.NOW,
+        )
+        self.assertEqual(validator.submits[0][0]["importe"], 100.0)
+
     def test_skips_terminal_cached(self):
         store = FakeStore({
             ("20101031773", "03", "BS05", "105"): _row("ACEPTADO")

@@ -266,6 +266,7 @@ export default function IntelisisUfePage({
           number: fila.comprobante,
           date: fila.fecha_emision,
           crossTotal: fila.total,
+          importe_sunat: fila.importe_sunat,
           sunat: { estado: fila.estado_sunat },
         })),
     [documentosSunat],

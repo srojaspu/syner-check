@@ -50,6 +50,7 @@ _COLUMNAS = [
     ("AutocorridarolSalida",),
     ("Intentos",),
     ("OkRegistrados",),
+    ("ImporteTotal",),
 ]
 
 
@@ -110,6 +111,7 @@ def _fila(**overrides) -> tuple:
         "AutocorridarolSalida": "abc123",
         "Intentos": 2,
         "OkRegistrados": 2,
+        "ImporteTotal": Decimal("149.25"),
     }
     base.update(overrides)
     return tuple(base[column[0]] for column in _COLUMNAS)
@@ -165,6 +167,7 @@ def test_normaliza_la_fila(monkeypatch) -> None:
     assert row["HashSalida"] == "abc123"
     assert row["Intentos"] == 2
     assert row["OkRegistrados"] == 2
+    assert row["ImporteTotal"] == pytest.approx(149.25)
     assert row["ClienteNombre"].startswith("GULIANA")
 
 
@@ -172,7 +175,8 @@ def test_sin_bitacora_deja_los_contadores_en_cero(monkeypatch) -> None:
     _install(
         monkeypatch,
         [_fila(LogID=None, EstadoIntento=None, Etapa=None, Documento=None,
-               FechaInicio=None, Intentos=None, OkRegistrados=None)],
+               FechaInicio=None, Intentos=None, OkRegistrados=None,
+               ImporteTotal=None)],
     )
 
     row = intelisis_ufe_client.fetch_intelisis_ufe_rows("2026-10-21", "2026-10-21")[0]

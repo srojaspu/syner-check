@@ -162,6 +162,8 @@ export interface SunatDocumentInput {
   number?: string;
   date?: string;
   crossTotal?: number;
+  /** Monto declarado por el generador; el backend lo prefiere sobre crossTotal. */
+  importe_sunat?: number;
 }
 
 /** Documento seleccionable para una consulta a SUNAT. */
@@ -318,6 +320,8 @@ export interface IntelisisUfeRow {
   importe: number;
   impuestos: number;
   total: number;
+  /** Monto que se envia a SUNAT: el declarado por el generador. */
+  importe_sunat: number;
   estatus_erp: string;
   /** Documento que acredita (notas de credito). */
   referencia: string;

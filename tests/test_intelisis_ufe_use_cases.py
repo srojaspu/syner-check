@@ -6,7 +6,11 @@ from datetime import datetime
 
 import pytest
 
-from src.application.intelisis_ufe_filas import CAMPOS_LISTA, MAX_FILAS_LISTADO
+from src.application.intelisis_ufe_filas import (
+    CAMPOS_LISTA,
+    MAX_FILAS_LISTADO,
+    fila_documento,
+)
 from src.application.intelisis_ufe import (
     MAX_SIN_DOCUMENTO,
     RangoInvalidoError,
@@ -138,6 +142,7 @@ def _fila(
     documento: str | None = None,
     intentos: int = 1,
     ok_registrados: int = 1,
+    importe_total: float | None = None,
 ) -> dict:
     if documento is None:
         # El documento oficial coincide con la identidad que calcula el
@@ -175,6 +180,7 @@ def _fila(
         "HashSalida": "",
         "Intentos": intentos,
         "OkRegistrados": ok_registrados,
+        "ImporteTotal": importe_total,
     }
 
 
@@ -194,6 +200,36 @@ def test_documento_oficial_viene_de_la_bitacora() -> None:
     fila = out["rows"][0]
     assert fila["documento"] == "602-00142702"
     assert fila["documento_estimado"] is False
+
+
+def test_importe_sunat_usa_el_declarado_por_la_bitacora() -> None:
+    reader = _Reader([_fila(importe_total=117.99)])
+
+    out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
+
+    fila = out["rows"][0]
+    # El total de cabecera sigue siendo el del ERP; a SUNAT va el declarado.
+    assert fila["total"] == 118.0
+    assert fila["importe_sunat"] == 117.99
+
+
+def test_importe_sunat_cae_al_total_sin_declarado() -> None:
+    """Documentos anteriores al campo (o pendientes del retroactivo)."""
+    reader = _Reader([_fila()])
+
+    out = listar_ufe(reader, start_iso="2026-10-21", end_iso="2026-10-21", now=AHORA)
+
+    fila = out["rows"][0]
+    assert fila["total"] == 118.0
+    assert fila["importe_sunat"] == 118.0
+
+
+def test_el_origen_del_importe_sunat_queda_para_el_log() -> None:
+    assert (
+        fila_documento(_fila(importe_total=117.99), AHORA)["importe_sunat_origen"]
+        == "bitacora"
+    )
+    assert fila_documento(_fila(), AHORA)["importe_sunat_origen"] == "total"
 
 
 def test_documento_sin_bitacora_va_estimado() -> None:
@@ -882,6 +918,21 @@ class TestValidar:
         assert payload["forzar_consulta"] is True
         # El cache guarda el numero sin ceros (como el lote y las consultas).
         assert ("20101031773", "03", "B602", "142702") in store.cache
+
+    def test_consulta_sunat_con_el_importe_declarado_por_el_generador(self) -> None:
+        reader = _Reader([_fila(id_venta=1, importe_total=117.99)])
+        validator = _Validator()
+
+        validar_ufe(
+            reader,
+            validator,
+            _Store(),
+            id_venta=1,
+            sunat_ruc="20101031773",
+            now=AHORA,
+        )
+
+        assert validator.payloads[0]["importe"] == 117.99
 
     def test_nota_de_debito_no_admite_consulta(self) -> None:
         reader = _Reader([_fila(id_venta=1, tipo_documento_pu="08")])

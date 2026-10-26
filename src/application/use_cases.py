@@ -1066,13 +1066,18 @@ def submit_sunat_batch(
     invalidos: list[dict[str, str]] = []
     for item in docs:
         data = item if isinstance(item, dict) else {}
+        # El monto que viaja a SUNAT es el declarado por el generador; el
+        # total de cabecera queda como respaldo para filas antiguas.
+        importe = data.get("importe_sunat")
+        if importe is None:
+            importe = data.get("crossTotal", data.get("importe", ""))
         try:
             payload = _sunat_doc_payload(
                 ruc.strip(),
                 data.get("tipo", ""),
                 data.get("number", ""),
                 data.get("date", ""),
-                data.get("crossTotal", data.get("importe", "")),
+                importe,
             )
         except ValueError:
             invalidos.append(

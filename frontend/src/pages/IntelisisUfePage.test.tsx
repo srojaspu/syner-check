@@ -135,6 +135,7 @@ function fila(overrides: Partial<IntelisisUfeRow> = {}): IntelisisUfeRow {
     importe: 129.5,
     impuestos: 19.7542,
     total: 149.25,
+    importe_sunat: 149.25,
     estatus_erp: "CONCLUIDO",
     referencia: "",
     estado_generacion: "generado",
@@ -858,6 +859,26 @@ describe("IntelisisUfePage", () => {
     // la busqueda (era el caso en que el lote no se veia refrescado).
     await waitFor(() => expect(mocks.ufe.buscar).toHaveBeenCalledTimes(2));
     expect(mocks.ufe.buscar).toHaveBeenLastCalledWith("B710-00004539");
+  });
+
+  it("manda a SUNAT el importe declarado por el generador", async () => {
+    mocks.ufe.rows = [fila({ total: 149.25, importe_sunat: 149.24 })];
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validar en SUNAT/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Consultar 1 documento" }),
+    );
+
+    const documentos = mocks.sunat.runBatch.mock.calls[0][0] as {
+      importe_sunat?: number;
+      crossTotal?: number;
+    }[];
+    expect(documentos[0].importe_sunat).toBe(149.24);
+    expect(documentos[0].crossTotal).toBe(149.25);
   });
 
   it("no ofrece validar mas documentos de los que admite una solicitud", () => {
