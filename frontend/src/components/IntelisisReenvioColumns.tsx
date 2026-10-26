@@ -79,6 +79,10 @@ export function intelisisReenvioColumns({
       id: "venta",
       header: "Venta",
       accessorFn: (fila) => fila.IDVenta,
+      // La columna es numerica: sin esto TanStack resuelve `auto` como
+      // `inNumberRange` y el texto del filtro se lee como rango, por lo que
+      // ninguna venta coincide. `includesString` busca por subcadena.
+      filterFn: "includesString",
       meta: { priority: "always", filter: texto("Buscar venta") },
       cell: ({ row }) => (
         <span className="tabular-nums">{row.original.IDVenta}</span>

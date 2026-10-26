@@ -110,7 +110,14 @@ interface RootProps<T> {
   resetPageOnDataChange?: boolean;
 }
 
-/** Per-column filter configuration read from columnDef.meta.filter. */
+/**
+ * Per-column filter configuration read from columnDef.meta.filter.
+ *
+ * En una columna cuyo accessor devuelve un **numero** hay que fijar
+ * `filterFn: "includesString"`: TanStack resuelve `auto` como
+ * `inNumberRange` y el texto del filtro se interpreta como rango (no
+ * encuentra nada). Ver `intelisisReenvioColumns` (columna Venta).
+ */
 export interface ColumnFilterConfig {
   variant: "text" | "select";
   placeholder?: string;
