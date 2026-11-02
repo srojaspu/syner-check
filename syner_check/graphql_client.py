@@ -144,8 +144,17 @@ class GraphQLClient:
                 ) from exc
 
             if "errors" in result:
-                raise RuntimeError(
-                    "GraphQL devolvió un error en la consulta."
+                data = result.get("data")
+                has_data = isinstance(data, dict) and any(
+                    v is not None for v in data.values()
+                )
+                if not has_data:
+                    raise RuntimeError(
+                        "GraphQL devolvió un error en la consulta."
+                    )
+                logger.warning(
+                    "GraphQL partial errors returned alongside data (count=%d)",
+                    len(result.get("errors") or []),
                 )
 
             return result

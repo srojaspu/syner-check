@@ -638,6 +638,11 @@ def build_documento(tipo: str, doc: dict) -> DocumentoMovSynerPos:
     oid = str(doc.get("oid") or "").strip()
     if not oid:
         raise MovSynerPosValidationError("El documento no tiene oid.")
+    if doc.get("_graphql_errors"):
+        raise MovSynerPosValidationError(
+            "El documento está incompleto en SynerCom (lote o detalle nulo); "
+            "no se envió a MovSynerPos."
+        )
 
     date_iso = normalize_date_iso(doc.get("date"))
     items = doc.get("items")

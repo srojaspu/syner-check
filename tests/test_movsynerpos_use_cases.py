@@ -279,6 +279,48 @@ def test_generated_correlation_id_is_returned_when_missing() -> None:
     assert len(result["solicitud_id"]) >= 32
 
 
+def test_duplicate_serie_with_broken_draft_inserts_only_the_valid_oid() -> None:
+    """Caso real BS32-00005040: borradores con error GraphQL en lote no bloquean al OID válido."""
+    broken_draft = {
+        **BOLETA,
+        "oid": "14257.634569",
+        "number": "BS32-00005040",
+        "_graphql_errors": ["items/0/lote"],
+    }
+    valid_doc = {
+        **BOLETA,
+        "oid": "14257.634657",
+        "number": "BS32-00005040",
+    }
+    writer = FakeWriter()
+    result = send_movsynerpos(
+        gateway_with(broken_draft, valid_doc),
+        writer,
+        documentos=[
+            {
+                "tipo": "BOLETA",
+                "oid": "14257.634569",
+                "number": "BS32-00005040",
+                "date": BOLETA["date"],
+            },
+            {
+                "tipo": "BOLETA",
+                "oid": "14257.634657",
+                "number": "BS32-00005040",
+                "date": BOLETA["date"],
+            },
+        ],
+    )
+
+    assert result["errores"] == 1
+    assert result["insertados"] == 1
+    assert result["detalle"][0]["estado"] == ESTADO_ERROR
+    assert "incompleto en SynerCom" in result["detalle"][0]["error"]
+    assert result["detalle"][1]["estado"] == ESTADO_INSERTADO
+    assert all(line["IDSynerPos"] == "14257.634657" for line in writer.inserted)
+
+
+
 def test_two_threads_do_not_duplicate_lines() -> None:
     """El lock por (tipo, oid) cubre verificación + inserción."""
     import threading

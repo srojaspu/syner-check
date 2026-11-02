@@ -84,16 +84,71 @@ def _client() -> GraphQLClient:
                 )
     return _client_instance
 
+def _filter_partial_errors(result: dict, key: str) -> list:
+    """Return ``data[key]`` with any entries that had field-level GraphQL errors
+    tagged with ``_graphql_errors``.
+
+    When SynerPOS creates duplicate draft OIDs for the same receipt number,
+    broken drafts can emit ``DataFetchingException`` on ``items[i]/lote`` while
+    the valid OID in the same response is complete. Tagging only the affected
+    list indices lets callers inspect or discard broken drafts without losing
+    the valid document.
+    """
+    data = result.get("data") if isinstance(result, dict) else {}
+    docs = data.get(key, []) if isinstance(data, dict) else []
+    if not isinstance(docs, list):
+        return []
+    errors = result.get("errors") if isinstance(result, dict) else None
+    if not isinstance(errors, list) or not errors:
+        return docs
+
+    failed_by_index: dict[int, list[str]] = {}
+    unscoped_errors = False
+    for err in errors:
+        if not isinstance(err, dict):
+            unscoped_errors = True
+            continue
+        path = err.get("path")
+        if (
+            isinstance(path, list)
+            and len(path) >= 2
+            and path[0] == key
+            and isinstance(path[1], int)
+        ):
+            field_path = "/".join(str(p) for p in path[2:]) or "root"
+            failed_by_index.setdefault(path[1], []).append(field_path)
+        else:
+            unscoped_errors = True
+
+    if unscoped_errors and not docs:
+        raise RuntimeError("GraphQL devolvió un error en la consulta.")
+
+    if not failed_by_index:
+        return docs
+
+    out = []
+    for idx, doc in enumerate(docs):
+        if not isinstance(doc, dict):
+            continue
+        if idx in failed_by_index:
+            tagged = dict(doc)
+            tagged["_graphql_errors"] = failed_by_index[idx]
+            out.append(tagged)
+        else:
+            out.append(doc)
+    return out
+
+
 def _execute(tipo, query, start_date, end_date):
-    data = _client().execute(
+    result = _client().execute(
         query, {"startDate": start_date, "endDate": end_date}
-    ).get("data", {})
+    )
     key = {
         "BOLETA": "receipts",
         "FACTURA": "invoices",
         "NOTA DE CREDITO": "creditNotes",
     }[tipo]
-    return data.get(key, []) if isinstance(data.get(key), list) else []
+    return _filter_partial_errors(result, key)
 
 
 def summary(start_date, end_date, tipos):
@@ -149,12 +204,11 @@ def detail_by_serie(tipo, number):
     (normally one). Callers filter for the exact oid/number. Only FACTURA and
     BOLETA support `serie`.
     """
-    data = _client().execute(
+    result = _client().execute(
         DETAIL_BY_SERIE_QUERIES[tipo], {"serie": f"{number.strip()}%"}
-    ).get("data", {})
+    )
     key = {"BOLETA": "receipts", "FACTURA": "invoices"}[tipo]
-    docs = data.get(key, [])
-    return docs if isinstance(docs, list) else []
+    return _filter_partial_errors(result, key)
 
 
 def detail(tipo, start_date, end_date, number=None):
