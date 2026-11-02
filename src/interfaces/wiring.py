@@ -226,9 +226,15 @@ def sunat_worker_pair() -> tuple | None:
 
 
 def sunat_single(
-    tipo_value: str, number: str, doc_date_iso: str, importe: object, usuario: str
+    tipo_value: str,
+    number: str,
+    doc_date_iso: str,
+    importe: object,
+    usuario: str,
+    *,
+    forzar_consulta: bool = True,
 ) -> dict:
-    """Manual single-doc revalidation (forces a fresh SUNAT query)."""
+    """Synchronous single-doc validation against SUNAT."""
     validator, store, ruc = _sunat_pair()
     if validator is None or store is None or not ruc:
         raise HTTPException(400, "Validación SUNAT no configurada.")
@@ -246,6 +252,7 @@ def sunat_single(
             importe=importe,
             usuario=usuario or "",
             ruc=ruc,
+            forzar_consulta=forzar_consulta,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc) if str(exc) else "Solicitud inválida.")

@@ -236,7 +236,44 @@ describe("useIntelisisUfe", () => {
 
     expect(validarMock).toHaveBeenCalledWith(7466462);
     expect(result.current.rows[0].estado_sunat).toBe("ACEPTADO");
+    expect(result.current.rows[0].resultado).toBe("CONFORME");
+    expect(result.current.rows[0].incidencias).toEqual([]);
     expect(result.current.validando).toBeNull();
+  });
+
+  it("recalcula incidencias y resultado al validar un comprobante en SUNAT", async () => {
+    getMock.mockResolvedValue(
+      respuesta({
+        rows: [
+          fila({
+            estado_sunat: "SUNAT NO ENCONTRADO",
+            incidencias: ["SUNAT NO ENCONTRADO"],
+            resultado: "REVISAR",
+          }),
+        ],
+      }),
+    );
+    validarMock.mockResolvedValue({
+      id_venta: 7466462,
+      documento: "602-00142702",
+      comprobante: "B602-00142702",
+      estado: "ACEPTADO",
+      resultado: { estado: "ACEPTADO" },
+    });
+    const { result } = renderHook(() => useIntelisisUfe(vi.fn()));
+
+    await act(async () => {
+      await result.current.run("2026-10-15", "2026-10-21");
+    });
+    expect(result.current.rows[0].resultado).toBe("REVISAR");
+
+    await act(async () => {
+      await result.current.validar(7466462);
+    });
+
+    expect(result.current.rows[0].estado_sunat).toBe("ACEPTADO");
+    expect(result.current.rows[0].incidencias).toEqual([]);
+    expect(result.current.rows[0].resultado).toBe("CONFORME");
   });
 
   it("actualiza el detalle abierto al validar en SUNAT", async () => {

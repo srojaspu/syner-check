@@ -61,21 +61,24 @@ function stateVariant(
 
 function submissionLabel(progress: SunatProgressState): string {
   if (progress.estado === "ERROR") return "Envío detenido";
+  const singleDoc = progress.total === 1 && progress.chunksTotal <= 1;
   if (
     progress.estado === "COMPLETADO" ||
     (progress.chunksTotal > 0 && progress.chunksDone >= progress.chunksTotal)
   ) {
+    if (singleDoc) return "Comprobante enviado";
     return progress.chunksTotal > 0
       ? `${progress.chunksDone} de ${progress.chunksTotal} lotes enviados`
       : "Lote procesado";
   }
   if (progress.chunksTotal > 0) {
+    if (singleDoc) return "Enviando comprobante";
     return `Enviando lote ${Math.min(
       progress.chunksDone + 1,
       progress.chunksTotal,
     )} de ${progress.chunksTotal}`;
   }
-  return "Preparando lote";
+  return singleDoc ? "Preparando comprobante" : "Preparando lote";
 }
 
 export function SunatProgress({

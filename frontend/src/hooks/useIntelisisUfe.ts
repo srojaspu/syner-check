@@ -12,7 +12,63 @@ import type {
   IntelisisUfeFiltros,
   IntelisisUfeKpis,
   IntelisisUfeRow,
+  UfeEstadoSunat,
 } from "../api/types";
+
+const SUNAT_NEGATIVOS: Record<string, UfeEstadoSunat> = {
+  NO_EXISTE: "SUNAT NO ENCONTRADO",
+  ANULADO: "SUNAT NO ACEPTADO",
+  NO_AUTORIZADO: "SUNAT NO ACEPTADO",
+  DESCONOCIDO: "SUNAT NO ACEPTADO",
+};
+
+const INCIDENCIAS_SUNAT = new Set([
+  "SUNAT NO ENCONTRADO",
+  "SUNAT NO ACEPTADO",
+]);
+
+function clasificarEstadoSunat(raw: string): {
+  estadoSunat: UfeEstadoSunat;
+  incidenciasSunat: string[];
+} {
+  const token = raw.trim().toUpperCase();
+  if (!token) {
+    return { estadoSunat: "SUNAT SIN CONSULTA", incidenciasSunat: [] };
+  }
+  if (token === "ACEPTADO") {
+    return { estadoSunat: "ACEPTADO", incidenciasSunat: [] };
+  }
+  if (token in SUNAT_NEGATIVOS) {
+    const mapped = SUNAT_NEGATIVOS[token];
+    return { estadoSunat: mapped, incidenciasSunat: [mapped] };
+  }
+  return { estadoSunat: token as UfeEstadoSunat, incidenciasSunat: [] };
+}
+
+function aplicarEstadoSunat(
+  row: IntelisisUfeRow,
+  rawEstado: string,
+  consultado: string,
+): IntelisisUfeRow {
+  const { estadoSunat, incidenciasSunat } = clasificarEstadoSunat(rawEstado);
+  const baseIncidencias = (row.incidencias ?? []).filter(
+    (inc) => !INCIDENCIAS_SUNAT.has(inc),
+  );
+  const incidencias = [...baseIncidencias];
+  for (const inc of incidenciasSunat) {
+    if (!incidencias.includes(inc)) incidencias.push(inc);
+  }
+  return {
+    ...row,
+    estado_sunat: estadoSunat,
+    sunat: {
+      estado: rawEstado,
+      consultado,
+    },
+    incidencias,
+    resultado: incidencias.length > 0 ? "REVISAR" : "CONFORME",
+  };
+}
 
 interface UfeState {
   rows: IntelisisUfeRow[];
@@ -257,17 +313,12 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
       }));
       try {
         const data = await validarIntelisisUfe(idVenta);
+        const consultado = new Date().toISOString();
+        const rawEstado = data.estado || "";
+        const { estadoSunat } = clasificarEstadoSunat(rawEstado);
         const actualizada = (row: IntelisisUfeRow): IntelisisUfeRow =>
           row.id_venta === idVenta
-            ? {
-                ...row,
-                estado_sunat: (data.estado ||
-                  row.estado_sunat) as IntelisisUfeRow["estado_sunat"],
-                sunat: {
-                  estado: data.estado || "",
-                  consultado: new Date().toISOString(),
-                },
-              }
+            ? aplicarEstadoSunat(row, rawEstado, consultado)
             : row;
         setState((prev) => ({
           ...prev,
@@ -281,18 +332,19 @@ export function useIntelisisUfe(onAuthFailure: () => void) {
             ? { ...prev.busqueda, rows: prev.busqueda.rows.map(actualizada) }
             : prev.busqueda,
           validando: null,
-          aviso: `SUNAT: ${data.estado || "sin respuesta"}.`,
+          aviso: `SUNAT: ${rawEstado || "sin respuesta"}.`,
           detalle: prev.detalle
             ? {
                 ...prev.detalle,
                 // El drawer pinta `venta.estado_sunat`: hay que actualizar la
                 // fila anidada, no solo el estado del envoltorio.
                 venta: actualizada(prev.detalle.venta),
-                estado_sunat: (data.estado ||
-                  prev.detalle.estado_sunat) as IntelisisUfeDetalle["estado_sunat"],
+                estado_sunat: rawEstado
+                  ? estadoSunat
+                  : prev.detalle.estado_sunat,
                 sunat: {
-                  estado: data.estado || "",
-                  consultado: new Date().toISOString(),
+                  estado: rawEstado,
+                  consultado,
                 },
               }
             : prev.detalle,

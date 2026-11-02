@@ -40,8 +40,9 @@ _CACHE_KEY = ("Ruc", "Tipo", "Serie", "Numero")
 _CHUNK = 200
 # Series por consulta en ``fetch_by_series`` (evita consultas gigantes).
 _SERIE_CHUNK = 500
-# A partir de esta cantidad de claves, ``fetch_many`` cambia de estrategia.
-_MANY_KEYS_LIMIT = 500
+# A partir de esta cantidad de claves, ``fetch_many`` cambia de estrategia
+# y consulta por Ruc + Serie IN (...) en una sola pasada indexada.
+_MANY_KEYS_LIMIT = 50
 
 
 def _connection_args():
@@ -277,9 +278,11 @@ def _apply(
     disabled revalidation.
 
     State guard: a settled result (SUNAT already answered) must never be
-    downgraded back to PENDIENTE/ERROR by a late poll. ACEPTADO/ANULADO are
-    immutable; the other settled states can only be replaced by another
-    settled state (e.g. NO_EXISTE -> ACEPTADO).
+    downgraded back to PENDIENTE/ERROR by a late poll. ACEPTADO/ANULADO can
+    only be updated when the incoming state is also final (so an explicit
+    revalidation refreshes ``[FechaConsulta]`` and ``[ConsultaID]``); the
+    other settled states can only be replaced by another settled state
+    (e.g. NO_EXISTE -> ACEPTADO).
     """
     cur.execute(
         f"""UPDATE {table} SET [Estado] = ?, [CodigoSunat] = ?,
@@ -290,7 +293,8 @@ def _apply(
             [FechaConsulta] = SYSDATETIME(),
             [FechaActualizacion] = SYSDATETIME()
             WHERE [Ruc] = ? AND [Tipo] = ? AND [Serie] = ? AND [Numero] = ?
-              AND [Estado] NOT IN ('ACEPTADO', 'ANULADO')
+              AND ([Estado] NOT IN ('ACEPTADO', 'ANULADO')
+                   OR ? IN ('ACEPTADO', 'ANULADO'))
               AND ([Estado] NOT IN ('NO_EXISTE', 'AUTORIZADO', 'NO_AUTORIZADO')
                    OR ? IN ('ACEPTADO', 'ANULADO', 'NO_EXISTE',
                             'AUTORIZADO', 'NO_AUTORIZADO'))""",
@@ -308,6 +312,7 @@ def _apply(
         data["UltimoError"],
         data["UsuarioOrigen"],
         *key,
+        data["Estado"],
         data["Estado"],
     )
     if cur.rowcount == 0:

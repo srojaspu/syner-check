@@ -341,6 +341,30 @@ export function logout(): void {
   form.submit();
 }
 
+export function revalidateSunatDoc(
+  doc: SunatDocumentInput,
+  forzarConsulta = true,
+  signal?: AbortSignal,
+): Promise<{ estado: string; resultado: Record<string, unknown> }> {
+  return api(
+    "/api/sunat/revalidar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tipo: doc.tipo,
+        number: doc.number,
+        date: doc.date,
+        crossTotal: doc.crossTotal,
+        importe_sunat: doc.importe_sunat,
+        forzar_consulta: forzarConsulta,
+      }),
+      signal,
+    },
+    SUNAT_STATUS_TIMEOUT_MS,
+  );
+}
+
 export function submitSunatLote(
   documentos: SunatDocumentInput[],
   alcance: SunatScope = "no_aceptados",

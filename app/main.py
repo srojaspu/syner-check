@@ -636,14 +636,20 @@ async def api_sunat_revalidate(request: Request):
     protected(request)
     body = await read_json_limited(request, MAX_REQUEST_BYTES)
     data = body if isinstance(body, dict) else {}
+    importe = data.get("importe_sunat")
+    if importe is None or importe == "":
+        importe = data.get("importe", data.get("crossTotal", ""))
+    forzar = data.get("forzar_consulta")
+    forzar_consulta = True if forzar is None else bool(forzar)
     try:
         return await run_blocking(
             clean_sunat_single,
             str(data.get("tipo", "")),
             str(data.get("number", "")),
             str(data.get("date", "")),
-            data.get("importe", ""),
+            importe,
             _actor_email(request),
+            forzar_consulta=forzar_consulta,
         )
     except HTTPException:
         raise

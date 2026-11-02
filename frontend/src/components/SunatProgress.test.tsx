@@ -208,4 +208,39 @@ describe("SunatProgress", () => {
       screen.getByText("El servidor seguirá reconciliando el lote."),
     ).toBeTruthy();
   });
+
+  it("uses singular wording when validating a single document", () => {
+    render(
+      <SunatProgress
+        progress={{
+          phase: "submission",
+          jobIndex: 0,
+          jobCount: 0,
+          estado: "EN_PROCESO",
+          total: 1,
+          procesados: 0,
+          exitosos: 0,
+          errores: 0,
+          pendientes: 1,
+          porcentaje: 20,
+          mensaje: "Validando comprobante F710-00212640 en SUNAT…",
+          alcance: "no_aceptados",
+          enviados: 0,
+          porEnviar: 1,
+          aceptados: 0,
+          enProceso: 0,
+          sinConfirmar: 0,
+          invalidos: 0,
+          chunksDone: 0,
+          chunksTotal: 1,
+        }}
+        notice={null}
+        warning={null}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText(/Enviando comprobante/)).toBeTruthy();
+    expect(screen.queryByText(/Enviando lote/)).toBeNull();
+  });
 });

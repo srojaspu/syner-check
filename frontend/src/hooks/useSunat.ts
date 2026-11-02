@@ -3,6 +3,7 @@ import {
   ApiError,
   AuthError,
   RequestAbortedError,
+  revalidateSunatDoc,
   submitSunatLote,
   sunatJobStatus,
   sunatSubmissionStatus,
@@ -11,12 +12,16 @@ import type {
   SunatDocumentInput,
   SunatJobResponse,
   SunatScope,
+  SunatSelectable,
   SunatSubmissionResponse,
 } from "../api/types";
 
 const POLL_MS = 3000;
+/** First job poll runs sooner so small batches finish without a 3 s wait. */
+const INITIAL_JOB_POLL_MS = 800;
 /** Submission progress is cheap; poll it faster than a SUNAT job. */
 const SUBMISSION_POLL_MS = 1500;
+const INITIAL_SUBMISSION_POLL_MS = 350;
 /** One isolated timeout must not abort a 9-minute batch. */
 const MAX_STATUS_FAILURES = 6;
 /** Soft budget for the browser; the server worker keeps reconciling after it. */
@@ -245,12 +250,14 @@ async function pollSubmission(
 ): Promise<SunatSubmissionResponse> {
   const startedAt = Date.now();
   let failures = 0;
+  let polls = 0;
 
   while (true) {
     if (signal.aborted) throw new RequestAbortedError();
     try {
       const status = await sunatSubmissionStatus(solicitudId, signal);
       failures = 0;
+      polls += 1;
       onProgress(submissionToProgress(status));
       if (TERMINAL.has(String(status.estado || "").toUpperCase())) {
         return status;
@@ -280,8 +287,74 @@ async function pollSubmission(
           "El servidor continuará procesándola aunque cierres esta página.",
       );
     }
-    await sleep(SUBMISSION_POLL_MS, signal);
+    await sleep(
+      polls <= 2 ? INITIAL_SUBMISSION_POLL_MS : SUBMISSION_POLL_MS,
+      signal,
+    );
   }
+}
+
+function singleRunningProgress(
+  doc: SunatDocumentInput,
+  alcance: SunatScope,
+  aceptados: number,
+  sinConfirmar: number,
+): SunatProgressState {
+  const label = doc.number ? ` ${doc.number}` : "";
+  return {
+    phase: "submission",
+    jobIndex: 0,
+    jobCount: 0,
+    estado: "EN_PROCESO",
+    total: 1,
+    procesados: 0,
+    exitosos: 0,
+    errores: 0,
+    pendientes: 1,
+    porcentaje: 20,
+    mensaje: `Validando comprobante${label} en SUNAT…`,
+    alcance,
+    enviados: 0,
+    porEnviar: 1,
+    aceptados,
+    enProceso: 0,
+    sinConfirmar,
+    invalidos: 0,
+    chunksDone: 0,
+    chunksTotal: 1,
+  };
+}
+
+function singleCompletedProgress(
+  estadoSunat: string,
+  alcance: SunatScope,
+  aceptados: number,
+  sinConfirmar: number,
+): SunatProgressState {
+  const estado = String(estadoSunat || "COMPLETADO").trim().toUpperCase();
+  const isError = estado === "ERROR";
+  return {
+    phase: "job",
+    jobIndex: 1,
+    jobCount: 1,
+    estado: isError ? "COMPLETADO_ERROR" : "COMPLETADO",
+    total: 1,
+    procesados: 1,
+    exitosos: isError ? 0 : 1,
+    errores: isError ? 1 : 0,
+    pendientes: 0,
+    porcentaje: 100,
+    mensaje: `Validación completada (${estado || "sin respuesta"}).`,
+    alcance,
+    enviados: 1,
+    porEnviar: 1,
+    aceptados,
+    enProceso: 0,
+    sinConfirmar,
+    invalidos: 0,
+    chunksDone: 1,
+    chunksTotal: 1,
+  };
 }
 
 /** SUNAT batch validation: explicit async submit, live progress, then jobs. */
@@ -310,7 +383,7 @@ export function useSunat(onAuthFailure: () => void) {
 
   const runBatch = useCallback(
     async (
-      rows: SunatDocumentInput[],
+      rows: SunatSelectable[],
       refresh: () => Promise<void> | void,
       alcance: SunatScope = "no_aceptados",
     ) => {
@@ -342,6 +415,75 @@ export function useSunat(onAuthFailure: () => void) {
       };
 
       try {
+        let skippedAccepted = 0;
+        let skippedUnconfirmed = 0;
+        const effectiveDocs: SunatDocumentInput[] = [];
+        for (const doc of rows) {
+          const currentEstado = doc.sunat?.estado?.trim().toUpperCase() || "";
+          if (currentEstado === "SIN_CONFIRMAR") {
+            skippedUnconfirmed += 1;
+            continue;
+          }
+          if (alcance === "no_aceptados" && currentEstado === "ACEPTADO") {
+            skippedAccepted += 1;
+            continue;
+          }
+          effectiveDocs.push({
+            tipo: doc.tipo,
+            number: doc.number,
+            date: doc.date,
+            crossTotal: doc.crossTotal,
+            // Monto declarado a SUNAT por el generador: el backend lo prefiere
+            // sobre crossTotal (sin el, la validacion usa la suma del ERP).
+            importe_sunat: doc.importe_sunat,
+          });
+        }
+
+        // Fast-path: a single consultable document bypasses the 60 s cron batch
+        // queue and validates synchronously against /api/sunat/revalidar.
+        if (effectiveDocs.length === 1) {
+          const single = effectiveDocs[0];
+          setProgress(
+            singleRunningProgress(
+              single,
+              alcance,
+              skippedAccepted,
+              skippedUnconfirmed,
+            ),
+          );
+          const result = await revalidateSunatDoc(
+            single,
+            alcance === "todos",
+            signal,
+          );
+          setProgress(
+            singleCompletedProgress(
+              result.estado,
+              alcance,
+              skippedAccepted,
+              skippedUnconfirmed,
+            ),
+          );
+          const omittedNotes: string[] = [];
+          if (skippedAccepted > 0) {
+            omittedNotes.push(
+              `${skippedAccepted} documento(s) ya estaban ACEPTADOS y se omitieron.` +
+                (alcance === "todos"
+                  ? ""
+                  : " Usa «Todos» para volver a consultarlos en SUNAT."),
+            );
+          }
+          if (skippedUnconfirmed > 0) {
+            omittedNotes.push(
+              `${skippedUnconfirmed} documento(s) tienen un envío sin confirmar; ` +
+                "no se reintentaron para evitar duplicados en SUNAT.",
+            );
+          }
+          if (omittedNotes.length) setNotice(omittedNotes.join(" "));
+          await refreshResults();
+          return;
+        }
+
         const queued = await submitSunatLote(
           rows.map((doc) => ({
             tipo: doc.tipo,
@@ -417,6 +559,7 @@ export function useSunat(onAuthFailure: () => void) {
           const job = data.trabajos[i];
           const startedAt = Date.now();
           let failures = 0;
+          let jobPolls = 0;
 
           while (!pollingPaused) {
             if (signal.aborted) throw new RequestAbortedError();
@@ -424,6 +567,7 @@ export function useSunat(onAuthFailure: () => void) {
             try {
               status = await sunatJobStatus(job.trabajo_id, signal);
               failures = 0;
+              jobPolls += 1;
             } catch (err: unknown) {
               if (err instanceof RequestAbortedError) throw err;
               if (err instanceof AuthError) throw err;
@@ -467,7 +611,10 @@ export function useSunat(onAuthFailure: () => void) {
               pollingPaused = true;
               break;
             }
-            await sleep(POLL_MS, signal);
+            await sleep(
+              jobPolls <= 1 ? INITIAL_JOB_POLL_MS : POLL_MS,
+              signal,
+            );
           }
         }
 

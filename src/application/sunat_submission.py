@@ -274,6 +274,12 @@ class SunatSubmissionRegistry:
                 item.chunks_done = item.chunks_total
                 if trabajos:
                     item.mensaje = "Lotes enviados. Consultando SUNAT…"
+                elif item.enviados > 0:
+                    item.mensaje = (
+                        "Validación completada."
+                        if item.enviados == 1
+                        else f"Validación completada ({item.enviados} documentos)."
+                    )
                 elif item.omitidos.get("aceptados"):
                     aceptados = int(item.omitidos.get("aceptados") or 0)
                     if item.alcance == "todos":

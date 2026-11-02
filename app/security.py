@@ -91,6 +91,7 @@ class RateLimitMiddleware:
             "/api/movsynerpos/",
             "/api/intelisis/ufe/reenviar",
             "/api/intelisis/ufe/reenvios/",
+            "/api/intelisis/ufe/validar",
         )
         if scope.get("method") == "POST" and path.startswith(write_paths):
             limiter = self._sunat_write

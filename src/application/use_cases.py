@@ -1789,10 +1789,17 @@ def sunat_revalidate(
     importe: object,
     usuario: str,
     ruc: str,
+    forzar_consulta: bool = True,
 ) -> dict:
-    """Manual single-doc revalidation (forces fresh SUNAT query)."""
+    """Synchronous single-doc validation against SUNAT.
+
+    Manual revalidations force a fresh SUNAT query (``forzar_consulta=True``);
+    1-document submissions with ``no_aceptados`` scope can allow the validator
+    cache when appropriate (``forzar_consulta=False``).
+    """
     payload = _sunat_doc_payload(ruc.strip(), tipo, number, date_iso, importe)
-    payload["forzar_consulta"] = True
+    if forzar_consulta:
+        payload["forzar_consulta"] = True
     body = validator.validate_single(payload, usuario=usuario, origen="syner-check")
     resultado = body.get("resultado", {}) if isinstance(body, dict) else {}
     estado = _sunat_map_estado(resultado.get("estado"))
@@ -1806,21 +1813,45 @@ def sunat_revalidate(
     )
     try:
         previous = store.fetch_many([key]).get(key, {})
+        prev_estado = _sunat_estado(previous)
+        # Never downgrade a settled result if SUNAT returns a transient
+        # DESCONOCIDO/ERROR on a manual retry.
+        persisted_estado = estado
+        if prev_estado in _SUNAT_FINAL and estado not in _SUNAT_FINAL:
+            persisted_estado = prev_estado
+        elif prev_estado in _SUNAT_SETTLED and estado not in _SUNAT_SETTLED:
+            persisted_estado = prev_estado
         store.upsert(
             {
                 "Ruc": key[0],
                 "Tipo": key[1],
                 "Serie": key[2],
                 "Numero": key[3],
-                "Estado": estado,
-                "CodigoSunat": str(resultado.get("codigo_sunat", "")),
-                "RucEstado": str(resultado.get("ruc_estado", "")),
-                "RucCondicion": str(resultado.get("ruc_condicion", "")),
-                "Observaciones": resultado.get("observaciones", []),
+                "Estado": persisted_estado,
+                "CodigoSunat": str(
+                    resultado.get("codigo_sunat", "")
+                    or previous.get("CodigoSunat", "")
+                ),
+                "RucEstado": str(
+                    resultado.get("ruc_estado", "")
+                    or previous.get("RucEstado", "")
+                ),
+                "RucCondicion": str(
+                    resultado.get("ruc_condicion", "")
+                    or previous.get("RucCondicion", "")
+                ),
+                "Observaciones": (
+                    resultado.get("observaciones")
+                    if resultado.get("observaciones") is not None
+                    else previous.get("Observaciones", [])
+                ),
                 "Importe": payload["importe"],
                 "FechaEmision": payload["fecha_emision"],
-                "ConsultaID": body.get("consulta_id"),
-                "CorrelationID": str(body.get("correlation_id", "")),
+                "ConsultaID": body.get("consulta_id") or previous.get("ConsultaID"),
+                "CorrelationID": (
+                    str(body.get("correlation_id", ""))
+                    or previous.get("CorrelationID", "")
+                ),
                 "Intentos": int(previous.get("Intentos") or 0) + 1,
                 "UsuarioOrigen": (usuario or "")[:100],
             }

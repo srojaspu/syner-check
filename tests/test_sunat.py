@@ -1041,6 +1041,64 @@ class RevalidateTests(unittest.TestCase):
         self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
         self.assertEqual(store.rows[key]["ConsultaID"], 42)
 
+    def test_can_use_validator_cache_when_not_forced(self):
+        validator = FakeValidator()
+        validator.single_response = {
+            "ok": True,
+            "consulta_id": 43,
+            "correlation_id": "c2",
+            "resultado": {"estado": "ACEPTADO"},
+        }
+        store = FakeStore()
+        res = sunat_revalidate(
+            validator,
+            store,
+            tipo="BOLETA",
+            number="BS05-1",
+            date_iso="2026-10-15",
+            importe=50,
+            usuario="u",
+            ruc="20101031773",
+            forzar_consulta=False,
+        )
+        self.assertEqual(res["estado"], "ACEPTADO")
+        self.assertNotIn("forzar_consulta", validator.single_doc)
+
+    def test_does_not_downgrade_accepted_on_transient_unknown(self):
+        key = ("20101031773", "03", "BS05", "1")
+        store = FakeStore({
+            key: {
+                "Ruc": "20101031773",
+                "Tipo": "03",
+                "Serie": "BS05",
+                "Numero": "1",
+                "Estado": "ACEPTADO",
+                "CodigoSunat": "1",
+                "ConsultaID": 10,
+                "Intentos": 1,
+            }
+        })
+        validator = FakeValidator()
+        validator.single_response = {
+            "ok": True,
+            "consulta_id": 44,
+            "resultado": {"estado": "DESCONOCIDO"},
+        }
+        res = sunat_revalidate(
+            validator,
+            store,
+            tipo="BOLETA",
+            number="BS05-1",
+            date_iso="2026-10-15",
+            importe=50,
+            usuario="u",
+            ruc="20101031773",
+        )
+        self.assertEqual(res["estado"], "DESCONOCIDO")
+        self.assertEqual(store.rows[key]["Estado"], "ACEPTADO")
+        self.assertEqual(store.rows[key]["CodigoSunat"], "1")
+        self.assertEqual(store.rows[key]["Intentos"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

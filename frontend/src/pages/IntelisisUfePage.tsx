@@ -31,7 +31,7 @@ import type {
   IntelisisReenvioFila,
   IntelisisUfeFiltros,
   IntelisisUfeRow,
-  SunatDocumentInput,
+  SunatSelectable,
 } from "../api/types";
 import { useIntelisisReenvio } from "../hooks/useIntelisisReenvio";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
@@ -255,9 +255,9 @@ export default function IntelisisUfePage({
    * Documentos que se validaran en SUNAT: manda la seleccion cuando existe
    * (permite acotar un periodo grande); sin seleccion, todos los mostrados.
    */
-  const documentosSunat = seleccionadas.length ? seleccionadas : filas;
+  const documentosSunat = seleccionadas.length ? seleccionadas : visibles;
   /** Documentos consultables en SUNAT (el backend arma el payload final). */
-  const consultables: SunatDocumentInput[] = useMemo(
+  const consultables: SunatSelectable[] = useMemo(
     () =>
       documentosSunat
         .filter((fila) => fila.tipo_sunat && fila.comprobante)

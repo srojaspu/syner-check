@@ -129,6 +129,14 @@ class RateLimitMiddlewareTests(unittest.TestCase):
             ).status,
             200,
         )
+        # Intelisis UFE single validation also spends SUNAT quota.
+        self.assertEqual(
+            _call(
+                middleware,
+                _scope(path="/api/intelisis/ufe/validar", method="POST"),
+            ).status,
+            429,
+        )
 
     def test_buckets_are_per_user(self):
         middleware = RateLimitMiddleware(

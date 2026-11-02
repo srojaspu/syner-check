@@ -5,11 +5,13 @@ import type { SunatSubmissionResponse } from "../api/types";
 
 const submitMock = vi.hoisted(() => vi.fn());
 const statusMock = vi.hoisted(() => vi.fn());
+const revalidateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
     ...actual,
+    revalidateSunatDoc: revalidateMock,
     submitSunatLote: submitMock,
     sunatSubmissionStatus: statusMock,
   };
@@ -23,13 +25,13 @@ function cola(): SunatSubmissionResponse {
     estado: "COMPLETADO",
     fase: "listo",
     mensaje: "",
-    total: 1,
+    total: 2,
     alcance: "no_aceptados",
     por_enviar: 0,
     chunks_total: 0,
     chunks_done: 0,
     enviados: 0,
-    omitidos: { aceptados: 1, en_proceso: 0, sin_confirmar: 0, invalidos: [] },
+    omitidos: { aceptados: 2, en_proceso: 0, sin_confirmar: 0, invalidos: [] },
     trabajos: [],
     errores: [],
     porcentaje: 100,
@@ -38,8 +40,50 @@ function cola(): SunatSubmissionResponse {
   };
 }
 
-describe("useSunat · lote", () => {
-  it("manda el importe declarado por el generador", async () => {
+describe("useSunat · lote y fast-path unitario", () => {
+  it("valida 1 solo documento por via sincrona sin encolar un lote", async () => {
+    submitMock.mockClear();
+    revalidateMock.mockReset();
+    revalidateMock.mockResolvedValue({
+      estado: "ACEPTADO",
+      resultado: { estado: "ACEPTADO" },
+    });
+    const refresh = vi.fn();
+    const { result } = renderHook(() => useSunat(vi.fn()));
+
+    await act(async () => {
+      await result.current.runBatch(
+        [
+          {
+            tipo: "FACTURA",
+            number: "F710-00213172",
+            date: "2026-10-26",
+            crossTotal: 1679.59,
+            importe_sunat: 1679.57,
+          },
+        ],
+        refresh,
+      );
+    });
+
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+    const [doc, forzar] = revalidateMock.mock.calls[0];
+    expect(doc).toMatchObject({
+      tipo: "FACTURA",
+      number: "F710-00213172",
+      crossTotal: 1679.59,
+      importe_sunat: 1679.57,
+    });
+    expect(forzar).toBe(false);
+    expect(result.current.progress?.estado).toBe("COMPLETADO");
+    expect(result.current.progress?.porcentaje).toBe(100);
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("manda el importe declarado por el generador en lotes de varios documentos", async () => {
+    submitMock.mockClear();
+    revalidateMock.mockReset();
     submitMock.mockResolvedValue(cola());
     statusMock.mockResolvedValue(cola());
     const refresh = vi.fn();
@@ -54,6 +98,13 @@ describe("useSunat · lote", () => {
             date: "2026-10-26",
             crossTotal: 1679.59,
             importe_sunat: 1679.57,
+          },
+          {
+            tipo: "01",
+            number: "F710-00213173",
+            date: "2026-10-26",
+            crossTotal: 100.0,
+            importe_sunat: 100.0,
           },
         ],
         refresh,
