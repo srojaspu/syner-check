@@ -5,8 +5,10 @@ services:
     env_file:
       - path: .env
         required: false
+    expose:
+      - "8000"
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
       interval: 30s

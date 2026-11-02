@@ -124,23 +124,35 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
-## Docker / Dockploy
+## Docker / Dokploy
+
+En **Dokploy** puedes desplegar el repositorio directamente como **Application (Build Type: Dockerfile)** o como **Compose (`docker-compose.yml`)**:
+
+1. **Puerto del contenedor**: `8000` (`EXPOSE 8000`). En la pestaña **Domains** de Dokploy apunta el dominio HTTPS al puerto `8000`.
+2. **Traefik / Proxy headers**: el `Dockerfile` incluye `--proxy-headers --forwarded-allow-ips *` (`FORWARDED_ALLOW_IPS=*`) para que Uvicorn reconozca `X-Forwarded-Proto: https` y `X-Forwarded-For` enviados por el contenedor Traefik de Dokploy desde `dokploy-network`.
+3. **Zona horaria**: el contenedor fija `TZ=America/Lima` para que los cálculos de ventana/SLA y fechas coincidan con la hora de SQL Server (`Punidas` y `Pu_synerpos`).
+4. **Health check**: `GET /health` (ya declarado con `HEALTHCHECK` en el `Dockerfile`).
+5. **Variables de entorno en Dokploy (pestaña Environment)**:
+   - Puedes pegar el contenido de `.env` y verificar que no falte ninguna variable ejecutando en la terminal del contenedor en Dokploy:
+     ```bash
+     python scripts/compare_env.py --from-environ
+     ```
+   - Asegúrate de definir en producción:
+     ```env
+     APP_ENV=production
+     AUTH_MODE=google
+     SESSION_HTTPS_ONLY=true
+     GOOGLE_REDIRECT_URI=https://TU_DOMINIO/auth/callback
+     ```
+   - Incluye las variables de `INTELISIS_*`, `SUNAT_*`, `DB_*`, `KC_*` y los kill switches (`MOVSYNERPOS_WRITE_ENABLED`, `INTELISIS_RESEND_ENABLED`) según `.env.example`.
+
+Para probar con Docker Compose manualmente:
 
 ```bash
 cp .env.example .env
 # editar .env
 docker compose up -d --build
 ```
-
-Publica el puerto 8000 detrás de HTTPS mediante Dockploy/Traefik/Nginx/ALB.
-
-Configura el health check:
-
-`GET /health`
-
-Y usa como callback de Google la URL HTTPS pública:
-
-`https://TU_DOMINIO/auth/callback`
 
 ## Endpoints
 

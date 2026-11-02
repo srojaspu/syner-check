@@ -22,6 +22,7 @@ Codigos de salida: ``0`` todo bien, ``1`` falta algo (o hay warnings con
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -95,22 +96,41 @@ def main(argv: list[str] | None = None) -> int:
         "--example", default=".env.example", help="plantilla (default: .env.example)"
     )
     parser.add_argument(
+        "--from-environ",
+        action="store_true",
+        help="valida os.environ en vez de un archivo .env (util en Dokploy/Docker)",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="tambien falla con variables vacias, sobrantes o duplicadas",
     )
     args = parser.parse_args(argv)
 
-    ruta_env = Path(args.env).resolve()
     ruta_ejemplo = Path(args.example).resolve()
+    if not ruta_ejemplo.is_file():
+        print(f"No existe: {ruta_ejemplo}", file=sys.stderr)
+        return 2
 
-    for ruta in (ruta_env, ruta_ejemplo):
-        if not ruta.is_file():
-            print(f"No existe: {ruta}", file=sys.stderr)
-            return 2
-
-    env = parse_env(ruta_env)
     ejemplo = parse_env(ruta_ejemplo)
+    known_keys = set(ejemplo.active) | set(ejemplo.disabled)
+
+    if args.from_environ:
+        env = EnvFile(
+            path=Path("<os.environ>"),
+            active={k: v for k, v in os.environ.items() if k in known_keys},
+        )
+        origen_label = "<os.environ>"
+    else:
+        ruta_env = Path(args.env).resolve()
+        if not ruta_env.is_file():
+            print(
+                f"No existe: {ruta_env} (usa --from-environ en Docker/Dokploy)",
+                file=sys.stderr,
+            )
+            return 2
+        env = parse_env(ruta_env)
+        origen_label = str(ruta_env)
 
     obligatorias = list(ejemplo.active)
     opcionales = sorted(ejemplo.disabled - set(ejemplo.active))
@@ -121,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     vacias = [k for k in obligatorias if k in env.active and _empty(env, k)]
     sobran = sorted(set(env.active) - set(ejemplo.active) - set(ejemplo.disabled))
 
-    print(f".env         : {ruta_env}")
+    print(f".env         : {origen_label}")
     print(f".env.example : {ruta_ejemplo}")
     print(f"\nVariables obligatorias : {len(obligatorias)}")
     print(f"Definidas en .env      : {len(env.active)}")
