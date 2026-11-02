@@ -1,5 +1,5 @@
 # Stage 1: build the React frontend (vite outDir ../app/static/frontend).
-FROM node:20-slim AS frontend-build
+FROM node:20-bookworm-slim AS frontend-build
 
 WORKDIR /repo/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -8,7 +8,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Python backend serving the API + the built frontend.
-FROM python:3.13-slim
+# Pin bookworm explicitly so it matches Microsoft's debian/12 apt repo below.
+FROM python:3.13-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -25,10 +26,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md .env.example ./
 COPY app ./app
 COPY syner_check ./syner_check
 COPY src ./src
+COPY scripts ./scripts
 COPY --from=frontend-build /repo/app/static/frontend ./app/static/frontend
 
 RUN pip install --no-cache-dir . \

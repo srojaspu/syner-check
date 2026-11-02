@@ -24,6 +24,7 @@ syner-check = "syner_check.main:main"
 # ignores this group.
 dev = [
   "pytest>=8",
+  "pytest-timeout>=2.3",
   "ruff>=0.9",
   # Starlette's TestClient is built on httpx; runtime uses httpx2 (authlib).
   "httpx>=0.28,<1",
