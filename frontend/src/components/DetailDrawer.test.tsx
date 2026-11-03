@@ -68,7 +68,6 @@ describe("DetailDrawer · acciones condicionales de SUNAT y MovSynerPos", () => 
         loading={false}
         error={null}
         copied={false}
-        actionNotice="Validación completada (ACEPTADO)."
         onCopy={vi.fn()}
         onValidateSunat={vi.fn()}
         onSendMovSynerPos={vi.fn()}
@@ -84,9 +83,6 @@ describe("DetailDrawer · acciones condicionales de SUNAT y MovSynerPos", () => 
     ).toBeNull();
     expect(screen.getByText("En MovSynerPos")).toBeTruthy();
     expect(screen.getByText("SUNAT: Aceptado")).toBeTruthy();
-    expect(
-      screen.getByText("Validación completada (ACEPTADO)."),
-    ).toBeTruthy();
   });
 
   it("muestra solo Validar en SUNAT cuando ya esta en MovSynerPos pero aun no esta aceptado en SUNAT", () => {

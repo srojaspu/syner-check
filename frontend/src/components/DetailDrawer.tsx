@@ -1,14 +1,12 @@
 import type { ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CheckmarkCircle01Icon,
   Copy01Icon,
   Database01Icon,
   Loading02Icon,
   PrinterIcon,
   ReceiptTextIcon,
   Search01Icon,
-  TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -189,8 +187,6 @@ export function DetailDrawer({
   copied,
   validatingSunat = false,
   sendingMovSynerPos = false,
-  actionNotice = null,
-  actionError = null,
   onCopy,
   onValidateSunat,
   onSendMovSynerPos,
@@ -203,8 +199,6 @@ export function DetailDrawer({
   copied: boolean;
   validatingSunat?: boolean;
   sendingMovSynerPos?: boolean;
-  actionNotice?: string | null;
-  actionError?: string | null;
   onCopy: () => void;
   onValidateSunat?: (doc: Voucher) => void;
   onSendMovSynerPos?: (doc: Voucher) => void;
@@ -343,22 +337,6 @@ export function DetailDrawer({
                 </Button>
               ) : null}
             </div>
-            {actionNotice ? (
-              <div className="px-6 print:hidden">
-                <Alert>
-                  <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={2} />
-                  <AlertDescription>{actionNotice}</AlertDescription>
-                </Alert>
-              </div>
-            ) : null}
-            {actionError ? (
-              <div className="px-6 print:hidden">
-                <Alert variant="destructive">
-                  <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-                  <AlertDescription>{actionError}</AlertDescription>
-                </Alert>
-              </div>
-            ) : null}
             <dl className="grid grid-cols-2 gap-3 px-6">
               <Field label="OID" value={document.oid} />
               <Field

@@ -6,6 +6,7 @@ import { PrimaryNav } from "./components/PrimaryNav";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useSession } from "./hooks/useSession";
 import ComprobantesPage from "./pages/ComprobantesPage";
+import { NotificationsProvider } from "./components/NotificationCenter";
 import { ThemeProvider } from "./theme/ThemeContext";
 
 // La pantalla nueva entra por separado: el bundle del flujo actual no crece
@@ -74,7 +75,9 @@ function Workspace() {
 export default function App() {
   return (
     <ThemeProvider>
-      <Workspace />
+      <NotificationsProvider>
+        <Workspace />
+      </NotificationsProvider>
     </ThemeProvider>
   );
 }

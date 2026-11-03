@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  InformationCircleIcon,
-  TriangleAlertIcon,
-} from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import {
@@ -19,6 +13,11 @@ import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel"
 import { IntelisisUfeResolverDialog } from "@/components/IntelisisUfeResolverDialog";
 import { IntelisisUfeResultados } from "@/components/IntelisisUfeResultados";
 import { IntelisisUfeSinDocumentoDialog } from "@/components/IntelisisUfeSinDocumentoDialog";
+import {
+  NotificationAlert,
+  NotificationHost,
+  type NotificationItem,
+} from "@/components/NotificationCenter";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
@@ -307,6 +306,194 @@ export default function IntelisisUfePage({
     [limpiarErrorResolucion],
   );
 
+  const notificationItems = useMemo<NotificationItem[]>(() => {
+    const list: NotificationItem[] = [];
+
+    if (formError) {
+      list.push({
+        id: "ufe-form-error",
+        signature: `form:${formError}`,
+        tone: "error",
+        summary: `Revisa el periodo: ${formError}`,
+        onDismiss: () => setFormError(null),
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="Revisa el periodo"
+            description={formError}
+          />
+        ),
+      });
+    }
+
+    if (ufe.error) {
+      list.push({
+        id: "ufe-query-error",
+        signature: `query:${ufe.error}`,
+        tone: "error",
+        summary: `Consulta UFE: ${ufe.error}`,
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="No fue posible consultar"
+            description={ufe.error}
+          />
+        ),
+      });
+    }
+
+    if (ufe.searched && !ufe.intelisisEnabled) {
+      list.push({
+        id: "ufe-disabled",
+        signature: "ufe-disabled",
+        tone: "warning",
+        summary: "Intelisis no disponible",
+        content: (
+          <NotificationAlert
+            tone="info"
+            title="Intelisis no disponible"
+            description="No hay conexion configurada a la base de Intelisis. La pantalla queda sin datos hasta que se configure la lectura."
+          />
+        ),
+      });
+    }
+
+    if (ufe.truncado) {
+      list.push({
+        id: "ufe-truncado",
+        signature: `truncado:${ufe.maxFilas}:${ufe.filtradosTotal}`,
+        tone: "warning",
+        summary: `Listado recortado (${ufe.maxFilas} de ${ufe.filtradosTotal})`,
+        content: (
+          <NotificationAlert
+            tone="info"
+            title="Listado recortado"
+            description={`Se muestran ${ufe.maxFilas.toLocaleString("es-PE")} de ${ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan el filtro. Afina el periodo o usa los filtros (resultado, generador, tipo) para ver el resto.`}
+          />
+        ),
+      });
+    }
+
+    if (sunat.progress || sunat.notice || sunat.warning || sunat.error) {
+      const sunatRunning = sunat.busy || sunat.refreshing;
+      const sunatTone = sunat.error
+        ? "error"
+        : sunat.warning
+          ? "warning"
+          : sunatRunning
+            ? "info"
+            : "success";
+      const sunatSummary =
+        sunat.error ||
+        sunat.warning ||
+        sunat.notice ||
+        sunat.progress?.mensaje ||
+        "Validación SUNAT";
+      list.push({
+        id: "ufe-sunat",
+        signature: [
+          sunat.progress?.phase ?? "",
+          sunat.progress?.estado ?? "",
+          sunat.progress?.procesados ?? 0,
+          sunat.progress?.enviados ?? 0,
+          sunat.notice ?? "",
+          sunat.warning ?? "",
+          sunat.error ?? "",
+        ].join("|"),
+        tone: sunatTone,
+        running: sunatRunning,
+        summary: `SUNAT: ${sunatSummary}`,
+        content: (
+          <SunatProgress
+            progress={sunat.progress}
+            notice={sunat.notice}
+            warning={sunat.warning}
+            error={sunat.error}
+          />
+        ),
+      });
+    }
+
+    if (ufe.validando !== null || ufe.aviso || ufe.errorValidacion) {
+      const detalleRunning = ufe.validando !== null;
+      const detalleTone = ufe.errorValidacion
+        ? "error"
+        : detalleRunning
+          ? "info"
+          : "success";
+      const detalleMsg =
+        ufe.errorValidacion ||
+        ufe.aviso ||
+        "Validando comprobante en SUNAT…";
+      list.push({
+        id: "ufe-detalle-sunat",
+        signature: `detalle-sunat:${ufe.validando ?? ""}:${ufe.aviso ?? ""}:${ufe.errorValidacion ?? ""}`,
+        tone: detalleTone,
+        running: detalleRunning,
+        summary: detalleMsg,
+        content: (
+          <NotificationAlert
+            tone={detalleTone}
+            title={
+              ufe.errorValidacion
+                ? "No se pudo validar en SUNAT"
+                : detalleRunning
+                  ? "Validación SUNAT"
+                  : undefined
+            }
+            description={detalleMsg}
+          />
+        ),
+      });
+    }
+
+    if (reenvio.resultado || reenvio.aviso) {
+      const rechazados = reenvio.resultado?.rechazados ?? 0;
+      list.push({
+        id: "ufe-reenvio",
+        signature: [
+          reenvio.resultado?.encolados ?? 0,
+          reenvio.resultado?.duplicados ?? 0,
+          reenvio.resultado?.rechazados ?? 0,
+          reenvio.aviso ?? "",
+        ].join("|"),
+        tone: rechazados > 0 ? "warning" : "success",
+        summary: reenvio.aviso || "Reenvío al generador UFE",
+        hideCloseButton: true,
+        onDismiss: reenvio.limpiarMensajes,
+        content: (
+          <IntelisisUfeReenvioAviso
+            resultado={reenvio.resultado}
+            aviso={reenvio.aviso}
+            onCerrar={reenvio.limpiarMensajes}
+          />
+        ),
+      });
+    }
+
+    return list;
+  }, [
+    formError,
+    ufe.error,
+    ufe.searched,
+    ufe.intelisisEnabled,
+    ufe.truncado,
+    ufe.maxFilas,
+    ufe.filtradosTotal,
+    ufe.validando,
+    ufe.aviso,
+    ufe.errorValidacion,
+    sunat.progress,
+    sunat.notice,
+    sunat.warning,
+    sunat.error,
+    sunat.busy,
+    sunat.refreshing,
+    reenvio.resultado,
+    reenvio.aviso,
+    reenvio.limpiarMensajes,
+  ]);
+
   return (
     <div className="flex flex-col gap-6">
       <Tabs mode={modo} onChange={setModo} />
@@ -342,33 +529,6 @@ export default function IntelisisUfePage({
         />
       )}
 
-      {formError ? (
-        <Alert variant="destructive">
-          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-          <AlertTitle>Revisa el periodo</AlertTitle>
-          <AlertDescription>{formError}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {ufe.error ? (
-        <Alert variant="destructive">
-          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-          <AlertTitle>No fue posible consultar</AlertTitle>
-          <AlertDescription>{ufe.error}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {ufe.searched && !ufe.intelisisEnabled ? (
-        <Alert>
-          <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
-          <AlertTitle>Intelisis no disponible</AlertTitle>
-          <AlertDescription>
-            No hay conexion configurada a la base de Intelisis. La pantalla
-            queda sin datos hasta que se configure la lectura.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
       {modo === "range" && kpis ? (
         <IntelisisUfeFlujo
           kpis={kpis}
@@ -377,28 +537,6 @@ export default function IntelisisUfePage({
           onLimpiar={() => setBorrador({})}
           onSinDocumento={() => setSinDocumentoOpen(true)}
           loading={ufe.loading}
-        />
-      ) : null}
-
-      {ufe.truncado ? (
-        <Alert>
-          <HugeiconsIcon icon={InformationCircleIcon} strokeWidth={2} />
-          <AlertTitle>Listado recortado</AlertTitle>
-          <AlertDescription>
-            Se muestran {ufe.maxFilas.toLocaleString("es-PE")} de{" "}
-            {ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan
-            el filtro. Afina el periodo o usa los filtros (resultado,
-            generador, tipo) para ver el resto.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      {sunat.progress || sunat.notice || sunat.warning || sunat.error ? (
-        <SunatProgress
-          progress={sunat.progress}
-          notice={sunat.notice}
-          warning={sunat.warning}
-          error={sunat.error}
         />
       ) : null}
 
@@ -444,12 +582,6 @@ export default function IntelisisUfePage({
         }}
         onRowClick={(row) => void ufe.abrirDetalle(row.id_venta)}
         onFilteredRowsChange={setFilteredRows}
-      />
-
-      <IntelisisUfeReenvioAviso
-        resultado={reenvio.resultado}
-        aviso={reenvio.aviso}
-        onCerrar={reenvio.limpiarMensajes}
       />
 
       <IntelisisUfeReenvioPanel
@@ -527,11 +659,11 @@ export default function IntelisisUfePage({
         loading={ufe.detalleLoading}
         error={ufe.detalleError}
         validando={ufe.validando}
-        aviso={ufe.aviso}
-        errorValidacion={ufe.errorValidacion}
         onValidar={(idVenta) => void ufe.validar(idVenta)}
         onClose={ufe.cerrarDetalle}
       />
+
+      <NotificationHost sourceId="intelisis-ufe" items={notificationItems} />
     </div>
   );
 }

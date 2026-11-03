@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CheckmarkCircle01Icon,
   Copy01Icon,
   Loading02Icon,
   Search01Icon,
@@ -122,8 +121,6 @@ export function IntelisisUfeDetalle({
   loading,
   error,
   validando,
-  aviso,
-  errorValidacion,
   onValidar,
   onClose,
 }: {
@@ -132,8 +129,8 @@ export function IntelisisUfeDetalle({
   loading: boolean;
   error: string | null;
   validando: number | null;
-  aviso: string | null;
-  errorValidacion: string | null;
+  aviso?: string | null;
+  errorValidacion?: string | null;
   onValidar: (idVenta: number) => void;
   onClose: () => void;
 }) {
@@ -225,23 +222,6 @@ export function IntelisisUfeDetalle({
                 Copiar número
               </Button>
             </div>
-
-            {aviso ? (
-              <div className="px-6">
-                <Alert>
-                  <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={2} />
-                  <AlertDescription>{aviso}</AlertDescription>
-                </Alert>
-              </div>
-            ) : null}
-            {errorValidacion ? (
-              <div className="px-6">
-                <Alert variant="destructive">
-                  <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-                  <AlertDescription>{errorValidacion}</AlertDescription>
-                </Alert>
-              </div>
-            ) : null}
 
             <dl className="grid grid-cols-2 gap-3 px-6">
               <Field label="Comprobante SUNAT" value={venta.comprobante} />
