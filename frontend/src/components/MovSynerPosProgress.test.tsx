@@ -24,6 +24,7 @@ describe("MovSynerPosProgress", () => {
         warning={null}
         error={null}
         failedCount={0}
+        running
       />,
     );
 
@@ -50,6 +51,7 @@ describe("MovSynerPosProgress", () => {
         warning={null}
         error={null}
         failedCount={0}
+        running={false}
         onRetry={onRetry}
       />,
     );
@@ -68,6 +70,7 @@ describe("MovSynerPosProgress", () => {
         warning={null}
         error={null}
         failedCount={0}
+        running={false}
       />,
     );
 
@@ -83,6 +86,7 @@ describe("MovSynerPosProgress", () => {
         warning="B004-1: Documento no encontrado en SynerCom."
         error={null}
         failedCount={2}
+        running={false}
         onRetry={onRetry}
       />,
     );
@@ -101,6 +105,7 @@ describe("MovSynerPosProgress", () => {
         warning={null}
         error="No se pudo reenviar a SynerPOS."
         failedCount={0}
+        running={false}
       />,
     );
 
@@ -116,6 +121,7 @@ describe("MovSynerPosProgress", () => {
         warning={null}
         error={null}
         failedCount={0}
+        running={false}
       />,
     );
     expect(container.firstChild).toBeNull();

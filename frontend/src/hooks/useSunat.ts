@@ -15,6 +15,10 @@ import type {
   SunatSelectable,
   SunatSubmissionResponse,
 } from "../api/types";
+import {
+  outcomeFromCounts,
+  type OperationStatus,
+} from "../operations/types";
 
 const POLL_MS = 3000;
 /** First job poll runs sooner so small batches finish without a 3 s wait. */
@@ -361,6 +365,7 @@ function singleCompletedProgress(
 export function useSunat(onAuthFailure: () => void) {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<OperationStatus>("idle");
   const [progress, setProgress] = useState<SunatProgressState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -377,6 +382,7 @@ export function useSunat(onAuthFailure: () => void) {
     refreshRef.current = null;
     setBusy(false);
     setRefreshing(false);
+    setStatus("idle");
     setProgress(null);
     setNotice(null);
     setWarning(null);
@@ -385,14 +391,19 @@ export function useSunat(onAuthFailure: () => void) {
 
   const dismissProgress = useCallback(() => {
     setProgress(null);
+    setStatus("idle");
   }, []);
 
   const cancel = useCallback(async () => {
-    controllerRef.current?.abort();
+    // Sin controlador activo no hay nada que cancelar: no se debe escribir un
+    // warning falso ni pisar el diagnóstico real de la operación.
+    if (!controllerRef.current) return;
+    controllerRef.current.abort();
     controllerRef.current = null;
     const refresh = refreshRef.current;
     refreshRef.current = null;
     setBusy(false);
+    setStatus("cancelled");
     setProgress(null);
     setNotice(null);
     setError(null);
@@ -425,10 +436,19 @@ export function useSunat(onAuthFailure: () => void) {
 
       setBusy(true);
       setRefreshing(false);
+      setStatus("running");
       setProgress(null);
       setNotice(null);
       setWarning(null);
       setError(null);
+
+      /**
+       * Resultado terminal de esta ejecución. Se fija en cada camino de salida
+       * y se publica en el `finally` (solo si esta ejecución sigue siendo la
+       * dueña del controlador), de modo que ningún camino deja el modal en
+       * "running" para siempre.
+       */
+      let outcome: OperationStatus = "completed";
 
       const refreshResults = async () => {
         // SUNAT work is over: stop the validation spinner and expose the
@@ -495,6 +515,10 @@ export function useSunat(onAuthFailure: () => void) {
               skippedUnconfirmed,
             ),
           );
+          outcome =
+            String(result.estado || "").trim().toUpperCase() === "ERROR"
+              ? "failed"
+              : "completed";
           const omittedNotes: string[] = [];
           if (skippedAccepted > 0) {
             omittedNotes.push(
@@ -543,6 +567,7 @@ export function useSunat(onAuthFailure: () => void) {
         const messages = submissionMessages(data);
 
         if (String(data.estado || "").toUpperCase() === "ERROR") {
+          outcome = "failed";
           setError(
             data.mensaje ||
               messages.join(" ") ||
@@ -553,6 +578,9 @@ export function useSunat(onAuthFailure: () => void) {
         }
 
         if (!data.trabajos.length) {
+          // Nada se encoló (todo aceptado, en proceso o inválido): la
+          // operación terminó aunque `progress` conserve la fase de envío.
+          outcome = outcomeFromCounts(data.errores.length);
           setNotice(
             messages.join(" ") ||
               (data.omitidos.aceptados > 0
@@ -650,12 +678,20 @@ export function useSunat(onAuthFailure: () => void) {
         }
 
         await refreshResults();
+        outcome = outcomeFromCounts(
+          (pollingPaused ? 1 : 0) + aggregate.errors,
+        );
       } catch (err: unknown) {
-        if (err instanceof RequestAbortedError) return;
+        if (err instanceof RequestAbortedError) {
+          outcome = "cancelled";
+          return;
+        }
         if (err instanceof AuthError) {
+          outcome = "idle";
           onAuthFailure();
           return;
         }
+        outcome = "failed";
         setError(err instanceof Error ? err.message : "Error SUNAT");
         await refreshResults();
       } finally {
@@ -664,6 +700,7 @@ export function useSunat(onAuthFailure: () => void) {
           refreshRef.current = null;
           setBusy(false);
           setRefreshing(false);
+          setStatus(outcome);
         }
       }
     },
@@ -673,6 +710,7 @@ export function useSunat(onAuthFailure: () => void) {
   return {
     busy,
     refreshing,
+    status,
     progress,
     notice,
     warning,

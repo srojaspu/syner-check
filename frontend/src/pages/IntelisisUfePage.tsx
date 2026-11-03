@@ -18,15 +18,10 @@ import {
   NotificationHost,
   type NotificationItem,
 } from "@/components/NotificationCenter";
-import { OperationProgressDialog } from "@/components/OperationProgressDialog";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
-import {
-  SunatProgress,
-  isSunatProgressTerminal,
-} from "@/components/SunatProgress";
 import { Tabs } from "@/components/Tabs";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
@@ -39,7 +34,7 @@ import type {
 import { useIntelisisReenvio } from "../hooks/useIntelisisReenvio";
 import { useIntelisisUfe } from "../hooks/useIntelisisUfe";
 import { useIntelisisUfeSinDocumento } from "../hooks/useIntelisisUfeSinDocumento";
-import { useSunat } from "../hooks/useSunat";
+import { useOperations } from "../operations/OperationsContext";
 import { SUNAT_LOTE_MAX } from "../api/client";
 
 const MAX_DIAS = 31;
@@ -71,7 +66,7 @@ export default function IntelisisUfePage({
   onAuthFailure: () => void;
 }) {
   const ufe = useIntelisisUfe(onAuthFailure);
-  const sunat = useSunat(onAuthFailure);
+  const { sunat, active: operacionActiva } = useOperations();
   const reenvio = useIntelisisReenvio(onAuthFailure);
   const [modo, setModo] = useState<"range" | "number">("range");
   const [range, setRange] = useState<DateRange | undefined>(() => {
@@ -348,7 +343,7 @@ export default function IntelisisUfePage({
       list.push({
         id: "ufe-disabled",
         signature: "ufe-disabled",
-        tone: "warning",
+        tone: "info",
         content: (
           <NotificationAlert
             tone="info"
@@ -366,7 +361,7 @@ export default function IntelisisUfePage({
         tone: "warning",
         content: (
           <NotificationAlert
-            tone="info"
+            tone="warning"
             title="Listado recortado"
             description={`Se muestran ${ufe.maxFilas.toLocaleString("es-PE")} de ${ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan el filtro. Afina el periodo o usa los filtros (resultado, generador, tipo) para ver el resto.`}
           />
@@ -374,53 +369,10 @@ export default function IntelisisUfePage({
       });
     }
 
-    if (sunat.error) {
-      list.push({
-        id: "ufe-sunat-error",
-        signature: `sunat-error:${sunat.error}`,
-        tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No se pudo validar en SUNAT"
-            description={sunat.error}
-          />
-        ),
-      });
-    }
-
-    if (sunat.warning) {
-      list.push({
-        id: "ufe-sunat-warning",
-        signature: `sunat-warning:${sunat.warning}`,
-        tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Validación en SUNAT"
-            description={sunat.warning}
-          />
-        ),
-      });
-    }
-
-    if (sunat.notice && !sunat.busy && !sunat.refreshing) {
-      list.push({
-        id: "ufe-sunat-notice",
-        signature: `sunat-notice:${sunat.notice}`,
-        tone: "info",
-        content: (
-          <NotificationAlert
-            tone="info"
-            title="Validación en SUNAT"
-            description={sunat.notice}
-          />
-        ),
-      });
-    }
-
     if (ufe.aviso || ufe.errorValidacion) {
-      const detalleTone = ufe.errorValidacion ? "error" : "info";
+      const detalleTone: NotificationItem["tone"] = ufe.errorValidacion
+        ? "error"
+        : "info";
       const detalleMsg = ufe.errorValidacion || ufe.aviso || "";
       list.push({
         id: "ufe-detalle-sunat",
@@ -451,7 +403,10 @@ export default function IntelisisUfePage({
           reenvio.aviso ?? "",
         ].join("|"),
         tone: rechazados > 0 ? "warning" : "info",
+        // El aviso trae su propio botón de cierre y no debe desvanecerse:
+        // los rechazos son información auditable del reenvío.
         hideCloseButton: true,
+        persistent: true,
         onDismiss: reenvio.limpiarMensajes,
         content: (
           <IntelisisUfeReenvioAviso
@@ -474,11 +429,6 @@ export default function IntelisisUfePage({
     ufe.filtradosTotal,
     ufe.aviso,
     ufe.errorValidacion,
-    sunat.notice,
-    sunat.warning,
-    sunat.error,
-    sunat.busy,
-    sunat.refreshing,
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,
@@ -557,8 +507,12 @@ export default function IntelisisUfePage({
           total: consultables.length,
           excedido: loteExcedido,
           busy: sunat.busy,
+          disabled: operacionActiva,
           limite: SUNAT_LOTE_MAX,
-          onValidar: () => setSunatDialogOpen(true),
+          onValidar: () => {
+            if (operacionActiva) return;
+            setSunatDialogOpen(true);
+          },
         }}
         exportar={{
           total: visibles.length,
@@ -639,6 +593,9 @@ export default function IntelisisUfePage({
         onOpenChange={setSunatDialogOpen}
         rows={consultables}
         onConfirm={(scope) => {
+          // Nunca dos operaciones largas a la vez: el host solo puede mostrar
+          // un modal de progreso.
+          if (operacionActiva) return;
           void sunat.runBatch(consultables, refrescar, scope);
         }}
       />
@@ -653,28 +610,7 @@ export default function IntelisisUfePage({
         onClose={ufe.cerrarDetalle}
       />
 
-      <OperationProgressDialog
-        open={Boolean(sunat.progress)}
-        running={
-          Boolean(sunat.progress) && !isSunatProgressTerminal(sunat.progress)
-        }
-        title="Progreso de validación en SUNAT"
-        description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
-        riskDescription="Si cancelas ahora, se detendrá el envío de lotes pendientes y el seguimiento en pantalla. Los lotes que ya fueron registrados en el servidor seguirán procesándose en segundo plano para evitar inconsistencias o cobros duplicados de cuota."
-        onCancel={() => {
-          void sunat.cancel();
-        }}
-        onClose={sunat.dismissProgress}
-      >
-        <SunatProgress
-          progress={sunat.progress}
-          notice={null}
-          warning={null}
-          error={null}
-        />
-      </OperationProgressDialog>
-
-      <NotificationHost sourceId="intelisis-ufe" items={notificationItems} />
+      <NotificationHost items={notificationItems} />
     </div>
   );
 }

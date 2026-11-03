@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  Cancel01Icon,
   CheckmarkCircle02Icon,
   Loading02Icon,
   TriangleAlertIcon,
@@ -15,10 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  isOperationRunning,
+  type OperationStatus,
+} from "@/operations/types";
 
 export interface OperationProgressDialogProps {
   open: boolean;
-  running: boolean;
+  status: OperationStatus;
   title: string;
   description: string;
   riskTitle?: string;
@@ -28,17 +33,75 @@ export interface OperationProgressDialogProps {
   onClose: () => void;
 }
 
+/** Icono del encabezado: cuatro resultados distintos, no solo giro/check. */
+function StatusIcon({ status }: { status: OperationStatus }) {
+  if (status === "running") {
+    return (
+      <HugeiconsIcon
+        icon={Loading02Icon}
+        size={18}
+        strokeWidth={2}
+        className="animate-spin text-primary"
+        aria-hidden
+      />
+    );
+  }
+  if (status === "completed") {
+    return (
+      <HugeiconsIcon
+        icon={CheckmarkCircle02Icon}
+        size={18}
+        strokeWidth={2}
+        className="text-emerald-600 dark:text-emerald-400"
+        aria-hidden
+      />
+    );
+  }
+  if (status === "partial") {
+    return (
+      <HugeiconsIcon
+        icon={TriangleAlertIcon}
+        size={18}
+        strokeWidth={2}
+        className="text-amber-600 dark:text-amber-400"
+        aria-hidden
+      />
+    );
+  }
+  if (status === "failed") {
+    return (
+      <HugeiconsIcon
+        icon={TriangleAlertIcon}
+        size={18}
+        strokeWidth={2}
+        className="text-destructive"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <HugeiconsIcon
+      icon={Cancel01Icon}
+      size={18}
+      strokeWidth={2}
+      className="text-muted-foreground"
+      aria-hidden
+    />
+  );
+}
+
 /**
  * Modal dedicado para procesos de validación en SUNAT y reenvío a MovSynerPos.
  *
  * - Ignora clics fuera del modal (`outside-press`) para evitar cierres accidentales.
- * - Mientras `running` es true, cualquier intento de cerrar (botón X, Escape o
+ * - Mientras el estado es `running`, cualquier intento de cerrar (Escape o
  *   botón "Cancelar proceso") exige confirmación explícita advirtiendo los riesgos.
- * - Cuando `running` pasa a false, permite cerrar directamente para volver a la vista.
+ * - El icono del título y el botón del pie salen del estado de dominio, no de
+ *   un booleano: un fallo o un resultado parcial no se pintan como éxito.
  */
 export function OperationProgressDialog({
   open,
-  running,
+  status,
   title,
   description,
   riskTitle = "¿Deseas cancelar el proceso en curso?",
@@ -48,6 +111,7 @@ export function OperationProgressDialog({
   onClose,
 }: OperationProgressDialogProps) {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const running = isOperationRunning(status);
 
   useEffect(() => {
     if (!open || !running) {
@@ -73,26 +137,14 @@ export function OperationProgressDialog({
         }
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        showCloseButton={false}
+        aria-busy={running}
+        className="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {running ? (
-              <HugeiconsIcon
-                icon={Loading02Icon}
-                size={18}
-                strokeWidth={2}
-                className="animate-spin text-primary"
-                aria-hidden
-              />
-            ) : (
-              <HugeiconsIcon
-                icon={CheckmarkCircle02Icon}
-                size={18}
-                strokeWidth={2}
-                className="text-emerald-600 dark:text-emerald-400"
-                aria-hidden
-              />
-            )}
+            <StatusIcon status={status} />
             {title}
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>

@@ -5,6 +5,10 @@ import type {
   MovSynerPosResponse,
   Voucher,
 } from "../api/types";
+import {
+  outcomeFromCounts,
+  type OperationStatus,
+} from "../operations/types";
 
 /** Small batches bound the blast radius of one failed request. */
 const BATCH_SIZE = 10;
@@ -124,6 +128,7 @@ function failureMessages(data: MovSynerPosResponse): string[] {
 export function useMovSynerPos(onAuthFailure: () => void) {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<OperationStatus>("idle");
   const [progress, setProgress] = useState<MovSynerPosProgressState | null>(
     null,
   );
@@ -133,6 +138,11 @@ export function useMovSynerPos(onAuthFailure: () => void) {
   const [failed, setFailed] = useState<MovSynerPosRequestDocumento[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
   const refreshRef = useRef<(() => Promise<void> | void) | null>(null);
+  /** Último refresco conocido: permite reintentar sin volver a cablearlo. */
+  const lastRefreshRef = useRef<(() => Promise<void> | void) | null>(null);
+  const lastRepararRef = useRef(false);
+  /** Copia síncrona del progreso: `cancel` no puede leer estado con deps []. */
+  const progressRef = useRef<MovSynerPosProgressState | null>(null);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
@@ -140,8 +150,12 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     controllerRef.current?.abort();
     controllerRef.current = null;
     refreshRef.current = null;
+    lastRefreshRef.current = null;
+    lastRepararRef.current = false;
+    progressRef.current = null;
     setBusy(false);
     setRefreshing(false);
+    setStatus("idle");
     setProgress(null);
     setNotice(null);
     setWarning(null);
@@ -151,26 +165,29 @@ export function useMovSynerPos(onAuthFailure: () => void) {
 
   const dismissProgress = useCallback(() => {
     setProgress(null);
+    setStatus("idle");
   }, []);
 
   const cancel = useCallback(async () => {
-    controllerRef.current?.abort();
+    if (!controllerRef.current) return;
+    controllerRef.current.abort();
     controllerRef.current = null;
     const refresh = refreshRef.current;
     refreshRef.current = null;
+    const current = progressRef.current;
+    const procesados = current?.enviados ?? 0;
+    const total = current?.total ?? 0;
+    progressRef.current = null;
     setBusy(false);
-    setProgress((prev) => {
-      const procesados = prev?.enviados ?? 0;
-      const total = prev?.total ?? 0;
-      setWarning(
-        procesados > 0
-          ? `Envío a MovSynerPos cancelado por el usuario (${procesados} de ${total} documentos procesados antes de detenerse).`
-          : "Envío a MovSynerPos cancelado por el usuario.",
-      );
-      return null;
-    });
+    setStatus("cancelled");
+    setProgress(null);
     setNotice(null);
     setError(null);
+    setWarning(
+      procesados > 0
+        ? `Envío a MovSynerPos cancelado por el usuario (${procesados} de ${total} documentos procesados antes de detenerse).`
+        : "Envío a MovSynerPos cancelado por el usuario.",
+    );
     if (refresh) {
       setRefreshing(true);
       try {
@@ -194,11 +211,19 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       const controller = new AbortController();
       controllerRef.current = controller;
       refreshRef.current = refresh;
+      lastRefreshRef.current = refresh;
+      lastRepararRef.current = reparar;
       const { signal } = controller;
 
       setBusy(true);
       setRefreshing(false);
-      setProgress({ ...EMPTY_PROGRESS, total: documentos.length });
+      setStatus("running");
+      const initial: MovSynerPosProgressState = {
+        ...EMPTY_PROGRESS,
+        total: documentos.length,
+      };
+      progressRef.current = initial;
+      setProgress(initial);
       setNotice(null);
       setWarning(null);
       setError(null);
@@ -223,12 +248,16 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       const failedDocuments: MovSynerPosRequestDocumento[] = [];
       const messages: string[] = [];
 
+      /** Resultado terminal; se publica en el `finally` del dueño actual. */
+      let outcome: OperationStatus = "completed";
+
       try {
         for (let index = 0; index < documentos.length; index += BATCH_SIZE) {
           if (signal.aborted) throw new RequestAbortedError();
           const chunk = documentos.slice(index, index + BATCH_SIZE);
           const data = await sendMovSynerPos(chunk, reparar, signal);
           aggregate = accumulate(aggregate, data, chunk.length);
+          progressRef.current = aggregate;
           setProgress(aggregate);
           failedDocuments.push(...failureIdentity(data, chunk));
           messages.push(...failureMessages(data));
@@ -240,9 +269,16 @@ export function useMovSynerPos(onAuthFailure: () => void) {
           setWarning(messages.slice(0, 3).join(" "));
         }
         await refreshResults();
+        outcome = outcomeFromCounts(
+          aggregate.errores + aggregate.conflictos,
+        );
       } catch (err: unknown) {
-        if (err instanceof RequestAbortedError) return;
+        if (err instanceof RequestAbortedError) {
+          outcome = "cancelled";
+          return;
+        }
         if (err instanceof AuthError) {
+          outcome = "idle";
           onAuthFailure();
           return;
         }
@@ -252,12 +288,14 @@ export function useMovSynerPos(onAuthFailure: () => void) {
         setFailed(failedDocuments);
         setError(err instanceof Error ? err.message : "Error MovSynerPos");
         await refreshResults();
+        outcome = "failed";
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
           refreshRef.current = null;
           setBusy(false);
           setRefreshing(false);
+          setStatus(outcome);
         }
       }
     },
@@ -274,14 +312,18 @@ export function useMovSynerPos(onAuthFailure: () => void) {
   );
 
   const retry = useCallback(
-    (refresh: () => Promise<void> | void, reparar = false) =>
-      execute(failed, refresh, reparar),
+    (reparar?: boolean) => {
+      const refresh = lastRefreshRef.current;
+      if (!refresh) return Promise.resolve();
+      return execute(failed, refresh, reparar ?? lastRepararRef.current);
+    },
     [execute, failed],
   );
 
   return {
     busy,
     refreshing,
+    status,
     progress,
     notice,
     warning,

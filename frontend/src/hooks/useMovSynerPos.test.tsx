@@ -73,6 +73,7 @@ describe("useMovSynerPos", () => {
     });
     expect(result.current.notice).toContain("23 insertados");
     expect(result.current.busy).toBe(false);
+    expect(result.current.status).toBe("completed");
     expect(result.current.failed).toEqual([]);
   });
 
@@ -109,7 +110,7 @@ describe("useMovSynerPos", () => {
     expect(result.current.warning).toContain("SynerCom");
 
     await act(async () => {
-      await result.current.retry(refresh);
+      await result.current.retry();
     });
     expect(sendMock).toHaveBeenCalledTimes(2);
     expect(sendMock.mock.calls[1][0]).toEqual([
@@ -133,6 +134,7 @@ describe("useMovSynerPos", () => {
     expect(result.current.error).toContain("SynerPOS");
     expect(result.current.failed).toHaveLength(2);
     expect(result.current.busy).toBe(false);
+    expect(result.current.status).toBe("failed");
   });
 
   it("routes 401 to the auth handler", async () => {
@@ -182,5 +184,36 @@ describe("useMovSynerPos", () => {
     expect(result.current.progress).toBeNull();
     expect(result.current.error).toBeNull();
     expect(result.current.failed).toEqual([]);
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("no inventa una cancelacion cuando no hay operacion en curso", async () => {
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+
+    await act(async () => {
+      await result.current.cancel();
+    });
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(result.current.warning).toBeNull();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("publica el resultado terminal aunque el envio falle a mitad de camino", async () => {
+    sendMock.mockRejectedValueOnce(new Error("Sin conexion"));
+
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+    await act(async () => {
+      await result.current.run([row(0)], vi.fn());
+    });
+
+    expect(result.current.status).toBe("failed");
+    // El modal ya no puede quedarse girando: el resultado es terminal.
+    expect(result.current.busy).toBe(false);
+    expect(result.current.progress).not.toBeNull();
+
+    act(() => result.current.dismissProgress());
+    expect(result.current.progress).toBeNull();
+    expect(result.current.status).toBe("idle");
   });
 });

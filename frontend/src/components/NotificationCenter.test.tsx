@@ -7,7 +7,7 @@ import {
   type NotificationItem,
 } from "./NotificationCenter";
 import { OperationProgressDialog } from "./OperationProgressDialog";
-import { SunatProgress, isSunatProgressTerminal } from "./SunatProgress";
+import { SunatProgress } from "./SunatProgress";
 import type { SunatProgressState } from "../hooks/useSunat";
 
 afterEach(() => {
@@ -49,6 +49,34 @@ describe("NotificationHost", () => {
       screen.queryByText("Algunos comprobantes quedaron pendientes."),
     ).toBeNull();
   });
+
+  it("vuelve a mostrar un aviso descartado si el estado se limpia y reaparece", () => {
+    const item: NotificationItem = {
+      id: "ufe-error",
+      signature: "ufe-error:sin-conexion",
+      tone: "error",
+      content: (
+        <NotificationAlert
+          tone="error"
+          title="No fue posible consultar"
+          description="Sin conexión con Intelisis."
+        />
+      ),
+    };
+
+    const { rerender } = render(<NotificationHost items={[item]} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cerrar notificación" }),
+    );
+    expect(screen.queryByText("Sin conexión con Intelisis.")).toBeNull();
+
+    // El origen se limpia (nueva consulta) y el mismo error vuelve a ocurrir:
+    // no debe quedar silenciado por el descarte anterior.
+    rerender(<NotificationHost items={[]} />);
+    rerender(<NotificationHost items={[item]} />);
+
+    expect(screen.getByText("Sin conexión con Intelisis.")).toBeTruthy();
+  });
 });
 
 describe("OperationProgressDialog · cancelacion segura", () => {
@@ -59,7 +87,7 @@ describe("OperationProgressDialog · cancelacion segura", () => {
     render(
       <OperationProgressDialog
         open={true}
-        running={true}
+        status="running"
         title="Progreso de validación en SUNAT"
         description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
         riskDescription="Los lotes ya registrados seguirán procesándose en segundo plano."
@@ -93,8 +121,12 @@ describe("OperationProgressDialog · cancelacion segura", () => {
       screen.queryByText("¿Deseas cancelar el proceso en curso?"),
     ).toBeNull();
 
-    // Si pulsa el botón X de cerrar el modal mientras corre, también pide confirmación
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    // Si pulsa Escape mientras corre, también pide confirmación (el modal no
+    // duplica el botón "Cerrar": la única salida es cancelar el proceso).
+    fireEvent.keyDown(screen.getByRole("dialog"), {
+      key: "Escape",
+      code: "Escape",
+    });
     expect(
       screen.getByText("¿Deseas cancelar el proceso en curso?"),
     ).toBeTruthy();
@@ -114,7 +146,7 @@ describe("OperationProgressDialog · cancelacion segura", () => {
     render(
       <OperationProgressDialog
         open={true}
-        running={false}
+        status="completed"
         title="Progreso de envío a MovSynerPos"
         description="Proceso finalizado."
         riskDescription="Riesgo"
@@ -125,13 +157,12 @@ describe("OperationProgressDialog · cancelacion segura", () => {
       </OperationProgressDialog>,
     );
 
-    const cerrarButtons = screen.getAllByRole("button", { name: "Cerrar" });
-    fireEvent.click(cerrarButtons[cerrarButtons.length - 1]);
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
   });
 
-  it("sincroniza en el mismo render el estado Completado de SunatProgress con el icono y el boton Cerrar del modal", () => {
+  it("pinta el resultado terminal sin boton de cancelar y con un solo Cerrar", () => {
     const completedProgress: SunatProgressState = {
       phase: "job",
       jobIndex: 1,
@@ -155,13 +186,10 @@ describe("OperationProgressDialog · cancelacion segura", () => {
       chunksTotal: 1,
     };
 
-    const running = !isSunatProgressTerminal(completedProgress);
-    expect(running).toBe(false);
-
     render(
       <OperationProgressDialog
         open={true}
-        running={running}
+        status="completed"
         title="Progreso de validación en SUNAT"
         description="Consultando el estado de los comprobantes."
         riskDescription="Riesgo"
@@ -181,6 +209,45 @@ describe("OperationProgressDialog · cancelacion segura", () => {
     expect(
       screen.queryByRole("button", { name: "Cancelar proceso" }),
     ).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByRole("button", { name: "Cerrar" })).toHaveLength(1);
+  });
+
+  it("marca aria-busy solo mientras la operacion sigue en curso", () => {
+    const { rerender } = render(
+      <OperationProgressDialog
+        open={true}
+        status="running"
+        title="Progreso"
+        description="En curso"
+        riskDescription="Riesgo"
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+      >
+        <div>50%</div>
+      </OperationProgressDialog>,
+    );
+
+    expect(
+      screen.getByRole("dialog").getAttribute("aria-busy"),
+    ).toBe("true");
+
+    rerender(
+      <OperationProgressDialog
+        open={true}
+        status="failed"
+        title="Progreso"
+        description="Con error"
+        riskDescription="Riesgo"
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+      >
+        <div>50%</div>
+      </OperationProgressDialog>,
+    );
+
+    expect(
+      screen.getByRole("dialog").getAttribute("aria-busy"),
+    ).toBe("false");
+    expect(screen.getByRole("button", { name: "Cerrar" })).toBeTruthy();
   });
 });

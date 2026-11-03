@@ -78,6 +78,7 @@ describe("useSunat · lote y fast-path unitario", () => {
     expect(forzar).toBe(false);
     expect(result.current.progress?.estado).toBe("COMPLETADO");
     expect(result.current.progress?.porcentaje).toBe(100);
+    expect(result.current.status).toBe("completed");
     expect(refresh).toHaveBeenCalled();
   });
 
@@ -119,5 +120,54 @@ describe("useSunat · lote y fast-path unitario", () => {
       importe_sunat: 1679.57,
     });
     expect(refresh).toHaveBeenCalled();
+    expect(result.current.status).toBe("completed");
+  });
+
+  it("marca failed y no deja el modal en curso cuando el lote se rechaza", async () => {
+    submitMock.mockClear();
+    revalidateMock.mockReset();
+    const rechazo = {
+      ...cola(),
+      estado: "ERROR",
+      mensaje: "SUNAT no disponible.",
+    };
+    submitMock.mockResolvedValue(rechazo);
+    statusMock.mockResolvedValue(rechazo);
+    const { result } = renderHook(() => useSunat(vi.fn()));
+
+    await act(async () => {
+      await result.current.runBatch(
+        [
+          {
+            tipo: "01",
+            number: "F710-00213172",
+            date: "2026-10-26",
+            crossTotal: 10,
+          },
+          {
+            tipo: "01",
+            number: "F710-00213173",
+            date: "2026-10-26",
+            crossTotal: 10,
+          },
+        ],
+        vi.fn(),
+      );
+    });
+
+    expect(result.current.error).toContain("SUNAT no disponible");
+    expect(result.current.status).toBe("failed");
+    expect(result.current.busy).toBe(false);
+  });
+
+  it("no inventa una cancelacion cuando no hay validacion en curso", async () => {
+    const { result } = renderHook(() => useSunat(vi.fn()));
+
+    await act(async () => {
+      await result.current.cancel();
+    });
+
+    expect(result.current.warning).toBeNull();
+    expect(result.current.status).toBe("idle");
   });
 });

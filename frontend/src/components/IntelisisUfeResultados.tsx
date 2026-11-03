@@ -43,6 +43,8 @@ interface IntelisisUfeResultadosProps {
     total: number;
     excedido: boolean;
     busy: boolean;
+    /** Hay otra operación larga en curso: no se puede iniciar esta. */
+    disabled: boolean;
     limite: number;
     onValidar: () => void;
   };
@@ -133,7 +135,7 @@ export function IntelisisUfeResultados({
           <Button
             type="button"
             variant="outline"
-            disabled={!sunat.total || sunat.busy || sunat.excedido}
+            disabled={!sunat.total || sunat.busy || sunat.disabled || sunat.excedido}
             onClick={sunat.onValidar}
             title={tituloSunat}
           >

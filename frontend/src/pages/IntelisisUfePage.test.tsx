@@ -87,8 +87,21 @@ vi.mock("../hooks/useIntelisisUfeSinDocumento", () => ({
   useIntelisisUfeSinDocumento: () => mocks.sinDocumento,
 }));
 
-vi.mock("../hooks/useSunat", () => ({
-  useSunat: () => mocks.sunat,
+vi.mock("../operations/OperationsContext", () => ({
+  useOperations: () => ({
+    active: false,
+    sunat: mocks.sunat,
+    movsynerpos: {
+      busy: false,
+      status: "idle",
+      progress: null,
+      reset: vi.fn(),
+      run: vi.fn(),
+      retry: vi.fn(),
+      cancel: vi.fn(),
+      dismissProgress: vi.fn(),
+    },
+  }),
 }));
 
 vi.mock("../hooks/useIntelisisReenvio", () => ({

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { fireEvent } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Voucher } from "./api/types";
 
@@ -15,9 +16,11 @@ const mocks = vi.hoisted(() => ({
     },
   },
   rows: [] as Voucher[],
+  ufeMounts: 0,
   movsynerpos: {
     busy: false,
     refreshing: false,
+    status: "idle",
     progress: null,
     notice: null,
     warning: null,
@@ -26,6 +29,8 @@ const mocks = vi.hoisted(() => ({
     reset: vi.fn(),
     run: vi.fn(),
     retry: vi.fn(),
+    cancel: vi.fn(),
+    dismissProgress: vi.fn(),
   },
 }));
 
@@ -69,17 +74,29 @@ vi.mock("./hooks/useSunat", () => ({
   useSunat: () => ({
     busy: false,
     refreshing: false,
+    status: "idle",
     progress: null,
     notice: null,
     warning: null,
     error: null,
     reset: vi.fn(),
     runBatch: vi.fn(),
+    cancel: vi.fn(),
+    dismissProgress: vi.fn(),
   }),
 }));
 
 vi.mock("./hooks/useMovSynerPos", () => ({
   useMovSynerPos: () => mocks.movsynerpos,
+}));
+
+vi.mock("./pages/IntelisisUfePage", () => ({
+  default: () => {
+    useEffect(() => {
+      mocks.ufeMounts += 1;
+    }, []);
+    return <div>Pantalla UFE</div>;
+  },
 }));
 
 import App from "./App";
@@ -117,9 +134,18 @@ describe("App", () => {
   beforeEach(() => {
     mocks.session.ready = false;
     mocks.rows = [];
+    mocks.ufeMounts = 0;
     mocks.movsynerpos.run.mockReset();
+    window.location.hash = "";
     stubMatchMedia();
   });
+
+  function goTo(hash: string) {
+    act(() => {
+      window.location.hash = hash;
+      window.dispatchEvent(new Event("hashchange"));
+    });
+  }
 
   it("keeps hook order when the session becomes ready", () => {
     const { rerender } = render(<App />);
@@ -158,5 +184,22 @@ describe("App", () => {
     expect(mocks.movsynerpos.run).toHaveBeenCalledTimes(1);
     expect(mocks.movsynerpos.run.mock.calls[0][0]).toHaveLength(2);
     expect(mocks.movsynerpos.run.mock.calls[0][2]).toBe(false);
+  });
+
+  it("mantiene ambas pantallas montadas al cambiar de ruta", async () => {
+    mocks.session.ready = true;
+    render(<App />);
+
+    goTo("#/intelisis-ufe");
+    expect(await screen.findByText("Pantalla UFE")).toBeTruthy();
+    expect(mocks.ufeMounts).toBe(1);
+
+    goTo("#/comprobantes");
+    await waitFor(() => expect(screen.getByText("Resultados")).toBeTruthy());
+
+    // La pantalla UFE sigue montada (oculta): volver no reinicia su estado ni
+    // aborta una operación en curso.
+    expect(screen.getByText("Pantalla UFE")).toBeTruthy();
+    expect(mocks.ufeMounts).toBe(1);
   });
 });
