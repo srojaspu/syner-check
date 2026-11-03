@@ -314,6 +314,8 @@ export default function IntelisisUfePage({
         id: "ufe-form-error",
         signature: `form:${formError}`,
         tone: "error",
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: `Revisa el periodo: ${formError}`,
         onDismiss: () => setFormError(null),
         content: (
@@ -331,6 +333,8 @@ export default function IntelisisUfePage({
         id: "ufe-query-error",
         signature: `query:${ufe.error}`,
         tone: "error",
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: `Consulta UFE: ${ufe.error}`,
         content: (
           <NotificationAlert
@@ -347,6 +351,8 @@ export default function IntelisisUfePage({
         id: "ufe-disabled",
         signature: "ufe-disabled",
         tone: "warning",
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: "Intelisis no disponible",
         content: (
           <NotificationAlert
@@ -363,6 +369,8 @@ export default function IntelisisUfePage({
         id: "ufe-truncado",
         signature: `truncado:${ufe.maxFilas}:${ufe.filtradosTotal}`,
         tone: "warning",
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: `Listado recortado (${ufe.maxFilas} de ${ufe.filtradosTotal})`,
         content: (
           <NotificationAlert
@@ -402,6 +410,9 @@ export default function IntelisisUfePage({
         ].join("|"),
         tone: sunatTone,
         running: sunatRunning,
+        progressPercent: sunat.progress?.porcentaje,
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: `SUNAT: ${sunatSummary}`,
         content: (
           <SunatProgress
@@ -430,6 +441,8 @@ export default function IntelisisUfePage({
         signature: `detalle-sunat:${ufe.validando ?? ""}:${ufe.aviso ?? ""}:${ufe.errorValidacion ?? ""}`,
         tone: detalleTone,
         running: detalleRunning,
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
         summary: detalleMsg,
         content: (
           <NotificationAlert
@@ -447,21 +460,38 @@ export default function IntelisisUfePage({
       });
     }
 
-    if (reenvio.resultado || reenvio.aviso) {
+    if (reenvio.enviando || reenvio.resultado || reenvio.aviso) {
       const rechazados = reenvio.resultado?.rechazados ?? 0;
+      const reenvioRunning = reenvio.enviando;
       list.push({
         id: "ufe-reenvio",
         signature: [
+          reenvioRunning ? "enviando" : "listo",
           reenvio.resultado?.encolados ?? 0,
           reenvio.resultado?.duplicados ?? 0,
           reenvio.resultado?.rechazados ?? 0,
           reenvio.aviso ?? "",
         ].join("|"),
-        tone: rechazados > 0 ? "warning" : "success",
-        summary: reenvio.aviso || "Reenvío al generador UFE",
-        hideCloseButton: true,
+        tone: reenvioRunning
+          ? "info"
+          : rechazados > 0
+            ? "warning"
+            : "success",
+        running: reenvioRunning,
+        originLabel: "Intelisis UFE",
+        originHref: "#/intelisis-ufe",
+        summary: reenvioRunning
+          ? "Encolando documentos para reenvío al generador UFE…"
+          : reenvio.aviso || "Reenvío al generador UFE",
+        hideCloseButton: !reenvioRunning,
         onDismiss: reenvio.limpiarMensajes,
-        content: (
+        content: reenvioRunning ? (
+          <NotificationAlert
+            tone="info"
+            title="Reenvío al generador UFE"
+            description="Encolando documentos seleccionados en dbo.FE_Reenvio…"
+          />
+        ) : (
           <IntelisisUfeReenvioAviso
             resultado={reenvio.resultado}
             aviso={reenvio.aviso}
@@ -489,6 +519,7 @@ export default function IntelisisUfePage({
     sunat.error,
     sunat.busy,
     sunat.refreshing,
+    reenvio.enviando,
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,

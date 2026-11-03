@@ -185,6 +185,8 @@ export default function ComprobantesPage({
         id: "synerpos-query-error",
         signature: `query-error:${vouchers.error}`,
         tone: "error",
+        originLabel: "SynerPos",
+        originHref: "#/comprobantes",
         summary: `Consulta SynerPos: ${vouchers.error}`,
         content: (
           <NotificationAlert
@@ -224,6 +226,9 @@ export default function ComprobantesPage({
         ].join("|"),
         tone: sunatTone,
         running: sunatRunning,
+        progressPercent: sunat.progress?.porcentaje,
+        originLabel: "SynerPos",
+        originHref: "#/comprobantes",
         summary: `SUNAT: ${sunatSummary}`,
         content: (
           <SunatProgress
@@ -243,6 +248,10 @@ export default function ComprobantesPage({
       movsynerpos.error
     ) {
       const movRunning = movsynerpos.busy || movsynerpos.refreshing;
+      const movTotal = movsynerpos.progress?.total ?? 0;
+      const movEnviados = movsynerpos.progress?.enviados ?? 0;
+      const movPercent =
+        movTotal > 0 ? Math.min(100, (movEnviados / movTotal) * 100) : undefined;
       const movTone = movsynerpos.error
         ? "error"
         : movsynerpos.warning || movsynerpos.failed.length > 0
@@ -269,6 +278,9 @@ export default function ComprobantesPage({
         ].join("|"),
         tone: movTone,
         running: movRunning,
+        progressPercent: movPercent,
+        originLabel: "SynerPos",
+        originHref: "#/comprobantes",
         summary: movSummary,
         content: (
           <MovSynerPosProgress

@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Loading02Icon } from "@hugeicons/core-free-icons";
 import { Account, AppShell, LoginCard, TopBar } from "./components/AppShell";
@@ -35,6 +35,15 @@ function PageSkeleton() {
 function Workspace() {
   const { user, ready, onAuthFailure } = useSession();
   const ruta = useHashRoute();
+  const [visitedUfe, setVisitedUfe] = useState(
+    () => ruta === "intelisis-ufe",
+  );
+
+  useEffect(() => {
+    if (ruta === "intelisis-ufe") {
+      setVisitedUfe(true);
+    }
+  }, [ruta]);
 
   if (!ready) {
     return (
@@ -52,6 +61,8 @@ function Workspace() {
     );
   }
 
+  const isUfe = ruta === "intelisis-ufe";
+
   return (
     <AppShell
       topbar={
@@ -61,13 +72,24 @@ function Workspace() {
         />
       }
     >
-      {ruta === "intelisis-ufe" ? (
-        <Suspense fallback={<PageSkeleton />}>
-          <IntelisisUfePage onAuthFailure={onAuthFailure} />
-        </Suspense>
-      ) : (
+      <div
+        hidden={isUfe}
+        aria-hidden={isUfe}
+        className={isUfe ? "hidden" : "block"}
+      >
         <ComprobantesPage onAuthFailure={onAuthFailure} />
-      )}
+      </div>
+      {visitedUfe || isUfe ? (
+        <div
+          hidden={!isUfe}
+          aria-hidden={!isUfe}
+          className={isUfe ? "block" : "hidden"}
+        >
+          <Suspense fallback={<PageSkeleton />}>
+            <IntelisisUfePage onAuthFailure={onAuthFailure} />
+          </Suspense>
+        </div>
+      ) : null}
     </AppShell>
   );
 }
