@@ -56,9 +56,24 @@ export function IntelisisUfeReenvioPanel({
   const enCola = resumen.EN_COLA ?? panel?.pendientes ?? 0;
   const ejecutando = resumen.EJECUTANDO ?? 0;
 
-  const columns = useMemo(
-    () => intelisisReenvioColumns({ resolviendo, onResolver }),
-    [resolviendo, onResolver],
+  const haySinConfirmar = useMemo(
+    () => activos.some((fila) => fila.Estado === "NO_CONFIRMADO"),
+    [activos],
+  );
+
+  const columnasActivos = useMemo(
+    () =>
+      intelisisReenvioColumns({
+        resolviendo,
+        onResolver,
+        incluirAccion: haySinConfirmar,
+      }),
+    [resolviendo, onResolver, haySinConfirmar],
+  );
+
+  const columnasHistorial = useMemo(
+    () => intelisisReenvioColumns({ incluirAccion: false }),
+    [],
   );
 
   return (
@@ -134,7 +149,7 @@ export function IntelisisUfeReenvioPanel({
           <h3 className="text-sm font-medium">En curso</h3>
           <DataTable.Root
             data={activos}
-            columns={columns}
+            columns={columnasActivos}
             initialPageSize={10}
             resetPageOnDataChange={false}
           >
@@ -157,7 +172,7 @@ export function IntelisisUfeReenvioPanel({
           <h3 className="text-sm font-medium">Historial</h3>
           <DataTable.Root
             data={historial}
-            columns={columns}
+            columns={columnasHistorial}
             initialPageSize={10}
             resetPageOnDataChange={false}
           >

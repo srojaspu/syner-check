@@ -54,6 +54,45 @@ const TIPOS: { value: string; label: string }[] = [
   { value: "08", label: "Nota de débito" },
 ];
 
+const TIPO_LABEL: Record<string, string> = Object.fromEntries(
+  TIPOS.map((tipo) => [tipo.value, tipo.label]),
+);
+
+const ALIAS_CODIGO_TIPO: Record<string, string> = {
+  "1": "01",
+  "01": "01",
+  FA: "01",
+  FACTURA: "01",
+  "3": "03",
+  "03": "03",
+  BO: "03",
+  BOLETA: "03",
+  "7": "07",
+  "07": "07",
+  NC: "07",
+  "NOTA DE CREDITO": "07",
+  "NOTA DE CRÉDITO": "07",
+  "8": "08",
+  "08": "08",
+  ND: "08",
+  "NOTA DE DEBITO": "08",
+  "NOTA DE DÉBITO": "08",
+};
+
+/** Normaliza el código de tipo de `FE_Reenvio.Tipo` (`01`, `03`, `07`, `08`). */
+export function codigoTipoReenvio(valor: string | null | undefined): string {
+  const limpio = String(valor ?? "").trim().toUpperCase();
+  if (!limpio) return "";
+  return ALIAS_CODIGO_TIPO[limpio] ?? limpio;
+}
+
+/** Etiqueta legible del tipo de comprobante (`Factura`, `Boleta`, etc.). */
+export function etiquetaTipoReenvio(valor: string | null | undefined): string {
+  const codigo = codigoTipoReenvio(valor);
+  if (!codigo) return "—";
+  return TIPO_LABEL[codigo] ?? String(valor ?? "").trim();
+}
+
 const texto = (placeholder: string): ColumnFilterConfig => ({
   variant: "text",
   placeholder,
@@ -66,15 +105,17 @@ const seleccion = (options: { value: string; label: string }[]): ColumnFilterCon
 
 /** Columnas de la cola del ERP, compartidas por "En curso" e "Historial". */
 export function intelisisReenvioColumns({
-  resolviendo,
+  resolviendo = null,
   onResolver,
+  incluirAccion = true,
 }: {
-  resolviendo: number | null;
-  onResolver: (fila: IntelisisReenvioFila) => void;
-}): ColumnDef<IntelisisReenvioFila>[] {
+  resolviendo?: number | null;
+  onResolver?: (fila: IntelisisReenvioFila) => void;
+  incluirAccion?: boolean;
+} = {}): ColumnDef<IntelisisReenvioFila>[] {
   const prioridad = (value: ResponsivePriority) => ({ priority: value });
 
-  return [
+  const columnas: ColumnDef<IntelisisReenvioFila>[] = [
     {
       id: "venta",
       header: "Venta",
@@ -91,11 +132,11 @@ export function intelisisReenvioColumns({
     {
       id: "tipo",
       header: "Tipo",
-      accessorFn: (fila) => fila.Tipo,
+      accessorFn: (fila) => codigoTipoReenvio(fila.Tipo),
       filterFn: "equals",
       meta: { priority: "sm", filter: seleccion(TIPOS) },
       cell: ({ row }) => (
-        <Badge variant="outline">{row.original.Tipo || "—"}</Badge>
+        <Badge variant="outline">{etiquetaTipoReenvio(row.original.Tipo)}</Badge>
       ),
     },
     {
@@ -180,7 +221,10 @@ export function intelisisReenvioColumns({
         );
       },
     },
-    {
+  ];
+
+  if (incluirAccion && onResolver) {
+    columnas.push({
       id: "accion",
       header: "Acción",
       enableSorting: false,
@@ -202,6 +246,8 @@ export function intelisisReenvioColumns({
           </div>
         );
       },
-    },
-  ];
+    });
+  }
+
+  return columnas;
 }

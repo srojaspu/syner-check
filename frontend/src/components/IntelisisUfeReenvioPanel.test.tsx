@@ -87,4 +87,29 @@ describe("IntelisisUfeReenvioPanel · filtro por venta", () => {
     expect(screen.getByText("7473657")).toBeTruthy();
     expect(screen.queryByText("7473656")).toBeNull();
   });
+
+  it("muestra el nombre del tipo de documento en lugar del codigo numerico", () => {
+    ver([
+      fila({ ID: 1, IDVenta: 1001, Tipo: "01" }),
+      fila({ ID: 2, IDVenta: 1002, Tipo: "03" }),
+      fila({ ID: 3, IDVenta: 1003, Tipo: "07" }),
+      fila({ ID: 4, IDVenta: 1004, Tipo: "8" }),
+    ]);
+
+    expect(screen.getByText("Factura")).toBeTruthy();
+    expect(screen.getByText("Boleta")).toBeTruthy();
+    expect(screen.getByText("Nota de crédito")).toBeTruthy();
+    expect(screen.getByText("Nota de débito")).toBeTruthy();
+    expect(screen.queryByText("01")).toBeNull();
+    expect(screen.queryByText("03")).toBeNull();
+    expect(screen.queryByText("07")).toBeNull();
+  });
+
+  it("no muestra la columna Acción en el historial ni cuando no hay filas sin confirmar", () => {
+    ver([fila({ ID: 1, IDVenta: 1001, Estado: "FINALIZADO_OK" })]);
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Acción" }),
+    ).toBeNull();
+  });
 });
