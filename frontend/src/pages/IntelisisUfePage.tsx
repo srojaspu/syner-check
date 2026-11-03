@@ -18,6 +18,7 @@ import {
   NotificationHost,
   type NotificationItem,
 } from "@/components/NotificationCenter";
+import { OperationProgressDialog } from "@/components/OperationProgressDialog";
 import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
@@ -314,9 +315,6 @@ export default function IntelisisUfePage({
         id: "ufe-form-error",
         signature: `form:${formError}`,
         tone: "error",
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: `Revisa el periodo: ${formError}`,
         onDismiss: () => setFormError(null),
         content: (
           <NotificationAlert
@@ -333,9 +331,6 @@ export default function IntelisisUfePage({
         id: "ufe-query-error",
         signature: `query:${ufe.error}`,
         tone: "error",
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: `Consulta UFE: ${ufe.error}`,
         content: (
           <NotificationAlert
             tone="error"
@@ -351,9 +346,6 @@ export default function IntelisisUfePage({
         id: "ufe-disabled",
         signature: "ufe-disabled",
         tone: "warning",
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: "Intelisis no disponible",
         content: (
           <NotificationAlert
             tone="info"
@@ -369,9 +361,6 @@ export default function IntelisisUfePage({
         id: "ufe-truncado",
         signature: `truncado:${ufe.maxFilas}:${ufe.filtradosTotal}`,
         tone: "warning",
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: `Listado recortado (${ufe.maxFilas} de ${ufe.filtradosTotal})`,
         content: (
           <NotificationAlert
             tone="info"
@@ -382,77 +371,65 @@ export default function IntelisisUfePage({
       });
     }
 
-    if (sunat.progress || sunat.notice || sunat.warning || sunat.error) {
-      const sunatRunning = sunat.busy || sunat.refreshing;
-      const sunatTone = sunat.error
-        ? "error"
-        : sunat.warning
-          ? "warning"
-          : sunatRunning
-            ? "info"
-            : "success";
-      const sunatSummary =
-        sunat.error ||
-        sunat.warning ||
-        sunat.notice ||
-        sunat.progress?.mensaje ||
-        "Validación SUNAT";
+    if (sunat.error) {
       list.push({
-        id: "ufe-sunat",
-        signature: [
-          sunat.progress?.phase ?? "",
-          sunat.progress?.estado ?? "",
-          sunat.progress?.procesados ?? 0,
-          sunat.progress?.enviados ?? 0,
-          sunat.notice ?? "",
-          sunat.warning ?? "",
-          sunat.error ?? "",
-        ].join("|"),
-        tone: sunatTone,
-        running: sunatRunning,
-        progressPercent: sunat.progress?.porcentaje,
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: `SUNAT: ${sunatSummary}`,
+        id: "ufe-sunat-error",
+        signature: `sunat-error:${sunat.error}`,
+        tone: "error",
         content: (
-          <SunatProgress
-            progress={sunat.progress}
-            notice={sunat.notice}
-            warning={sunat.warning}
-            error={sunat.error}
+          <NotificationAlert
+            tone="error"
+            title="No se pudo validar en SUNAT"
+            description={sunat.error}
           />
         ),
       });
     }
 
-    if (ufe.validando !== null || ufe.aviso || ufe.errorValidacion) {
-      const detalleRunning = ufe.validando !== null;
-      const detalleTone = ufe.errorValidacion
-        ? "error"
-        : detalleRunning
-          ? "info"
-          : "success";
-      const detalleMsg =
-        ufe.errorValidacion ||
-        ufe.aviso ||
-        "Validando comprobante en SUNAT…";
+    if (sunat.warning) {
+      list.push({
+        id: "ufe-sunat-warning",
+        signature: `sunat-warning:${sunat.warning}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Validación en SUNAT"
+            description={sunat.warning}
+          />
+        ),
+      });
+    }
+
+    if (sunat.notice && !sunat.busy && !sunat.refreshing) {
+      list.push({
+        id: "ufe-sunat-notice",
+        signature: `sunat-notice:${sunat.notice}`,
+        tone: "info",
+        content: (
+          <NotificationAlert
+            tone="info"
+            title="Validación en SUNAT"
+            description={sunat.notice}
+          />
+        ),
+      });
+    }
+
+    if (ufe.aviso || ufe.errorValidacion) {
+      const detalleTone = ufe.errorValidacion ? "error" : "info";
+      const detalleMsg = ufe.errorValidacion || ufe.aviso || "";
       list.push({
         id: "ufe-detalle-sunat",
-        signature: `detalle-sunat:${ufe.validando ?? ""}:${ufe.aviso ?? ""}:${ufe.errorValidacion ?? ""}`,
+        signature: `detalle-sunat:${ufe.aviso ?? ""}:${ufe.errorValidacion ?? ""}`,
         tone: detalleTone,
-        running: detalleRunning,
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: detalleMsg,
         content: (
           <NotificationAlert
             tone={detalleTone}
             title={
               ufe.errorValidacion
                 ? "No se pudo validar en SUNAT"
-                : detalleRunning
-                  ? "Validación SUNAT"
-                  : undefined
+                : "Validación SUNAT"
             }
             description={detalleMsg}
           />
@@ -460,38 +437,20 @@ export default function IntelisisUfePage({
       });
     }
 
-    if (reenvio.enviando || reenvio.resultado || reenvio.aviso) {
+    if (reenvio.resultado || reenvio.aviso) {
       const rechazados = reenvio.resultado?.rechazados ?? 0;
-      const reenvioRunning = reenvio.enviando;
       list.push({
         id: "ufe-reenvio",
         signature: [
-          reenvioRunning ? "enviando" : "listo",
           reenvio.resultado?.encolados ?? 0,
           reenvio.resultado?.duplicados ?? 0,
           reenvio.resultado?.rechazados ?? 0,
           reenvio.aviso ?? "",
         ].join("|"),
-        tone: reenvioRunning
-          ? "info"
-          : rechazados > 0
-            ? "warning"
-            : "success",
-        running: reenvioRunning,
-        originLabel: "Intelisis UFE",
-        originHref: "#/intelisis-ufe",
-        summary: reenvioRunning
-          ? "Encolando documentos para reenvío al generador UFE…"
-          : reenvio.aviso || "Reenvío al generador UFE",
-        hideCloseButton: !reenvioRunning,
+        tone: rechazados > 0 ? "warning" : "info",
+        hideCloseButton: true,
         onDismiss: reenvio.limpiarMensajes,
-        content: reenvioRunning ? (
-          <NotificationAlert
-            tone="info"
-            title="Reenvío al generador UFE"
-            description="Encolando documentos seleccionados en dbo.FE_Reenvio…"
-          />
-        ) : (
+        content: (
           <IntelisisUfeReenvioAviso
             resultado={reenvio.resultado}
             aviso={reenvio.aviso}
@@ -510,16 +469,13 @@ export default function IntelisisUfePage({
     ufe.truncado,
     ufe.maxFilas,
     ufe.filtradosTotal,
-    ufe.validando,
     ufe.aviso,
     ufe.errorValidacion,
-    sunat.progress,
     sunat.notice,
     sunat.warning,
     sunat.error,
     sunat.busy,
     sunat.refreshing,
-    reenvio.enviando,
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,
@@ -693,6 +649,25 @@ export default function IntelisisUfePage({
         onValidar={(idVenta) => void ufe.validar(idVenta)}
         onClose={ufe.cerrarDetalle}
       />
+
+      <OperationProgressDialog
+        open={Boolean(sunat.progress)}
+        running={sunat.busy || sunat.refreshing}
+        title="Progreso de validación en SUNAT"
+        description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
+        riskDescription="Si cancelas ahora, se detendrá el envío de lotes pendientes y el seguimiento en pantalla. Los lotes que ya fueron registrados en el servidor seguirán procesándose en segundo plano para evitar inconsistencias o cobros duplicados de cuota."
+        onCancel={() => {
+          void sunat.cancel();
+        }}
+        onClose={sunat.dismissProgress}
+      >
+        <SunatProgress
+          progress={sunat.progress}
+          notice={null}
+          warning={null}
+          error={null}
+        />
+      </OperationProgressDialog>
 
       <NotificationHost sourceId="intelisis-ufe" items={notificationItems} />
     </div>

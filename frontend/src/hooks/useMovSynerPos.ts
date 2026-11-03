@@ -132,12 +132,14 @@ export function useMovSynerPos(onAuthFailure: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState<MovSynerPosRequestDocumento[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
+  const refreshRef = useRef<(() => Promise<void> | void) | null>(null);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
+    refreshRef.current = null;
     setBusy(false);
     setRefreshing(false);
     setProgress(null);
@@ -145,6 +147,40 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     setWarning(null);
     setError(null);
     setFailed([]);
+  }, []);
+
+  const dismissProgress = useCallback(() => {
+    setProgress(null);
+  }, []);
+
+  const cancel = useCallback(async () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    const refresh = refreshRef.current;
+    refreshRef.current = null;
+    setBusy(false);
+    setProgress((prev) => {
+      const procesados = prev?.enviados ?? 0;
+      const total = prev?.total ?? 0;
+      setWarning(
+        procesados > 0
+          ? `Envío a MovSynerPos cancelado por el usuario (${procesados} de ${total} documentos procesados antes de detenerse).`
+          : "Envío a MovSynerPos cancelado por el usuario.",
+      );
+      return null;
+    });
+    setNotice(null);
+    setError(null);
+    if (refresh) {
+      setRefreshing(true);
+      try {
+        await refresh();
+      } catch {
+        // useVouchers owns table errors; never mask the cancellation warning.
+      } finally {
+        setRefreshing(false);
+      }
+    }
   }, []);
 
   const execute = useCallback(
@@ -157,6 +193,7 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
+      refreshRef.current = refresh;
       const { signal } = controller;
 
       setBusy(true);
@@ -218,6 +255,7 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
+          refreshRef.current = null;
           setBusy(false);
           setRefreshing(false);
         }
@@ -251,6 +289,8 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     failed,
     run,
     retry,
+    cancel,
+    dismissProgress,
     reset,
   };
 }

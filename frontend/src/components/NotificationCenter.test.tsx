@@ -3,82 +3,39 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NotificationAlert,
-  NotificationBell,
   NotificationHost,
-  NotificationsProvider,
   type NotificationItem,
 } from "./NotificationCenter";
+import { OperationProgressDialog } from "./OperationProgressDialog";
 
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
 });
 
-describe("NotificationCenter", () => {
-  it("no muestra el boton de cierre mientras el proceso esta en curso y no se auto-cierra", () => {
+describe("NotificationHost", () => {
+  it("muestra notificaciones de error, warning o info con boton de cierre integrado y auto-cierre", () => {
     vi.useFakeTimers();
     const items: NotificationItem[] = [
       {
-        id: "sunat-running",
-        signature: "sunat:running",
-        tone: "info",
-        running: true,
-        summary: "SUNAT: Validando 10 documentos…",
+        id: "sunat-warning",
+        signature: "sunat:warning:1",
+        tone: "warning",
         content: (
           <NotificationAlert
-            tone="info"
-            title="Validación SUNAT"
-            description="Validando 10 documentos…"
+            tone="warning"
+            title="Validación en SUNAT"
+            description="Algunos comprobantes quedaron pendientes."
           />
         ),
       },
     ];
 
-    render(
-      <NotificationsProvider autoDismissMs={3000}>
-        <NotificationBell />
-        <NotificationHost sourceId="test" items={items} autoDismissMs={3000} />
-      </NotificationsProvider>,
-    );
+    render(<NotificationHost items={items} autoDismissMs={3000} />);
 
-    expect(screen.getByText("Validando 10 documentos…")).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Cerrar notificación" }),
-    ).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(10000);
-    });
-    expect(screen.getByText("Validando 10 documentos…")).toBeTruthy();
-  });
-
-  it("muestra el boton de cierre al terminar el proceso y desaparece sola tras el tiempo si nadie la cierra", () => {
-    vi.useFakeTimers();
-    const items: NotificationItem[] = [
-      {
-        id: "sunat-done",
-        signature: "sunat:done",
-        tone: "success",
-        running: false,
-        summary: "SUNAT: Validación completada.",
-        content: (
-          <NotificationAlert
-            tone="success"
-            title="Validación SUNAT"
-            description="Validación completada."
-          />
-        ),
-      },
-    ];
-
-    render(
-      <NotificationsProvider autoDismissMs={3000}>
-        <NotificationBell />
-        <NotificationHost sourceId="test" items={items} autoDismissMs={3000} />
-      </NotificationsProvider>,
-    );
-
-    expect(screen.getByText("Validación completada.")).toBeTruthy();
+      screen.getByText("Algunos comprobantes quedaron pendientes."),
+    ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Cerrar notificación" }),
     ).toBeTruthy();
@@ -86,77 +43,89 @@ describe("NotificationCenter", () => {
     act(() => {
       vi.advanceTimersByTime(3100);
     });
-    expect(screen.queryByText("Validación completada.")).toBeNull();
-
-    // Sigue disponible en la campana superior para volver a mostrarla
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Centro de notificaciones y progreso",
-      }),
-    );
-    expect(screen.getByText("SUNAT: Validación completada.")).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /Mostrar en pantalla \(1\)/ }),
-    );
-    expect(screen.getByText("Validación completada.")).toBeTruthy();
+    expect(
+      screen.queryByText("Algunos comprobantes quedaron pendientes."),
+    ).toBeNull();
   });
+});
 
-  it("mantiene visibles los procesos en segundo plano de otra pestaña en el icono de notificaciones", () => {
-    const synerposItems: NotificationItem[] = [
-      {
-        id: "synerpos-sunat",
-        signature: "synerpos:sunat:45",
-        tone: "info",
-        running: true,
-        progressPercent: 45,
-        originLabel: "SynerPos",
-        originHref: "#/comprobantes",
-        summary: "SUNAT: Consultando lote 1 de 2…",
-        content: (
-          <NotificationAlert
-            tone="info"
-            title="Validación SUNAT"
-            description="Consultando lote 1 de 2…"
-          />
-        ),
-      },
-    ];
+describe("OperationProgressDialog · cancelacion segura", () => {
+  it("pide confirmacion explicando los riesgos al intentar cerrar o cancelar mientras el proceso esta en curso", () => {
+    const onCancel = vi.fn();
+    const onClose = vi.fn();
 
     render(
-      <NotificationsProvider>
-        <NotificationBell />
-        <div hidden aria-hidden>
-          <NotificationHost sourceId="synerpos" items={synerposItems} />
-        </div>
-        <div>
-          <NotificationHost sourceId="intelisis-ufe" items={[]} />
-        </div>
-      </NotificationsProvider>,
+      <OperationProgressDialog
+        open={true}
+        running={true}
+        title="Progreso de validación en SUNAT"
+        description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
+        riskDescription="Los lotes ya registrados seguirán procesándose en segundo plano."
+        onCancel={onCancel}
+        onClose={onClose}
+      >
+        <div>40% procesado</div>
+      </OperationProgressDialog>,
     );
 
-    // El botón del TopBar muestra que hay 1 proceso en curso
-    const bell = screen.getByRole("button", {
-      name: "Centro de notificaciones y progreso",
-    });
-    expect(bell.textContent).toContain("En curso (1)");
+    expect(screen.getByText("40% procesado")).toBeTruthy();
 
-    // Al abrir el centro de notificaciones se ve el proceso en segundo plano, su origen y su barra de progreso
-    fireEvent.click(bell);
+    // Intentar cancelar abre la confirmación de riesgos sin cancelar todavía
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar proceso" }));
+
     expect(
-      screen.getByText("Procesos en segundo plano (1)"),
-    ).toBeTruthy();
-    expect(screen.getByText("SynerPos")).toBeTruthy();
-    expect(
-      screen.getByText("SUNAT: Consultando lote 1 de 2…"),
+      screen.getByText("¿Deseas cancelar el proceso en curso?"),
     ).toBeTruthy();
     expect(
-      screen.getByRole("progressbar", { name: /Avance SynerPos/ }).getAttribute(
-        "aria-valuenow",
+      screen.getByText(
+        "Los lotes ya registrados seguirán procesándose en segundo plano.",
       ),
-    ).toBe("45");
+    ).toBeTruthy();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // Puede arrepentirse y continuar con el proceso
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continuar con el proceso" }),
+    );
     expect(
-      screen.getByRole("link", { name: "Ir a SynerPos" }).getAttribute("href"),
-    ).toBe("#/comprobantes");
+      screen.queryByText("¿Deseas cancelar el proceso en curso?"),
+    ).toBeNull();
+
+    // Si pulsa el botón X de cerrar el modal mientras corre, también pide confirmación
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    expect(
+      screen.getByText("¿Deseas cancelar el proceso en curso?"),
+    ).toBeTruthy();
+
+    // Al confirmar la cancelación se ejecuta onCancel
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sí, cancelar proceso" }),
+    );
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("permite cerrar directamente cuando el proceso ya termino", () => {
+    const onCancel = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <OperationProgressDialog
+        open={true}
+        running={false}
+        title="Progreso de envío a MovSynerPos"
+        description="Proceso finalizado."
+        riskDescription="Riesgo"
+        onCancel={onCancel}
+        onClose={onClose}
+      >
+        <div>100% completado</div>
+      </OperationProgressDialog>,
+    );
+
+    const cerrarButtons = screen.getAllByRole("button", { name: "Cerrar" });
+    fireEvent.click(cerrarButtons[cerrarButtons.length - 1]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
   });
 });

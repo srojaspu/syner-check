@@ -19,7 +19,6 @@ import { cn } from "cn";
 import { logout } from "../api/client";
 import type { SessionUser } from "../api/types";
 import { useTheme } from "../theme/ThemeContext";
-import { NotificationBell } from "./NotificationCenter";
 
 export function ThemeToggle() {
   const { resolved, toggle } = useTheme();
@@ -89,7 +88,6 @@ export function TopBar({
           {nav}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <NotificationBell />
           <ThemeToggle />
           {actions}
         </div>

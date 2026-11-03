@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Loading02Icon } from "@hugeicons/core-free-icons";
 import { Account, AppShell, LoginCard, TopBar } from "./components/AppShell";
@@ -6,7 +6,6 @@ import { PrimaryNav } from "./components/PrimaryNav";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useSession } from "./hooks/useSession";
 import ComprobantesPage from "./pages/ComprobantesPage";
-import { NotificationsProvider } from "./components/NotificationCenter";
 import { ThemeProvider } from "./theme/ThemeContext";
 
 // La pantalla nueva entra por separado: el bundle del flujo actual no crece
@@ -35,15 +34,6 @@ function PageSkeleton() {
 function Workspace() {
   const { user, ready, onAuthFailure } = useSession();
   const ruta = useHashRoute();
-  const [visitedUfe, setVisitedUfe] = useState(
-    () => ruta === "intelisis-ufe",
-  );
-
-  useEffect(() => {
-    if (ruta === "intelisis-ufe") {
-      setVisitedUfe(true);
-    }
-  }, [ruta]);
 
   if (!ready) {
     return (
@@ -61,8 +51,6 @@ function Workspace() {
     );
   }
 
-  const isUfe = ruta === "intelisis-ufe";
-
   return (
     <AppShell
       topbar={
@@ -72,24 +60,13 @@ function Workspace() {
         />
       }
     >
-      <div
-        hidden={isUfe}
-        aria-hidden={isUfe}
-        className={isUfe ? "hidden" : "block"}
-      >
+      {ruta === "intelisis-ufe" ? (
+        <Suspense fallback={<PageSkeleton />}>
+          <IntelisisUfePage onAuthFailure={onAuthFailure} />
+        </Suspense>
+      ) : (
         <ComprobantesPage onAuthFailure={onAuthFailure} />
-      </div>
-      {visitedUfe || isUfe ? (
-        <div
-          hidden={!isUfe}
-          aria-hidden={!isUfe}
-          className={isUfe ? "block" : "hidden"}
-        >
-          <Suspense fallback={<PageSkeleton />}>
-            <IntelisisUfePage onAuthFailure={onAuthFailure} />
-          </Suspense>
-        </div>
-      ) : null}
+      )}
     </AppShell>
   );
 }
@@ -97,9 +74,7 @@ function Workspace() {
 export default function App() {
   return (
     <ThemeProvider>
-      <NotificationsProvider>
-        <Workspace />
-      </NotificationsProvider>
+      <Workspace />
     </ThemeProvider>
   );
 }

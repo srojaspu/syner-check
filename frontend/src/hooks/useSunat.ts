@@ -366,6 +366,7 @@ export function useSunat(onAuthFailure: () => void) {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const refreshRef = useRef<(() => Promise<void> | void) | null>(null);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
@@ -373,12 +374,41 @@ export function useSunat(onAuthFailure: () => void) {
     // Abort a running batch: the user started another search.
     controllerRef.current?.abort();
     controllerRef.current = null;
+    refreshRef.current = null;
     setBusy(false);
     setRefreshing(false);
     setProgress(null);
     setNotice(null);
     setWarning(null);
     setError(null);
+  }, []);
+
+  const dismissProgress = useCallback(() => {
+    setProgress(null);
+  }, []);
+
+  const cancel = useCallback(async () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    const refresh = refreshRef.current;
+    refreshRef.current = null;
+    setBusy(false);
+    setProgress(null);
+    setNotice(null);
+    setError(null);
+    setWarning(
+      "Validación en SUNAT cancelada por el usuario. Los lotes ya registrados en el servidor seguirán procesándose en segundo plano.",
+    );
+    if (refresh) {
+      setRefreshing(true);
+      try {
+        await refresh();
+      } catch {
+        // useVouchers owns table errors; never mask the cancellation notice.
+      } finally {
+        setRefreshing(false);
+      }
+    }
   }, []);
 
   const runBatch = useCallback(
@@ -390,6 +420,7 @@ export function useSunat(onAuthFailure: () => void) {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
+      refreshRef.current = refresh;
       const { signal } = controller;
 
       setBusy(true);
@@ -630,6 +661,7 @@ export function useSunat(onAuthFailure: () => void) {
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
+          refreshRef.current = null;
           setBusy(false);
           setRefreshing(false);
         }
@@ -638,5 +670,16 @@ export function useSunat(onAuthFailure: () => void) {
     [onAuthFailure],
   );
 
-  return { busy, refreshing, progress, notice, warning, error, runBatch, reset };
+  return {
+    busy,
+    refreshing,
+    progress,
+    notice,
+    warning,
+    error,
+    runBatch,
+    cancel,
+    dismissProgress,
+    reset,
+  };
 }

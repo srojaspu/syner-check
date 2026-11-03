@@ -15,6 +15,7 @@ import {
   NotificationHost,
   type NotificationItem,
 } from "@/components/NotificationCenter";
+import { OperationProgressDialog } from "@/components/OperationProgressDialog";
 import { NumberPanel, RangePanel } from "@/components/SearchPanels";
 import { ResultsCard } from "@/components/ResultsCard";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
@@ -185,9 +186,6 @@ export default function ComprobantesPage({
         id: "synerpos-query-error",
         signature: `query-error:${vouchers.error}`,
         tone: "error",
-        originLabel: "SynerPos",
-        originHref: "#/comprobantes",
-        summary: `Consulta SynerPos: ${vouchers.error}`,
         content: (
           <NotificationAlert
             tone="error"
@@ -198,100 +196,110 @@ export default function ComprobantesPage({
       });
     }
 
-    if (sunat.progress || sunat.notice || sunat.warning || sunat.error) {
-      const sunatRunning = sunat.busy || sunat.refreshing;
-      const sunatTone = sunat.error
-        ? "error"
-        : sunat.warning
-          ? "warning"
-          : sunatRunning
-            ? "info"
-            : "success";
-      const sunatSummary =
-        sunat.error ||
-        sunat.warning ||
-        sunat.notice ||
-        sunat.progress?.mensaje ||
-        "Validación SUNAT";
+    if (sunat.error) {
       list.push({
-        id: "synerpos-sunat",
-        signature: [
-          sunat.progress?.phase ?? "",
-          sunat.progress?.estado ?? "",
-          sunat.progress?.procesados ?? 0,
-          sunat.progress?.enviados ?? 0,
-          sunat.notice ?? "",
-          sunat.warning ?? "",
-          sunat.error ?? "",
-        ].join("|"),
-        tone: sunatTone,
-        running: sunatRunning,
-        progressPercent: sunat.progress?.porcentaje,
-        originLabel: "SynerPos",
-        originHref: "#/comprobantes",
-        summary: `SUNAT: ${sunatSummary}`,
+        id: "synerpos-sunat-error",
+        signature: `sunat-error:${sunat.error}`,
+        tone: "error",
         content: (
-          <SunatProgress
-            progress={sunat.progress}
-            notice={sunat.notice}
-            warning={sunat.warning}
-            error={sunat.error}
+          <NotificationAlert
+            tone="error"
+            title="No se pudo validar en SUNAT"
+            description={sunat.error}
+          />
+        ),
+      });
+    }
+
+    if (sunat.warning) {
+      list.push({
+        id: "synerpos-sunat-warning",
+        signature: `sunat-warning:${sunat.warning}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Validación en SUNAT"
+            description={sunat.warning}
+          />
+        ),
+      });
+    }
+
+    if (sunat.notice && !sunat.busy && !sunat.refreshing) {
+      list.push({
+        id: "synerpos-sunat-notice",
+        signature: `sunat-notice:${sunat.notice}`,
+        tone: "info",
+        content: (
+          <NotificationAlert
+            tone="info"
+            title="Validación en SUNAT"
+            description={sunat.notice}
+          />
+        ),
+      });
+    }
+
+    if (movsynerpos.error) {
+      list.push({
+        id: "synerpos-mov-error",
+        signature: `mov-error:${movsynerpos.error}`,
+        tone: "error",
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="No se pudo enviar a MovSynerPos"
+            description={movsynerpos.error}
+          />
+        ),
+      });
+    }
+
+    if (movsynerpos.warning || movsynerpos.failed.length > 0) {
+      list.push({
+        id: "synerpos-mov-warning",
+        signature: `mov-warning:${movsynerpos.warning ?? ""}:${movsynerpos.failed.length}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Observaciones en MovSynerPos"
+            description={
+              <span className="flex flex-col gap-1.5">
+                {movsynerpos.warning ? <span>{movsynerpos.warning}</span> : null}
+                {movsynerpos.failed.length > 0 ? (
+                  <button
+                    type="button"
+                    className="w-fit font-medium underline underline-offset-2"
+                    onClick={() =>
+                      void movsynerpos.retry(refreshRows, movSynerPosReparar)
+                    }
+                  >
+                    Reintentar solo los {movsynerpos.failed.length} fallidos
+                  </button>
+                ) : null}
+              </span>
+            }
           />
         ),
       });
     }
 
     if (
-      movsynerpos.progress ||
-      movsynerpos.notice ||
-      movsynerpos.warning ||
-      movsynerpos.error
+      movsynerpos.notice &&
+      !movsynerpos.busy &&
+      !movsynerpos.refreshing
     ) {
-      const movRunning = movsynerpos.busy || movsynerpos.refreshing;
-      const movTotal = movsynerpos.progress?.total ?? 0;
-      const movEnviados = movsynerpos.progress?.enviados ?? 0;
-      const movPercent =
-        movTotal > 0 ? Math.min(100, (movEnviados / movTotal) * 100) : undefined;
-      const movTone = movsynerpos.error
-        ? "error"
-        : movsynerpos.warning || movsynerpos.failed.length > 0
-          ? "warning"
-          : movRunning
-            ? "info"
-            : "success";
-      const movSummary =
-        movsynerpos.error ||
-        movsynerpos.warning ||
-        movsynerpos.notice ||
-        (movsynerpos.progress
-          ? `MovSynerPos: ${movsynerpos.progress.enviados} de ${movsynerpos.progress.total} documentos`
-          : "Envío a MovSynerPos");
       list.push({
-        id: "synerpos-movsynerpos",
-        signature: [
-          movsynerpos.progress?.enviados ?? 0,
-          movsynerpos.progress?.total ?? 0,
-          movsynerpos.notice ?? "",
-          movsynerpos.warning ?? "",
-          movsynerpos.error ?? "",
-          movsynerpos.failed.length,
-        ].join("|"),
-        tone: movTone,
-        running: movRunning,
-        progressPercent: movPercent,
-        originLabel: "SynerPos",
-        originHref: "#/comprobantes",
-        summary: movSummary,
+        id: "synerpos-mov-notice",
+        signature: `mov-notice:${movsynerpos.notice}`,
+        tone: "info",
         content: (
-          <MovSynerPosProgress
-            progress={movsynerpos.progress}
-            notice={movsynerpos.notice}
-            warning={movsynerpos.warning}
-            error={movsynerpos.error}
-            failedCount={movsynerpos.failed.length}
-            onRetry={() =>
-              void movsynerpos.retry(refreshRows, movSynerPosReparar)
-            }
+          <NotificationAlert
+            tone="info"
+            title="Envío a MovSynerPos"
+            description={movsynerpos.notice}
           />
         ),
       });
@@ -300,10 +308,9 @@ export default function ComprobantesPage({
     return list;
   }, [
     vouchers.error,
-    sunat.progress,
-    sunat.notice,
-    sunat.warning,
     sunat.error,
+    sunat.warning,
+    sunat.notice,
     sunat.busy,
     sunat.refreshing,
     movsynerpos,
@@ -514,6 +521,48 @@ export default function ComprobantesPage({
         }}
         onClose={detail.close}
       />
+
+      <OperationProgressDialog
+        open={Boolean(sunat.progress)}
+        running={sunat.busy || sunat.refreshing}
+        title="Progreso de validación en SUNAT"
+        description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
+        riskDescription="Si cancelas ahora, se detendrá el envío de lotes pendientes y el seguimiento en pantalla. Los lotes que ya fueron registrados en el servidor seguirán procesándose en segundo plano para evitar inconsistencias o cobros duplicados de cuota."
+        onCancel={() => {
+          void sunat.cancel();
+        }}
+        onClose={sunat.dismissProgress}
+      >
+        <SunatProgress
+          progress={sunat.progress}
+          notice={null}
+          warning={null}
+          error={null}
+        />
+      </OperationProgressDialog>
+
+      <OperationProgressDialog
+        open={Boolean(movsynerpos.progress)}
+        running={movsynerpos.busy || movsynerpos.refreshing}
+        title="Progreso de envío a MovSynerPos"
+        description="Reconsultando documentos en SynerCom e insertando líneas en MovSynerPos."
+        riskDescription="Si cancelas ahora, los documentos de los lotes que ya fueron insertados en MovSynerPos permanecerán guardados (la operación no se revierte) y los documentos restantes quedarán pendientes de envío."
+        onCancel={() => {
+          void movsynerpos.cancel();
+        }}
+        onClose={movsynerpos.dismissProgress}
+      >
+        <MovSynerPosProgress
+          progress={movsynerpos.progress}
+          notice={null}
+          warning={null}
+          error={null}
+          failedCount={movsynerpos.failed.length}
+          onRetry={() =>
+            void movsynerpos.retry(refreshRows, movSynerPosReparar)
+          }
+        />
+      </OperationProgressDialog>
 
       <NotificationHost sourceId="synerpos" items={notificationItems} />
 

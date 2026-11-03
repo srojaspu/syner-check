@@ -73,8 +73,15 @@ export function IntelisisUfeReenvioDialog({
   const bloqueado = excedido || enviando || !motivoValido;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen, eventDetails) => {
+        if (eventDetails?.reason === "outside-press") return;
+        if (!nextOpen && enviando) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={!enviando}>
         <DialogHeader>
           <DialogTitle>Reenviar al generador UFE</DialogTitle>
           <DialogDescription>
