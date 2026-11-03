@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NotificationAlert,
   NotificationBell,
@@ -9,14 +9,18 @@ import {
   type NotificationItem,
 } from "./NotificationCenter";
 
-afterEach(cleanup);
+afterEach(() => {
+  vi.useRealTimers();
+  cleanup();
+});
 
 describe("NotificationCenter", () => {
-  it("renderiza las notificaciones flotantes y permite minimizarlas y restaurarlas desde la campana", () => {
+  it("no muestra el boton de cierre mientras el proceso esta en curso y no se auto-cierra", () => {
+    vi.useFakeTimers();
     const items: NotificationItem[] = [
       {
         id: "sunat-running",
-        signature: "sunat:1",
+        signature: "sunat:running",
         tone: "info",
         running: true,
         summary: "SUNAT: Validando 10 documentos…",
@@ -33,34 +37,68 @@ describe("NotificationCenter", () => {
     render(
       <NotificationsProvider>
         <NotificationBell />
-        <NotificationHost sourceId="test" items={items} />
+        <NotificationHost sourceId="test" items={items} autoDismissMs={3000} />
       </NotificationsProvider>,
     );
 
-    expect(
-      screen.getByRole("region", { name: "Notificaciones y progreso" }),
-    ).toBeTruthy();
     expect(screen.getByText("Validando 10 documentos…")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Cerrar notificación" }),
+    ).toBeNull();
 
-    // Minimizar desde la tarjeta flotante
-    fireEvent.click(
-      screen.getByRole("button", { name: "Minimizar progreso" }),
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(screen.getByText("Validando 10 documentos…")).toBeTruthy();
+  });
+
+  it("muestra el boton de cierre al terminar el proceso y desaparece sola tras el tiempo si nadie la cierra", () => {
+    vi.useFakeTimers();
+    const items: NotificationItem[] = [
+      {
+        id: "sunat-done",
+        signature: "sunat:done",
+        tone: "success",
+        running: false,
+        summary: "SUNAT: Validación completada.",
+        content: (
+          <NotificationAlert
+            tone="success"
+            title="Validación SUNAT"
+            description="Validación completada."
+          />
+        ),
+      },
+    ];
+
+    render(
+      <NotificationsProvider>
+        <NotificationBell />
+        <NotificationHost sourceId="test" items={items} autoDismissMs={3000} />
+      </NotificationsProvider>,
     );
-    expect(screen.queryByText("Validación SUNAT")).toBeNull();
 
-    // Abrir el centro de notificaciones en el TopBar y restaurar
+    expect(screen.getByText("Validación completada.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cerrar notificación" }),
+    ).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(3100);
+    });
+    expect(screen.queryByText("Validación completada.")).toBeNull();
+
+    // Sigue disponible en la campana superior para volver a mostrarla
     fireEvent.click(
       screen.getByRole("button", {
         name: "Centro de notificaciones y progreso",
       }),
     );
-    expect(
-      screen.getByText("SUNAT: Validando 10 documentos…"),
-    ).toBeTruthy();
+    expect(screen.getByText("SUNAT: Validación completada.")).toBeTruthy();
 
     fireEvent.click(
       screen.getByRole("button", { name: /Mostrar en pantalla \(1\)/ }),
     );
-    expect(screen.getByText("Validación SUNAT")).toBeTruthy();
+    expect(screen.getByText("Validación completada.")).toBeTruthy();
   });
 });

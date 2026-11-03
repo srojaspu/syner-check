@@ -238,6 +238,58 @@ export function NotificationBell() {
   );
 }
 
+/** Tiempo (ms) tras el cual una notificación finalizada se oculta sola. */
+export const AUTO_DISMISS_MS = 7000;
+
+function NotificationCard({
+  item,
+  autoDismissMs,
+  onDismiss,
+}: {
+  item: NotificationItem;
+  autoDismissMs: number;
+  onDismiss: (item: NotificationItem) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const showCloseButton = !item.running && !item.hideCloseButton;
+
+  useEffect(() => {
+    if (item.running || hovered || autoDismissMs <= 0) return;
+    const timer = setTimeout(() => {
+      onDismiss(item);
+    }, autoDismissMs);
+    return () => clearTimeout(timer);
+  }, [item, hovered, autoDismissMs, onDismiss]);
+
+  return (
+    <div
+      data-slot="notification-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cn(
+        "pointer-events-auto relative w-full overflow-hidden rounded-lg bg-popover/95 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-md transition-all duration-200 ease-out motion-reduce:transition-none",
+        "[&_[data-slot=alert]]:border-0",
+        showCloseButton && "[&_[data-slot=alert]]:pr-11",
+      )}
+    >
+      {item.content}
+      {showCloseButton ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="absolute top-2.5 right-2.5 z-10 text-muted-foreground hover:text-foreground"
+          onClick={() => onDismiss(item)}
+          aria-label="Cerrar notificación"
+          title="Cerrar notificación"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Bandeja flotante no-bloqueante (z-[60], sobre el Sheet de detalle z-50).
  *
@@ -247,9 +299,11 @@ export function NotificationBell() {
 export function NotificationHost({
   sourceId,
   items,
+  autoDismissMs = AUTO_DISMISS_MS,
 }: {
   sourceId: string;
   items: NotificationItem[];
+  autoDismissMs?: number;
 }) {
   const ctx = useContext(NotificationsContext);
   const [localDismissed, setLocalDismissed] = useState<Set<string>>(
@@ -299,36 +353,12 @@ export function NotificationHost({
       className="pointer-events-none fixed right-4 bottom-4 z-[60] flex max-h-[82vh] w-[calc(100vw-2rem)] max-w-md flex-col gap-2.5 overflow-y-auto print:hidden"
     >
       {visibleItems.map((item) => (
-        <div
+        <NotificationCard
           key={item.id}
-          data-slot="notification-card"
-          className={cn(
-            "pointer-events-auto relative rounded-2xl bg-popover/95 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-md transition-all duration-200 ease-out motion-reduce:transition-none",
-          )}
-        >
-          <div className={item.hideCloseButton ? undefined : "pr-8"}>
-            {item.content}
-          </div>
-          {!item.hideCloseButton ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2.5 right-2.5 z-10"
-              onClick={() => handleDismiss(item)}
-              aria-label={
-                item.running ? "Minimizar progreso" : "Cerrar notificación"
-              }
-              title={
-                item.running
-                  ? "Ocultar de la esquina (sigue en la campana superior)"
-                  : "Cerrar notificación"
-              }
-            >
-              <HugeiconsIcon icon={Cancel01Icon} size={15} strokeWidth={2} />
-            </Button>
-          ) : null}
-        </div>
+          item={item}
+          autoDismissMs={autoDismissMs}
+          onDismiss={handleDismiss}
+        />
       ))}
     </div>
   );
