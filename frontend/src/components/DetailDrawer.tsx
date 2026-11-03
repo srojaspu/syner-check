@@ -213,6 +213,11 @@ export function DetailDrawer({
   const currency = document?.currency?.isoCode ?? "PEN";
   const emitted = formatDateTime(document?.createdDate, document?.date);
   const sunat = document ? sunatBadge(document) : null;
+  const isSunatAccepted =
+    (document?.sunat?.estado ?? "").trim().toUpperCase() === "ACEPTADO";
+  const isInMovSynerPos = document?.in_sql === true;
+  const showValidateSunat = Boolean(onValidateSunat) && !isSunatAccepted;
+  const showSendMovSynerPos = Boolean(onSendMovSynerPos) && !isInMovSynerPos;
   const actionsBusy = validatingSunat || sendingMovSynerPos;
   return (
     <Sheet
@@ -291,7 +296,7 @@ export function DetailDrawer({
               >
                 <HugeiconsIcon icon={PrinterIcon} size={15} strokeWidth={2} aria-hidden /> Imprimir
               </Button>
-              {onValidateSunat ? (
+              {showValidateSunat && onValidateSunat ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -314,14 +319,14 @@ export function DetailDrawer({
                   {validatingSunat ? "Validando…" : "Validar en SUNAT"}
                 </Button>
               ) : null}
-              {onSendMovSynerPos ? (
+              {showSendMovSynerPos && onSendMovSynerPos ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={actionsBusy}
                   onClick={() => onSendMovSynerPos(document)}
-                  title="Envía o repara este comprobante en MovSynerPos"
+                  title="Envía este comprobante a MovSynerPos"
                 >
                   {sendingMovSynerPos ? (
                     <HugeiconsIcon

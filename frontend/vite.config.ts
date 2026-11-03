@@ -39,6 +39,7 @@ export default defineConfig({
       // Origin=http://localhost:5173, producing "Origen no permitido."
       "/api": { target: "http://127.0.0.1:8000", changeOrigin: false },
       "/auth": { target: "http://127.0.0.1:8000", changeOrigin: false },
+      "/static/img": { target: "http://127.0.0.1:8000", changeOrigin: false },
     },
   },
 });

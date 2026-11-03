@@ -46,10 +46,7 @@ export function Account({ user }: { user: SessionUser }) {
   return (
     <div className="flex items-center gap-2">
       <Avatar className="size-8">
-        <AvatarImage
-          src={user.picture || "/static/img/avatar.svg"}
-          alt=""
-        />
+        {user.picture ? <AvatarImage src={user.picture} alt="" /> : null}
         <AvatarFallback>
           {(user.email?.[0] ?? "?").toUpperCase()}
         </AvatarFallback>

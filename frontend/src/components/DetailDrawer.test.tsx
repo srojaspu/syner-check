@@ -17,14 +17,14 @@ function buildVoucher(overrides: Partial<Voucher> = {}): Voucher {
     crossTotal: 150.5,
     netTotal: 127.54,
     in_sql: false,
-    sunat: { estado: "ACEPTADO", fecha_consulta: "2026-10-26T15:00:00" },
+    sunat: null,
     ...overrides,
   };
 }
 
-describe("DetailDrawer · acciones de SUNAT y MovSynerPos", () => {
-  it("renderiza los botones Validar en SUNAT y Reenviar a MovSynerPos junto a Imprimir", () => {
-    const doc = buildVoucher();
+describe("DetailDrawer · acciones condicionales de SUNAT y MovSynerPos", () => {
+  it("muestra Validar en SUNAT y Reenviar a MovSynerPos cuando no esta aceptado en SUNAT ni en MovSynerPos", () => {
+    const doc = buildVoucher({ in_sql: false, sunat: null });
     const onValidateSunat = vi.fn();
     const onSendMovSynerPos = vi.fn();
 
@@ -55,10 +55,10 @@ describe("DetailDrawer · acciones de SUNAT y MovSynerPos", () => {
     expect(onSendMovSynerPos).toHaveBeenCalledWith(doc);
   });
 
-  it("muestra los badges de estado de MovSynerPos y SUNAT y el aviso de acción", () => {
+  it("oculta Validar en SUNAT cuando ya esta ACEPTADO y oculta Reenviar cuando ya esta en MovSynerPos", () => {
     const doc = buildVoucher({
       in_sql: true,
-      sunat: { estado: "ACEPTADO" },
+      sunat: { estado: "ACEPTADO", fecha_consulta: "2026-10-26T15:00:00" },
     });
 
     render(
@@ -76,10 +76,42 @@ describe("DetailDrawer · acciones de SUNAT y MovSynerPos", () => {
       />,
     );
 
+    expect(
+      screen.queryByRole("button", { name: /Validar en SUNAT/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Reenviar a MovSynerPos/ }),
+    ).toBeNull();
     expect(screen.getByText("En MovSynerPos")).toBeTruthy();
     expect(screen.getByText("SUNAT: Aceptado")).toBeTruthy();
     expect(
       screen.getByText("Validación completada (ACEPTADO)."),
     ).toBeTruthy();
+  });
+
+  it("muestra solo Validar en SUNAT cuando ya esta en MovSynerPos pero aun no esta aceptado en SUNAT", () => {
+    const doc = buildVoucher({
+      in_sql: true,
+      sunat: { estado: "PENDIENTE" },
+    });
+
+    render(
+      <DetailDrawer
+        open={true}
+        document={doc}
+        loading={false}
+        error={null}
+        copied={false}
+        onCopy={vi.fn()}
+        onValidateSunat={vi.fn()}
+        onSendMovSynerPos={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Validar en SUNAT/ })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Reenviar a MovSynerPos/ }),
+    ).toBeNull();
   });
 });
