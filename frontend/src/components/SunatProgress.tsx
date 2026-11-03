@@ -81,6 +81,19 @@ function submissionLabel(progress: SunatProgressState): string {
   return singleDoc ? "Preparando comprobante" : "Preparando lote";
 }
 
+export function isSunatProgressTerminal(
+  progress: SunatProgressState | null,
+): boolean {
+  if (!progress) return false;
+  const label = stateLabel(progress);
+  return (
+    label === "Completado" ||
+    label === "Con errores" ||
+    label === "Cancelado" ||
+    label === "Envío detenido"
+  );
+}
+
 export function SunatProgress({
   progress,
   notice,

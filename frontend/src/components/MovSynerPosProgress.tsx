@@ -9,7 +9,17 @@ interface MovSynerPosProgressProps {
   warning: string | null;
   error: string | null;
   failedCount: number;
+  running?: boolean;
   onRetry?: () => void;
+}
+
+export function isMovSynerPosProgressRunning(
+  progress: MovSynerPosProgressState | null,
+  busy: boolean,
+  error: string | null,
+): boolean {
+  if (!progress || error) return false;
+  return busy && progress.enviados < progress.total;
 }
 
 export function MovSynerPosProgress({
@@ -18,6 +28,7 @@ export function MovSynerPosProgress({
   warning,
   error,
   failedCount,
+  running: runningProp,
   onRetry,
 }: MovSynerPosProgressProps) {
   if (!progress && !notice && !warning && !error) return null;
@@ -25,7 +36,10 @@ export function MovSynerPosProgress({
   const total = progress?.total ?? 0;
   const enviados = progress?.enviados ?? 0;
   const porcentaje = total > 0 ? Math.min(100, (enviados / total) * 100) : 0;
-  const running = Boolean(progress && !notice && !error);
+  const running =
+    runningProp !== undefined
+      ? runningProp
+      : Boolean(progress && !notice && !error);
   const withIssues = (progress?.errores ?? 0) + (progress?.conflictos ?? 0);
 
   return (

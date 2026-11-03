@@ -7,6 +7,8 @@ import {
   type NotificationItem,
 } from "./NotificationCenter";
 import { OperationProgressDialog } from "./OperationProgressDialog";
+import { SunatProgress, isSunatProgressTerminal } from "./SunatProgress";
+import type { SunatProgressState } from "../hooks/useSunat";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -127,5 +129,58 @@ describe("OperationProgressDialog · cancelacion segura", () => {
     fireEvent.click(cerrarButtons[cerrarButtons.length - 1]);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("sincroniza en el mismo render el estado Completado de SunatProgress con el icono y el boton Cerrar del modal", () => {
+    const completedProgress: SunatProgressState = {
+      phase: "job",
+      jobIndex: 1,
+      jobCount: 1,
+      estado: "COMPLETADO",
+      total: 1,
+      procesados: 1,
+      exitosos: 1,
+      errores: 0,
+      pendientes: 0,
+      porcentaje: 100,
+      mensaje: "Validación completada (ACEPTADO).",
+      alcance: "todos",
+      enviados: 1,
+      porEnviar: 1,
+      aceptados: 0,
+      enProceso: 0,
+      sinConfirmar: 0,
+      invalidos: 0,
+      chunksDone: 1,
+      chunksTotal: 1,
+    };
+
+    const running = !isSunatProgressTerminal(completedProgress);
+    expect(running).toBe(false);
+
+    render(
+      <OperationProgressDialog
+        open={true}
+        running={running}
+        title="Progreso de validación en SUNAT"
+        description="Consultando el estado de los comprobantes."
+        riskDescription="Riesgo"
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+      >
+        <SunatProgress
+          progress={completedProgress}
+          notice={null}
+          warning={null}
+          error={null}
+        />
+      </OperationProgressDialog>,
+    );
+
+    expect(screen.getByText("Completado")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Cancelar proceso" }),
+    ).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThanOrEqual(2);
   });
 });

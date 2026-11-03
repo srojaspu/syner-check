@@ -9,7 +9,10 @@ import { DataTable } from "@/components/DataTable";
 import { DetailDrawer } from "@/components/DetailDrawer";
 import { FlowBar } from "@/components/FlowBar";
 import { MovSynerPosConfirmDialog } from "@/components/MovSynerPosConfirmDialog";
-import { MovSynerPosProgress } from "@/components/MovSynerPosProgress";
+import {
+  MovSynerPosProgress,
+  isMovSynerPosProgressRunning,
+} from "@/components/MovSynerPosProgress";
 import {
   NotificationAlert,
   NotificationHost,
@@ -19,7 +22,10 @@ import { OperationProgressDialog } from "@/components/OperationProgressDialog";
 import { NumberPanel, RangePanel } from "@/components/SearchPanels";
 import { ResultsCard } from "@/components/ResultsCard";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
-import { SunatProgress } from "@/components/SunatProgress";
+import {
+  SunatProgress,
+  isSunatProgressTerminal,
+} from "@/components/SunatProgress";
 import { Tabs } from "@/components/Tabs";
 import { voucherColumns } from "@/components/columns";
 import { useDocument } from "@/hooks/useDocument";
@@ -177,6 +183,14 @@ export default function ComprobantesPage({
     vouchers.loading ||
     movsynerpos.busy ||
     movsynerpos.refreshing;
+
+  const sunatModalRunning =
+    Boolean(sunat.progress) && !isSunatProgressTerminal(sunat.progress);
+  const movModalRunning = isMovSynerPosProgressRunning(
+    movsynerpos.progress,
+    movsynerpos.busy,
+    movsynerpos.error,
+  );
 
   const notificationItems = useMemo<NotificationItem[]>(() => {
     const list: NotificationItem[] = [];
@@ -524,7 +538,7 @@ export default function ComprobantesPage({
 
       <OperationProgressDialog
         open={Boolean(sunat.progress)}
-        running={sunat.busy || sunat.refreshing}
+        running={sunatModalRunning}
         title="Progreso de validación en SUNAT"
         description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
         riskDescription="Si cancelas ahora, se detendrá el envío de lotes pendientes y el seguimiento en pantalla. Los lotes que ya fueron registrados en el servidor seguirán procesándose en segundo plano para evitar inconsistencias o cobros duplicados de cuota."
@@ -543,7 +557,7 @@ export default function ComprobantesPage({
 
       <OperationProgressDialog
         open={Boolean(movsynerpos.progress)}
-        running={movsynerpos.busy || movsynerpos.refreshing}
+        running={movModalRunning}
         title="Progreso de envío a MovSynerPos"
         description="Reconsultando documentos en SynerCom e insertando líneas en MovSynerPos."
         riskDescription="Si cancelas ahora, los documentos de los lotes que ya fueron insertados en MovSynerPos permanecerán guardados (la operación no se revierte) y los documentos restantes quedarán pendientes de envío."
@@ -554,6 +568,7 @@ export default function ComprobantesPage({
       >
         <MovSynerPosProgress
           progress={movsynerpos.progress}
+          running={movModalRunning}
           notice={null}
           warning={null}
           error={null}

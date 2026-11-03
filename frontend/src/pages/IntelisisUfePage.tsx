@@ -23,7 +23,10 @@ import { NumberPanel } from "@/components/SearchPanels";
 import { PeriodoPanel } from "@/components/search/PeriodoPanel";
 import { ALL_TIPOS_UFE, TypeChips } from "@/components/search/TypeChips";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
-import { SunatProgress } from "@/components/SunatProgress";
+import {
+  SunatProgress,
+  isSunatProgressTerminal,
+} from "@/components/SunatProgress";
 import { Tabs } from "@/components/Tabs";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
@@ -652,7 +655,9 @@ export default function IntelisisUfePage({
 
       <OperationProgressDialog
         open={Boolean(sunat.progress)}
-        running={sunat.busy || sunat.refreshing}
+        running={
+          Boolean(sunat.progress) && !isSunatProgressTerminal(sunat.progress)
+        }
         title="Progreso de validación en SUNAT"
         description="Consultando el estado de los comprobantes seleccionados contra SUNAT."
         riskDescription="Si cancelas ahora, se detendrá el envío de lotes pendientes y el seguimiento en pantalla. Los lotes que ya fueron registrados en el servidor seguirán procesándose en segundo plano para evitar inconsistencias o cobros duplicados de cuota."

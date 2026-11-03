@@ -1,6 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Loading02Icon, TriangleAlertIcon } from "@hugeicons/core-free-icons";
+import {
+  CheckmarkCircle02Icon,
+  Loading02Icon,
+  TriangleAlertIcon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,7 +84,15 @@ export function OperationProgressDialog({
                 className="animate-spin text-primary"
                 aria-hidden
               />
-            ) : null}
+            ) : (
+              <HugeiconsIcon
+                icon={CheckmarkCircle02Icon}
+                size={18}
+                strokeWidth={2}
+                className="text-emerald-600 dark:text-emerald-400"
+                aria-hidden
+              />
+            )}
             {title}
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
