@@ -43,7 +43,7 @@ export function useDocument(onAuthFailure: () => void) {
           controller.signal,
         );
         if (id !== seq.current) return;
-        setDocument(data.document);
+        setDocument({ ...row, ...data.document });
       } catch (err: unknown) {
         if (err instanceof RequestAbortedError || id !== seq.current) return;
         if (err instanceof AuthError) {

@@ -1,10 +1,14 @@
 import type { ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  CheckmarkCircle01Icon,
   Copy01Icon,
+  Database01Icon,
   Loading02Icon,
   PrinterIcon,
   ReceiptTextIcon,
+  Search01Icon,
+  TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +30,27 @@ import {
 } from "@/components/ui/table";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { Voucher } from "../api/types";
+
+function sunatBadge(doc: Voucher): {
+  label: string;
+  variant: "default" | "secondary" | "outline" | "destructive";
+} | null {
+  const raw = (doc.sunat?.estado ?? "").trim().toUpperCase();
+  if (!raw) return null;
+  if (raw === "ACEPTADO") return { label: "SUNAT: Aceptado", variant: "default" };
+  if (raw === "PENDIENTE" || raw === "PROCESANDO") {
+    return { label: "SUNAT: Pendiente", variant: "secondary" };
+  }
+  if (
+    raw === "NO_EXISTE" ||
+    raw === "ANULADO" ||
+    raw === "ERROR" ||
+    raw === "SIN_CONFIRMAR"
+  ) {
+    return { label: `SUNAT: ${raw}`, variant: "destructive" };
+  }
+  return { label: `SUNAT: ${raw}`, variant: "outline" };
+}
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -162,7 +187,13 @@ export function DetailDrawer({
   loading,
   error,
   copied,
+  validatingSunat = false,
+  sendingMovSynerPos = false,
+  actionNotice = null,
+  actionError = null,
   onCopy,
+  onValidateSunat,
+  onSendMovSynerPos,
   onClose,
 }: {
   open: boolean;
@@ -170,11 +201,19 @@ export function DetailDrawer({
   loading: boolean;
   error: string | null;
   copied: boolean;
+  validatingSunat?: boolean;
+  sendingMovSynerPos?: boolean;
+  actionNotice?: string | null;
+  actionError?: string | null;
   onCopy: () => void;
+  onValidateSunat?: (doc: Voucher) => void;
+  onSendMovSynerPos?: (doc: Voucher) => void;
   onClose: () => void;
 }) {
   const currency = document?.currency?.isoCode ?? "PEN";
   const emitted = formatDateTime(document?.createdDate, document?.date);
+  const sunat = document ? sunatBadge(document) : null;
+  const actionsBusy = validatingSunat || sendingMovSynerPos;
   return (
     <Sheet
       open={open}
@@ -212,7 +251,17 @@ export function DetailDrawer({
         ) : document ? (
           <div id="detail" className="flex flex-col gap-6">
             <SheetHeader className="items-start text-left">
-              <Badge variant="secondary">{document.tipo}</Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{document.tipo}</Badge>
+                {typeof document.in_sql === "boolean" ? (
+                  <Badge variant={document.in_sql ? "secondary" : "outline"}>
+                    {document.in_sql ? "En MovSynerPos" : "Falta en MovSynerPos"}
+                  </Badge>
+                ) : null}
+                {sunat ? (
+                  <Badge variant={sunat.variant}>{sunat.label}</Badge>
+                ) : null}
+              </div>
               <SheetTitle className="flex items-center gap-2 text-lg">
                 <HugeiconsIcon icon={ReceiptTextIcon} size={20} strokeWidth={2} aria-hidden />{" "}
                 {document.number || "Sin número"}
@@ -224,7 +273,7 @@ export function DetailDrawer({
                   "Cliente no informado"}
               </SheetDescription>
             </SheetHeader>
-            <div className="flex flex-wrap gap-2 px-6">
+            <div className="flex flex-wrap items-center gap-2 px-6 print:hidden">
               <Button
                 type="button"
                 variant="secondary"
@@ -242,7 +291,69 @@ export function DetailDrawer({
               >
                 <HugeiconsIcon icon={PrinterIcon} size={15} strokeWidth={2} aria-hidden /> Imprimir
               </Button>
+              {onValidateSunat ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={actionsBusy}
+                  onClick={() => onValidateSunat(document)}
+                  title="Consulta este comprobante en SUNAT"
+                >
+                  {validatingSunat ? (
+                    <HugeiconsIcon
+                      icon={Loading02Icon}
+                      size={15}
+                      strokeWidth={2}
+                      className="animate-spin"
+                      aria-hidden
+                    />
+                  ) : (
+                    <HugeiconsIcon icon={Search01Icon} size={15} strokeWidth={2} aria-hidden />
+                  )}{" "}
+                  {validatingSunat ? "Validando…" : "Validar en SUNAT"}
+                </Button>
+              ) : null}
+              {onSendMovSynerPos ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={actionsBusy}
+                  onClick={() => onSendMovSynerPos(document)}
+                  title="Envía o repara este comprobante en MovSynerPos"
+                >
+                  {sendingMovSynerPos ? (
+                    <HugeiconsIcon
+                      icon={Loading02Icon}
+                      size={15}
+                      strokeWidth={2}
+                      className="animate-spin"
+                      aria-hidden
+                    />
+                  ) : (
+                    <HugeiconsIcon icon={Database01Icon} size={15} strokeWidth={2} aria-hidden />
+                  )}{" "}
+                  {sendingMovSynerPos ? "Enviando…" : "Reenviar a MovSynerPos"}
+                </Button>
+              ) : null}
             </div>
+            {actionNotice ? (
+              <div className="px-6 print:hidden">
+                <Alert>
+                  <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={2} />
+                  <AlertDescription>{actionNotice}</AlertDescription>
+                </Alert>
+              </div>
+            ) : null}
+            {actionError ? (
+              <div className="px-6 print:hidden">
+                <Alert variant="destructive">
+                  <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
+                  <AlertDescription>{actionError}</AlertDescription>
+                </Alert>
+              </div>
+            ) : null}
             <dl className="grid grid-cols-2 gap-3 px-6">
               <Field label="OID" value={document.oid} />
               <Field

@@ -48,7 +48,13 @@ export default function ComprobantesPage({
   const [copied, setCopied] = useState(false);
   const [sunatDialogOpen, setSunatDialogOpen] = useState(false);
   const [movSynerPosDialogOpen, setMovSynerPosDialogOpen] = useState(false);
+  const [movSynerPosTarget, setMovSynerPosTarget] = useState<Voucher[] | null>(
+    null,
+  );
   const [movSynerPosReparar, setMovSynerPosReparar] = useState(false);
+  const [detailActionSource, setDetailActionSource] = useState<
+    "sunat" | "movsynerpos" | null
+  >(null);
   const [flowSelection, setFlowSelection] = useState<FlowSelection | null>(
     null,
   );
@@ -122,8 +128,65 @@ export default function ComprobantesPage({
 
   const showDetail = (row: Voucher) => {
     setCopied(false);
+    setDetailActionSource(null);
     void detail.show(row);
   };
+
+  const activeDetailDocument = useMemo(() => {
+    if (!detail.document) return null;
+    const freshRow = vouchers.rows.find(
+      (row) =>
+        row.oid === detail.document?.oid && row.tipo === detail.document?.tipo,
+    );
+    if (!freshRow) return detail.document;
+    return {
+      ...detail.document,
+      in_sql: freshRow.in_sql,
+      in_intelisis: freshRow.in_intelisis,
+      intelisis: freshRow.intelisis ?? detail.document.intelisis,
+      sunat: freshRow.sunat ?? detail.document.sunat,
+      flow_states: freshRow.flow_states ?? detail.document.flow_states,
+    };
+  }, [detail.document, vouchers.rows]);
+
+  const detailActionNotice = useMemo(() => {
+    if (detailActionSource === "sunat") {
+      if (sunat.notice) return sunat.notice;
+      if (
+        sunat.progress &&
+        (sunat.progress.estado === "COMPLETADO" ||
+          sunat.progress.estado === "COMPLETADO_ERROR")
+      ) {
+        return sunat.progress.mensaje;
+      }
+      return null;
+    }
+    if (detailActionSource === "movsynerpos") {
+      return movsynerpos.notice;
+    }
+    return null;
+  }, [
+    detailActionSource,
+    sunat.notice,
+    sunat.progress,
+    movsynerpos.notice,
+  ]);
+
+  const detailActionError = useMemo(() => {
+    if (detailActionSource === "sunat") {
+      return sunat.error ?? sunat.warning;
+    }
+    if (detailActionSource === "movsynerpos") {
+      return movsynerpos.error ?? movsynerpos.warning;
+    }
+    return null;
+  }, [
+    detailActionSource,
+    sunat.error,
+    sunat.warning,
+    movsynerpos.error,
+    movsynerpos.warning,
+  ]);
 
   const refreshRows = () => {
     // Do not reset SUNAT state here: this callback runs at the end of the
@@ -224,7 +287,10 @@ export default function ComprobantesPage({
               type="button"
               variant="outline"
               disabled={sunatDisabled || !effectiveRows.length}
-              onClick={() => setSunatDialogOpen(true)}
+              onClick={() => {
+                setDetailActionSource(null);
+                setSunatDialogOpen(true);
+              }}
               title={
                 isFiltered
                   ? `Valida solo las ${effectiveRows.length} filas filtradas contra SUNAT`
@@ -246,7 +312,11 @@ export default function ComprobantesPage({
               type="button"
               variant="outline"
               disabled={movSynerPosDisabled}
-              onClick={() => setMovSynerPosDialogOpen(true)}
+              onClick={() => {
+                setDetailActionSource(null);
+                setMovSynerPosTarget(null);
+                setMovSynerPosDialogOpen(true);
+              }}
               title={
                 isFiltered
                   ? `Envía a MovSynerPos solo las ${effectiveRows.length} filas filtradas`
@@ -363,12 +433,28 @@ export default function ComprobantesPage({
 
       <DetailDrawer
         open={detail.open}
-        document={detail.document}
+        document={activeDetailDocument}
         loading={detail.loading}
         error={detail.error}
         copied={copied}
+        validatingSunat={sunat.busy || sunat.refreshing}
+        sendingMovSynerPos={movsynerpos.busy || movsynerpos.refreshing}
+        actionNotice={detailActionNotice}
+        actionError={detailActionError}
         onCopy={() => void copyNumber()}
-        onClose={detail.close}
+        onValidateSunat={(doc) => {
+          setDetailActionSource("sunat");
+          void sunat.runBatch([doc], refreshRows, "todos");
+        }}
+        onSendMovSynerPos={(doc) => {
+          setDetailActionSource("movsynerpos");
+          setMovSynerPosTarget([doc]);
+          setMovSynerPosDialogOpen(true);
+        }}
+        onClose={() => {
+          setDetailActionSource(null);
+          detail.close();
+        }}
       />
 
       <SunatConfirmDialog
@@ -382,11 +468,15 @@ export default function ComprobantesPage({
 
       <MovSynerPosConfirmDialog
         open={movSynerPosDialogOpen}
-        onOpenChange={setMovSynerPosDialogOpen}
-        rows={effectiveRows}
+        onOpenChange={(open) => {
+          setMovSynerPosDialogOpen(open);
+          if (!open) setMovSynerPosTarget(null);
+        }}
+        rows={movSynerPosTarget ?? effectiveRows}
         onConfirm={(reparar) => {
+          const rowsToSend = movSynerPosTarget ?? effectiveRows;
           setMovSynerPosReparar(reparar);
-          void movsynerpos.run(effectiveRows, refreshRows, reparar);
+          void movsynerpos.run(rowsToSend, refreshRows, reparar);
         }}
       />
     </div>
