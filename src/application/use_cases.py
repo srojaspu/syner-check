@@ -440,6 +440,47 @@ def summarize(
     return result
 
 
+def _matches_number(doc: dict, target: str) -> bool:
+    """Exact number match; the provider may return prefix matches."""
+    return str(doc.get("number", "")).strip().upper() == target
+
+
+def _credit_notes_for_dates(
+    gateway: GraphqlGateway, dates: set[str], target: str
+) -> list[dict]:
+    """Fetch credit notes for specific dates and keep the exact number.
+
+    ``creditNotes`` has no ``serie``/``number`` filter, so every candidate
+    date costs one summary call. The caller caps the dates; four workers is
+    the same concurrency used by the range summary.
+    """
+    if not dates:
+        return []
+    found: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max(1, min(len(dates), 4))) as pool:
+        futures = {
+            day: pool.submit(gateway.summary, day, day, ["NOTA DE CREDITO"])
+            for day in dates
+        }
+        for future in futures.values():
+            for doc in future.result().get("NOTA DE CREDITO", []):
+                if _matches_number(doc, target):
+                    found.append(doc)
+    return found
+
+
+def _credit_notes_for_range(
+    gateway: GraphqlGateway, start: date, end: date, target: str
+) -> list[dict]:
+    """Bounded fallback used when the number has no indexed NC row."""
+    result = gateway.summary(_iso(start), _iso(end), ["NOTA DE CREDITO"])
+    return [
+        doc
+        for doc in result.get("NOTA DE CREDITO", [])
+        if _matches_number(doc, target)
+    ]
+
+
 def search_by_number(
     reader: SqlDocumentReader,
     gateway: GraphqlGateway,
@@ -454,13 +495,16 @@ def search_by_number(
     """Find one voucher by number across all document types.
 
     FACTURA and BOLETA use the server-side `serie` filter (direct number
-    lookup, no date range). NOTA DE CREDITO has no `serie` support, so it
-    uses date-scoped summaries (the SQL rows' dates when indexed, else the
-    last ``fallback_days`` days). The local SQL index decides `source` and
-    `in_sql`; GraphQL provides the display fields. When an Intelisis reader
-    is given, each hit is also matched against Venta headers for its own
-    date (1-day fetches, capped), so number search reports `in_intelisis`
-    with the same (tipo, number, fecha) key as the range summary.
+    lookup, no date range). NOTA DE CREDITO has no `serie` support, so it is
+    date-scoped: it uses the dates of indexed NC rows, and when no NC row is
+    indexed it always scans the last ``fallback_days`` days — even if the
+    number already exists in SQL as a BOLETA/FACTURA. That fallback keeps an
+    index lag from hiding a credit note that Syner already has. The local SQL
+    index decides `source` and `in_sql`; GraphQL provides the display fields.
+    When an Intelisis reader is given, each hit is also matched against Venta
+    headers for its own date (1-day fetches, capped), so number search reports
+    `in_intelisis` with the same (tipo, number, fecha) key as the range
+    summary.
 
     `SerieNumero` is reused across years, so the same number can return
     several documents; all of them are kept (each with its own date) instead
@@ -474,50 +518,75 @@ def search_by_number(
 
     rows = reader.fetch_by_number(cleaned, tipo_values, None, None)
 
-    # FACTURA/BOLETA: direct `serie` lookup in parallel (no date range).
+    # NOTA DE CREDITO: no `serie` support, so it is date-scoped. Prefer the
+    # dates of NC rows already indexed. A number can be indexed only as
+    # BOLETA/FACTURA while its NC is still missing (index lag); in that case
+    # the bounded GraphQL fallback must run too. Gating the fallback on
+    # `rows` being empty hid those NCs.
+    nc_dates = {
+        str(r.get("FechaDocumento", ""))
+        for r in rows
+        if str(r.get("TipoDocumento", "")) == "NOTA DE CREDITO"
+        and str(r.get("FechaDocumento", ""))
+    }
+    fallback_range: tuple[date, date] | None = (
+        (today - timedelta(days=fallback_days), today) if not nc_dates else None
+    )
+
+    # FACTURA/BOLETA: direct `serie` lookup. The NC fallback (when needed)
+    # runs in the same pool so the extra GraphQL call does not add a serial
+    # round-trip to the search.
     serie_docs: list[tuple[str, dict]] = []
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    nc_docs: list[dict] = []
+    nc_warning: str | None = None
+    fallback_completed = fallback_range is not None
+    with ThreadPoolExecutor(max_workers=3) as pool:
         serie_futures = {
             "FACTURA": pool.submit(gateway.search_by_serie, "FACTURA", cleaned),
             "BOLETA": pool.submit(gateway.search_by_serie, "BOLETA", cleaned),
         }
+        nc_future = (
+            pool.submit(
+                _credit_notes_for_range,
+                gateway,
+                fallback_range[0],
+                fallback_range[1],
+                target,
+            )
+            if fallback_range is not None
+            else None
+        )
         for tipo, future in serie_futures.items():
             for doc in future.result():
-                if str(doc.get("number", "")).strip().upper() == target:
+                if _matches_number(doc, target):
                     serie_docs.append((tipo, doc))
+        if nc_future is not None:
+            if rows:
+                # The fallback is an extra lookup for a number that already
+                # has results: a transient NC failure must not turn a working
+                # search into a 502.
+                try:
+                    nc_docs.extend(nc_future.result())
+                except UpstreamError:
+                    fallback_completed = False
+                    nc_warning = "credit_notes_unavailable"
+                    logger.warning(
+                        "Number search NC fallback failed number=%s; "
+                        "returning indexed results only",
+                        cleaned,
+                        exc_info=True,
+                    )
+            else:
+                nc_docs.extend(nc_future.result())
+        else:
+            nc_docs.extend(_credit_notes_for_dates(gateway, nc_dates, target))
 
-    # NOTA DE CREDITO: date-scoped (no `serie` support).
-    nc_docs: list[dict] = []
-    if rows:
-        nc_dates = {
-            str(r.get("FechaDocumento", ""))
-            for r in rows
-            if str(r.get("TipoDocumento", "")) == "NOTA DE CREDITO"
-            and str(r.get("FechaDocumento", ""))
-        }
-        if nc_dates:
-            with ThreadPoolExecutor(
-                max_workers=max(1, min(len(nc_dates), 4))
-            ) as pool:
-                nc_futures = {
-                    d: pool.submit(gateway.summary, d, d, ["NOTA DE CREDITO"])
-                    for d in nc_dates
-                }
-                for future in nc_futures.values():
-                    for doc in future.result().get("NOTA DE CREDITO", []):
-                        if str(doc.get("number", "")).strip().upper() == target:
-                            nc_docs.append(doc)
-        source = "sql_index"
-        searched_range = None
-    else:
-        start = today - timedelta(days=fallback_days)
-        end = today
-        gql = gateway.summary(_iso(start), _iso(end), ["NOTA DE CREDITO"])
-        for doc in gql.get("NOTA DE CREDITO", []):
-            if str(doc.get("number", "")).strip().upper() == target:
-                nc_docs.append(doc)
-        source = "graphql_fallback"
-        searched_range = {"start": _iso(start), "end": _iso(end)}
+    source = "sql_index" if rows else "graphql_fallback"
+    searched_range = (
+        {"start": _iso(fallback_range[0]), "end": _iso(fallback_range[1])}
+        if fallback_completed
+        else None
+    )
 
     # Assemble: show every distinct GraphQL doc (do NOT collapse provider
     # duplicates by number). Mark in_sql per doc by oid match against SQL,
@@ -556,6 +625,19 @@ def search_by_number(
             entry["sql"] = sql_row
         results.append(entry)
 
+    # Search is user-triggered and low volume: one structured line makes
+    # index-lag cases (a hit in SQL, NC found only by fallback) visible.
+    logger.info(
+        "Number search number=%s source=%s sql_rows=%d nc_dates=%d "
+        "nc_fallback=%s results=%d",
+        cleaned,
+        source,
+        len(rows),
+        len(nc_dates),
+        searched_range is not None,
+        len(results),
+    )
+
     # Intelisis (optional, degraded): match each hit against Venta headers
     # fetched for the hits' own dates, same key as the range summary.
     intelisis_enabled = False
@@ -592,6 +674,8 @@ def search_by_number(
     }
     if searched_range is not None:
         out["searched_range"] = searched_range
+    if nc_warning is not None:
+        out["nc_warning"] = nc_warning
     if intelisis_warning is not None:
         out["intelisis_warning"] = intelisis_warning
     try:

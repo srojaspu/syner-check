@@ -7,7 +7,7 @@ from datetime import date
 
 from src.application import get_detail, search_by_number, summarize
 from src.domain.entities import TipoDocumento
-from src.domain.errors import NotFoundError
+from src.domain.errors import NotFoundError, UpstreamError
 
 
 class FakeReader:
@@ -28,6 +28,7 @@ class FakeGateway:
         self.summary_calls: list[tuple[str, str, tuple]] = []
         self.serie_calls: list[tuple[str, str]] = []
         self.detail_serie_calls: list[tuple[str, str]] = []
+        self.fail_summary = False
 
     def detail(self, tipo, start_iso, end_iso, number=None):
         self.calls.append((tipo, start_iso, end_iso))
@@ -38,6 +39,8 @@ class FakeGateway:
         return docs
 
     def summary(self, start_iso, end_iso, tipos):
+        if self.fail_summary:
+            raise UpstreamError("GraphQL read failed.")
         self.summary_calls.append((start_iso, end_iso, tuple(tipos)))
         out: dict[str, list[dict]] = {t: [] for t in tipos}
         for (tipo, doc_date), docs in self.docs_by_key.items():
@@ -114,6 +117,164 @@ class SearchTests(unittest.TestCase):
             today=date(2026, 9, 20),
         )
         self.assertEqual(res["source"], "graphql_fallback")
+
+    def test_nc_fallback_runs_when_number_is_indexed_only_as_boleta(self):
+        """Index lag: a boleta hit must not hide a not-yet-indexed NC.
+
+        Real case 2026-11-03 (BS20-00000116): the number existed in SQL as a
+        2025 BOLETA, while the 2026 NC was only in Syner. Gating the fallback
+        on ``rows`` being empty returned just the boleta.
+        """
+        rows = [
+            {
+                "IDSynerPos": "B2025",
+                "TipoDocumento": "BOLETA",
+                "FechaDocumento": "2025-11-15",
+                "SerieNumero": "BS20-00000116",
+            },
+        ]
+        gw = FakeGateway(
+            {
+                ("BOLETA", "2025-11-15"): [
+                    {
+                        "oid": "B2025",
+                        "number": "BS20-00000116",
+                        "date": "2025-11-15T10:00:00",
+                    }
+                ],
+                ("NOTA DE CREDITO", "2026-11-02"): [
+                    {
+                        "oid": "N2026",
+                        "number": "BS20-00000116",
+                        "date": "2026-11-02T10:00:00",
+                    }
+                ],
+            }
+        )
+        res = search_by_number(
+            FakeReader(rows),
+            gw,
+            number="BS20-00000116",
+            fallback_days=90,
+            today=date(2026, 11, 3),
+        )
+        by_oid = {r["oid"]: r for r in res["results"]}
+        self.assertEqual(set(by_oid), {"B2025", "N2026"})
+        # No NC row indexed -> bounded fallback, even with a SQL hit.
+        self.assertEqual(
+            gw.summary_calls,
+            [("2026-08-05", "2026-11-03", ("NOTA DE CREDITO",))],
+        )
+        self.assertEqual(
+            res["searched_range"],
+            {"start": "2026-08-05", "end": "2026-11-03"},
+        )
+        self.assertTrue(by_oid["B2025"]["in_sql"])
+        self.assertFalse(by_oid["N2026"]["in_sql"])
+
+    def test_indexed_nc_uses_its_date_and_skips_fallback(self):
+        rows = [
+            {
+                "IDSynerPos": "B2025",
+                "TipoDocumento": "BOLETA",
+                "FechaDocumento": "2025-11-15",
+                "SerieNumero": "BS20-00000116",
+            },
+            {
+                "IDSynerPos": "N2026",
+                "TipoDocumento": "NOTA DE CREDITO",
+                "FechaDocumento": "2026-11-02",
+                "SerieNumero": "BS20-00000116",
+            },
+        ]
+        gw = FakeGateway(
+            {
+                ("BOLETA", "2025-11-15"): [
+                    {
+                        "oid": "B2025",
+                        "number": "BS20-00000116",
+                        "date": "2025-11-15T10:00:00",
+                    }
+                ],
+                ("NOTA DE CREDITO", "2026-11-02"): [
+                    {
+                        "oid": "N2026",
+                        "number": "BS20-00000116",
+                        "date": "2026-11-02T10:00:00",
+                    }
+                ],
+            }
+        )
+        res = search_by_number(
+            FakeReader(rows),
+            gw,
+            number="BS20-00000116",
+            fallback_days=90,
+            today=date(2026, 11, 3),
+        )
+        self.assertEqual({r["oid"] for r in res["results"]}, {"B2025", "N2026"})
+        # The indexed NC date is queried once; no wide fallback is needed.
+        self.assertEqual(
+            gw.summary_calls,
+            [("2026-11-02", "2026-11-02", ("NOTA DE CREDITO",))],
+        )
+        self.assertNotIn("searched_range", res)
+
+    def test_nc_fallback_failure_keeps_indexed_results(self):
+        """A transient NC lookup failure must not break a working search."""
+        rows = [
+            {
+                "IDSynerPos": "B2025",
+                "TipoDocumento": "BOLETA",
+                "FechaDocumento": "2025-11-15",
+                "SerieNumero": "BS20-00000116",
+            },
+        ]
+        gw = FakeGateway(
+            {
+                ("BOLETA", "2025-11-15"): [
+                    {
+                        "oid": "B2025",
+                        "number": "BS20-00000116",
+                        "date": "2025-11-15T10:00:00",
+                    }
+                ],
+            }
+        )
+        gw.fail_summary = True
+        res = search_by_number(
+            FakeReader(rows),
+            gw,
+            number="BS20-00000116",
+            fallback_days=90,
+            today=date(2026, 11, 3),
+        )
+        self.assertEqual([r["oid"] for r in res["results"]], ["B2025"])
+        self.assertEqual(res["nc_warning"], "credit_notes_unavailable")
+        self.assertNotIn("searched_range", res)
+
+    def test_nc_fallback_failure_without_sql_rows_propagates(self):
+        """The no-index path keeps its original fail-fast behavior."""
+        gw = FakeGateway(
+            {
+                ("BOLETA", "2026-09-02"): [
+                    {
+                        "oid": "B9",
+                        "number": "B009",
+                        "date": "2026-09-02T10:00:00",
+                    }
+                ],
+            }
+        )
+        gw.fail_summary = True
+        with self.assertRaises(UpstreamError):
+            search_by_number(
+                FakeReader([]),
+                gw,
+                number="B009",
+                fallback_days=90,
+                today=date(2026, 9, 20),
+            )
 
 
 class NumberIntelisisTests(unittest.TestCase):
