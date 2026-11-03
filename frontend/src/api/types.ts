@@ -146,6 +146,11 @@ export interface SearchResponse {
   searched_range?: { start: string; end: string };
   intelisis_enabled: boolean;
   intelisis_warning?: string | null;
+  /**
+   * Aviso de degradación del fallback de notas de crédito
+   * (`credit_notes_unavailable`): los resultados pueden estar incompletos.
+   */
+  nc_warning?: string | null;
   sunat_enabled: boolean;
 }
 

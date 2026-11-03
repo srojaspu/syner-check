@@ -91,6 +91,14 @@ export default function ComprobantesPage({
     : hasTableFilter
       ? `${effectiveRows.length} de ${vouchers.rows.length} documentos`
       : vouchers.subtitle;
+  // El fallback de NC puede degradarse: el backend devuelve lo indexado con
+  // `nc_warning` en vez de fallar, y el usuario debe saber que falta cubrir
+  // esa verificación antes de concluir que el documento no existe.
+  const ncWarningText = vouchers.ncWarning
+    ? vouchers.ncWarning === "credit_notes_unavailable"
+      ? "No se pudieron consultar las notas de crédito de este número; puede faltar algún resultado."
+      : "La verificación de notas de crédito quedó incompleta."
+    : null;
   const columns = useMemo(
     () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
     [vouchers.intelisisEnabled],
@@ -248,12 +256,21 @@ export default function ComprobantesPage({
         summary={vouchers.error ?? resultsSubtitle}
         details={
           vouchers.searched ? (
-            <p className="text-sm text-muted-foreground">
-              Total mostrado:{" "}
-              <span className="font-semibold tabular-nums text-foreground">
-                {formatMoney(resultsTotal, resultsCurrency)}
-              </span>
-            </p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                Total mostrado:{" "}
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatMoney(resultsTotal, resultsCurrency)}
+                </span>
+              </p>
+              {ncWarningText ? (
+                <NotificationAlert
+                  tone="warning"
+                  title="Notas de crédito sin verificar"
+                  description={ncWarningText}
+                />
+              ) : null}
+            </div>
           ) : null
         }
         actions={

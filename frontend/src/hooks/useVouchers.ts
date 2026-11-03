@@ -18,6 +18,7 @@ interface VoucherState {
   intelisisEnabled: boolean;
   intelisisCount: number;
   intelisisWarning: string | null;
+  ncWarning: string | null;
   sunatEnabled: boolean;
   flow: FlowBreakdown | null;
 }
@@ -31,6 +32,7 @@ const EMPTY: VoucherState = {
   intelisisEnabled: false,
   intelisisCount: 0,
   intelisisWarning: null,
+  ncWarning: null,
   sunatEnabled: false,
   flow: null,
 };
@@ -94,6 +96,7 @@ export function useVouchers(onAuthFailure: () => void) {
           intelisisEnabled: Boolean(data.intelisis_enabled),
           intelisisCount: Number(data.intelisis_count ?? 0),
           intelisisWarning: data.intelisis_warning ?? null,
+          ncWarning: null,
           sunatEnabled: Boolean(data.sunat_enabled),
           flow: data.flow ?? null,
         });
@@ -125,6 +128,7 @@ export function useVouchers(onAuthFailure: () => void) {
           intelisisEnabled: Boolean(data.intelisis_enabled),
           intelisisCount: 0,
           intelisisWarning: data.intelisis_warning ?? null,
+          ncWarning: data.nc_warning ?? null,
           sunatEnabled: Boolean(data.sunat_enabled),
           flow: null,
         });

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
   rows: [] as Voucher[],
+  ncWarning: null as string | null,
   ufeMounts: 0,
   movsynerpos: {
     busy: false,
@@ -52,6 +53,7 @@ vi.mock("./hooks/useVouchers", () => ({
     intelisisEnabled: false,
     intelisisCount: 0,
     intelisisWarning: null,
+    ncWarning: mocks.ncWarning,
     sunatEnabled: false,
     flow: null,
     runRange: vi.fn(),
@@ -134,6 +136,7 @@ describe("App", () => {
   beforeEach(() => {
     mocks.session.ready = false;
     mocks.rows = [];
+    mocks.ncWarning = null;
     mocks.ufeMounts = 0;
     mocks.movsynerpos.run.mockReset();
     window.location.hash = "";
@@ -154,6 +157,16 @@ describe("App", () => {
     rerender(<App />);
 
     expect(screen.getByText("Resultados")).toBeTruthy();
+  });
+
+  it("avisa cuando la verificación de notas de crédito quedó incompleta", () => {
+    mocks.session.ready = true;
+    mocks.rows = [row("1", true)];
+    mocks.ncWarning = "credit_notes_unavailable";
+    render(<App />);
+
+    expect(screen.getByText("Notas de crédito sin verificar")).toBeTruthy();
+    expect(screen.getByText(/puede faltar algún resultado/i)).toBeTruthy();
   });
 
   it("disables the MovSynerPos button without rows", () => {
