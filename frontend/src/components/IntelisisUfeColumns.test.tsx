@@ -215,4 +215,15 @@ describe("IntelisisUfeColumns · selección para reenvío", () => {
         .getAttribute("aria-disabled"),
     ).toBe("true");
   });
+
+  it("muestra el badge del estado activo en la cola del ERP junto al generador", () => {
+    const seleccion: IntelisisUfeSelection = {
+      ...selection(),
+      reenviosActivos: new Map([[7466462, "EN_COLA"]]),
+    };
+    renderCelda("generador", fila({ generador: "SIN OK" }), seleccion);
+
+    expect(screen.getByText("SIN OK")).toBeTruthy();
+    expect(screen.getByText("En cola")).toBeTruthy();
+  });
 });

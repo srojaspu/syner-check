@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FileDownIcon, Loading02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,10 @@ import { NumberPanel, RangePanel } from "@/components/SearchPanels";
 import { ResultsCard } from "@/components/ResultsCard";
 import { SunatConfirmDialog } from "@/components/SunatConfirmDialog";
 import { Tabs } from "@/components/Tabs";
-import { voucherColumns } from "@/components/columns";
+import {
+  voucherColumns,
+  voucherSelectionKey,
+} from "@/components/columns";
 import { useDocument } from "@/hooks/useDocument";
 import { useVouchers, type SearchMode } from "@/hooks/useVouchers";
 import { useOperations } from "@/operations/OperationsContext";
@@ -64,6 +67,10 @@ export default function ComprobantesPage({
   // Filtered rows (all pages) reported up by the table; null = not yet
   // reported (e.g. right after a search) → fall back to all rows.
   const [filteredRows, setFilteredRows] = useState<Voucher[] | null>(null);
+  /** Documentos marcados manualmente (sobrevive al cambio de página). */
+  const [seleccion, setSeleccion] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
   const handleFilteredRowsChange = useCallback((rows: Voucher[]) => {
     setFilteredRows(rows);
   }, []);
@@ -72,6 +79,52 @@ export default function ComprobantesPage({
   const hasTableFilter =
     filteredRows !== null && filteredRows.length !== tableRows.length;
   const isFiltered = flowSelection !== null || hasTableFilter;
+
+  const toggleSeleccion = useCallback((key: string, marcado: boolean) => {
+    setSeleccion((prev) => {
+      const siguiente = new Set(prev);
+      if (marcado) siguiente.add(key);
+      else siguiente.delete(key);
+      return siguiente;
+    });
+  }, []);
+
+  const togglePagina = useCallback(
+    (pagina: Voucher[], marcado: boolean) => {
+      setSeleccion((prev) => {
+        const siguiente = new Set(prev);
+        for (const fila of pagina) {
+          const key = voucherSelectionKey(fila);
+          if (marcado) siguiente.add(key);
+          else siguiente.delete(key);
+        }
+        return siguiente;
+      });
+    },
+    [],
+  );
+
+  // Si un filtro oculta un documento marcado, se desmarca: no se envía algo
+  // que el usuario ya no ve en la tabla.
+  useEffect(() => {
+    setSeleccion((prev) => {
+      if (!prev.size) return prev;
+      const vigentes = new Set(effectiveRows.map(voucherSelectionKey));
+      const siguiente = new Set(
+        [...prev].filter((key) => vigentes.has(key)),
+      );
+      return siguiente.size === prev.size ? prev : siguiente;
+    });
+  }, [effectiveRows]);
+
+  const selectedRows = useMemo(
+    () =>
+      effectiveRows.filter((row) => seleccion.has(voucherSelectionKey(row))),
+    [effectiveRows, seleccion],
+  );
+  const hasSelection = selectedRows.length > 0;
+  /** Manda la selección cuando existe; sin selección, todos los visibles. */
+  const targetRows = hasSelection ? selectedRows : effectiveRows;
   const flowStageTitle =
     flowSelection?.stage === "intelisis" ? "Intelisis" : "SUNAT";
   const resultsTotal = useMemo(
@@ -100,8 +153,16 @@ export default function ComprobantesPage({
       : "La verificación de notas de crédito quedó incompleta."
     : null;
   const columns = useMemo(
-    () => voucherColumns({ intelisisEnabled: vouchers.intelisisEnabled }),
-    [vouchers.intelisisEnabled],
+    () =>
+      voucherColumns({
+        intelisisEnabled: vouchers.intelisisEnabled,
+        selection: {
+          seleccionados: seleccion,
+          onToggle: toggleSeleccion,
+          onTogglePagina: togglePagina,
+        },
+      }),
+    [vouchers.intelisisEnabled, seleccion, toggleSeleccion, togglePagina],
   );
   const selectFlowState = useCallback(
     (stage: FlowStageKey, state: string) => {
@@ -159,6 +220,7 @@ export default function ComprobantesPage({
     // filter is cleared because a validated subset can change states.
     setFlowSelection(null);
     setFilteredRows(null);
+    setSeleccion(new Set<string>());
     if (mode === "range" && lastRange) {
       return vouchers.runRange(lastRange.start, lastRange.end, lastRange.types);
     }
@@ -171,7 +233,7 @@ export default function ComprobantesPage({
   // Un solo proceso a la vez: los botones de operación quedan bloqueados
   // mientras cualquiera esté corriendo, con el resultado abierto o refrescando.
   const operationsDisabled =
-    !effectiveRows.length ||
+    !targetRows.length ||
     vouchers.loading ||
     operationActive ||
     sunat.refreshing ||
@@ -200,7 +262,13 @@ export default function ComprobantesPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <Tabs mode={mode} onChange={setMode} />
+      <Tabs
+        mode={mode}
+        onChange={(nextMode) => {
+          setMode(nextMode);
+          setSeleccion(new Set<string>());
+        }}
+      />
 
       <section>
         {mode === "range" ? (
@@ -215,6 +283,7 @@ export default function ComprobantesPage({
               setMovSynerPosDialogOpen(false);
               setFlowSelection(null);
               setFilteredRows(null);
+              setSeleccion(new Set<string>());
               void vouchers.runRange(start, end, types);
             }}
           />
@@ -230,6 +299,7 @@ export default function ComprobantesPage({
               setMovSynerPosDialogOpen(false);
               setFlowSelection(null);
               setFilteredRows(null);
+              setSeleccion(new Set<string>());
               void vouchers.runNumber(number);
             }}
           />
@@ -281,9 +351,11 @@ export default function ComprobantesPage({
               disabled={operationsDisabled}
               onClick={() => setSunatDialogOpen(true)}
               title={
-                isFiltered
-                  ? `Valida solo las ${effectiveRows.length} filas filtradas contra SUNAT`
-                  : "Valida los documentos mostrados contra SUNAT en lotes"
+                hasSelection
+                  ? `Valida en SUNAT los ${targetRows.length} documentos seleccionados`
+                  : isFiltered
+                    ? `Valida solo las ${effectiveRows.length} filas filtradas contra SUNAT`
+                    : "Valida los documentos mostrados contra SUNAT en lotes"
               }
             >
               {sunat.busy ? (
@@ -295,7 +367,8 @@ export default function ComprobantesPage({
                   aria-hidden
                 />
               ) : null}{" "}
-              Validar en SUNAT{isFiltered ? ` (${effectiveRows.length})` : ""}
+              Validar en SUNAT
+              {hasSelection || isFiltered ? ` (${targetRows.length})` : ""}
             </Button>
             <Button
               type="button"
@@ -306,9 +379,11 @@ export default function ComprobantesPage({
                 setMovSynerPosDialogOpen(true);
               }}
               title={
-                isFiltered
-                  ? `Envía a MovSynerPos solo las ${effectiveRows.length} filas filtradas`
-                  : "Envía los documentos mostrados a MovSynerPos"
+                hasSelection
+                  ? `Envía a MovSynerPos los ${targetRows.length} documentos seleccionados`
+                  : isFiltered
+                    ? `Envía a MovSynerPos solo las ${effectiveRows.length} filas filtradas`
+                    : "Envía los documentos mostrados a MovSynerPos"
               }
             >
               {movsynerpos.busy ? (
@@ -321,20 +396,23 @@ export default function ComprobantesPage({
                 />
               ) : null}{" "}
               Enviar a MovSynerPos
-              {effectiveRows.length ? ` (${effectiveRows.length})` : ""}
+              {targetRows.length ? ` (${targetRows.length})` : ""}
             </Button>
             <Button
               type="button"
               variant="secondary"
-              disabled={!effectiveRows.length}
-              onClick={() => void exportExcel(effectiveRows)}
+              disabled={!targetRows.length}
+              onClick={() => void exportExcel(targetRows)}
               title={
-                isFiltered
-                  ? `Exporta solo las ${effectiveRows.length} filas filtradas`
-                  : "Exporta los documentos mostrados"
+                hasSelection
+                  ? `Exporta los ${targetRows.length} documentos seleccionados`
+                  : isFiltered
+                    ? `Exporta solo las ${effectiveRows.length} filas filtradas`
+                    : "Exporta los documentos mostrados"
               }
             >
-              <HugeiconsIcon icon={FileDownIcon} size={16} strokeWidth={2} aria-hidden /> Exportar Excel{isFiltered ? ` (${effectiveRows.length})` : ""}
+              <HugeiconsIcon icon={FileDownIcon} size={16} strokeWidth={2} aria-hidden /> Exportar Excel
+              {hasSelection || isFiltered ? ` (${targetRows.length})` : ""}
             </Button>
             {vouchers.loading ? (
               <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -416,10 +494,10 @@ export default function ComprobantesPage({
       <SunatConfirmDialog
         open={sunatDialogOpen}
         onOpenChange={setSunatDialogOpen}
-        rows={effectiveRows}
+        rows={targetRows}
         onConfirm={(scope) => {
           if (operationActive) return;
-          void sunat.runBatch(effectiveRows, refreshRows, scope);
+          void sunat.runBatch(targetRows, refreshRows, scope);
         }}
       />
 
@@ -429,10 +507,10 @@ export default function ComprobantesPage({
           setMovSynerPosDialogOpen(open);
           if (!open) setMovSynerPosTarget(null);
         }}
-        rows={movSynerPosTarget ?? effectiveRows}
+        rows={movSynerPosTarget ?? targetRows}
         onConfirm={(reparar) => {
           if (operationActive) return;
-          const rowsToSend = movSynerPosTarget ?? effectiveRows;
+          const rowsToSend = movSynerPosTarget ?? targetRows;
           void movsynerpos.run(rowsToSend, refreshRows, reparar);
         }}
       />

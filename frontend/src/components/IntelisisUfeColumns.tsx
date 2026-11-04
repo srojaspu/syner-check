@@ -3,12 +3,16 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate, formatMoney } from "../api/format";
 import {
+  ESTADOS_REENVIO,
+} from "./IntelisisReenvioColumns";
+import {
   ERP_ESTADO_DESC,
   ERP_ESTADO_LABEL,
   ESTADO_GENERACION_LABEL,
   ESTADO_SUNAT_LABEL,
 } from "./IntelisisUfeEstados";
 import type {
+  IntelisisReenvioEstado,
   IntelisisUfeRow,
   UfeEstadoSunat,
   UfeEstatusErp,
@@ -53,11 +57,16 @@ const ERP_BADGE: Record<
 };
 
 /**
- * Solo un comprobante concluido se puede reenviar. El backend lo rechaza
- * igual (`validar_encolado`): deshabilitar el checkbox evita el viaje inútil.
+ * Solo un comprobante concluido que pasa por el generador se puede reenviar.
+ * El backend lo rechaza igual (`validar_encolado`): deshabilitar la acción
+ * evita el viaje inútil.
  */
-function puedeReenviar(fila: IntelisisUfeRow): boolean {
-  return fila.estatus_erp === "CONCLUIDO";
+export function puedeReenviar(fila: IntelisisUfeRow): boolean {
+  return (
+    fila.estatus_erp === "CONCLUIDO" &&
+    !fila.exento_generador &&
+    fila.estado_generacion !== "en_proceso"
+  );
 }
 
 function ErpBadge({ fila }: { fila: IntelisisUfeRow }) {
@@ -82,10 +91,22 @@ function ErpBadge({ fila }: { fila: IntelisisUfeRow }) {
  * se limpia al lanzar una consulta nueva: un id de otra busqueda no debe
  * viajar en la solicitud.
  */
+const REENVIO_LABEL: Record<string, string> = Object.fromEntries(
+  ESTADOS_REENVIO.map((item) => [item.value, item.label]),
+);
+
+function reenvioVariant(estado: string): BadgeVariant {
+  if (estado === "NO_CONFIRMADO") return "destructive";
+  if (estado === "EJECUTANDO") return "default";
+  return "secondary";
+}
+
 export interface IntelisisUfeSelection {
   seleccionados: ReadonlySet<number>;
   onToggle: (idVenta: number, seleccionado: boolean) => void;
   onTogglePagina: (filas: IntelisisUfeRow[], seleccionado: boolean) => void;
+  /** Estado activo en la cola del ERP (`dbo.FE_Reenvio`) por `id_venta`. */
+  reenviosActivos?: ReadonlyMap<number, IntelisisReenvioEstado>;
 }
 
 /**
@@ -228,11 +249,25 @@ export function intelisisUfeColumns(
           doc.estado_generacion === "fuera_de_bitacora"
             ? ESTADO_GENERACION_LABEL[doc.estado_generacion]
             : null;
+        const estadoCola =
+          selection?.reenviosActivos?.get(doc.id_venta) ??
+          (doc.reenvio?.estado as IntelisisReenvioEstado | undefined) ??
+          null;
         return (
           <span className="flex flex-col items-start gap-0.5">
-            <Badge variant={generadorVariant(doc.generador)} title={title}>
-              {doc.generador}
-            </Badge>
+            <span className="flex flex-wrap items-center gap-1.5">
+              <Badge variant={generadorVariant(doc.generador)} title={title}>
+                {doc.generador}
+              </Badge>
+              {estadoCola ? (
+                <Badge
+                  variant={reenvioVariant(estadoCola)}
+                  title={`En la cola de reenvíos del ERP: ${REENVIO_LABEL[estadoCola] ?? estadoCola}`}
+                >
+                  {REENVIO_LABEL[estadoCola] ?? estadoCola}
+                </Badge>
+              ) : null}
+            </span>
             {detalle ? (
               <small className="text-muted-foreground">{detalle}</small>
             ) : null}

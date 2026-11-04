@@ -1,5 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateTime, formatMoney } from "../api/format";
 import type { TipoDocumento, Voucher } from "../api/types";
 import type {
@@ -43,11 +44,23 @@ function FlowBadge({
   );
 }
 
+/** Clave única de un comprobante de SynerPOS para la selección de la tabla. */
+export function voucherSelectionKey(doc: Voucher): string {
+  return `${doc.tipo}:${doc.oid || doc.number || ""}`;
+}
+
+export interface VoucherSelection {
+  seleccionados: ReadonlySet<string>;
+  onToggle: (key: string, seleccionado: boolean) => void;
+  onTogglePagina: (filas: Voucher[], seleccionado: boolean) => void;
+}
+
 export function voucherColumns(
-  opts: { intelisisEnabled?: boolean } = {},
+  opts: { intelisisEnabled?: boolean; selection?: VoucherSelection } = {},
 ): ColumnDef<Voucher>[] {
   const intelisisEnabled = opts.intelisisEnabled ?? true;
-  return [
+  const selection = opts.selection;
+  const columnas: ColumnDef<Voucher>[] = [
     {
       id: "documento",
       header: "Documento",
@@ -298,6 +311,58 @@ export function voucherColumns(
       },
     },
   ];
+
+  if (selection) {
+    const columnaSeleccion: ColumnDef<Voucher> = {
+      id: "seleccion",
+      header: ({ table }) => {
+        const pagina = table.getRowModel().rows.map((row) => row.original);
+        const marcados = pagina.filter((fila) =>
+          selection.seleccionados.has(voucherSelectionKey(fila)),
+        ).length;
+        const todos = pagina.length > 0 && marcados === pagina.length;
+        return (
+          <Checkbox
+            checked={todos}
+            indeterminate={marcados > 0 && !todos}
+            disabled={pagina.length === 0}
+            aria-label={
+              todos
+                ? "Quitar la selección de esta página"
+                : "Seleccionar los documentos de esta página"
+            }
+            onClick={(event) => event.stopPropagation()}
+            onCheckedChange={(checked) =>
+              selection.onTogglePagina(pagina, checked === true)
+            }
+          />
+        );
+      },
+      enableSorting: false,
+      meta: { priority: "always" },
+      cell: ({ row }) => {
+        const doc = row.original;
+        const key = voucherSelectionKey(doc);
+        return (
+          <span
+            className="flex items-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Checkbox
+              checked={selection.seleccionados.has(key)}
+              aria-label={`Seleccionar ${doc.number || doc.oid || "documento"}`}
+              onCheckedChange={(checked) =>
+                selection.onToggle(key, checked === true)
+              }
+            />
+          </span>
+        );
+      },
+    };
+    columnas.unshift(columnaSeleccion);
+  }
+
+  return columnas;
 }
 
 function intelisisEstatus(doc: Voucher): string {

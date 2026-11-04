@@ -199,6 +199,28 @@ describe("App", () => {
     expect(mocks.movsynerpos.run.mock.calls[0][2]).toBe(false);
   });
 
+  it("permite seleccionar comprobantes con checks y opera solo sobre los marcados", () => {
+    mocks.session.ready = true;
+    mocks.rows = [row("1", false), row("2", false)];
+    render(<App />);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Seleccionar B004-1" }),
+    );
+
+    const button = screen.getByRole("button", {
+      name: "Enviar a MovSynerPos (1)",
+    });
+    expect(button).toBeTruthy();
+
+    fireEvent.click(button);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enviar 1 documento" }),
+    );
+    expect(mocks.movsynerpos.run).toHaveBeenCalledTimes(1);
+    expect(mocks.movsynerpos.run.mock.calls[0][0]).toEqual([mocks.rows[0]]);
+  });
+
   it("mantiene ambas pantallas montadas al cambiar de ruta", async () => {
     mocks.session.ready = true;
     render(<App />);

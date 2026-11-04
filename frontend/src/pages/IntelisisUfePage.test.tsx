@@ -64,6 +64,9 @@ const mocks = vi.hoisted(() => ({
     aviso: null as string | null,
     errorEnvio: null as string | null,
     errorResolucion: null as string | null,
+    finalizaciones: 0,
+    finalizadoSinConfirmar: false,
+    siguiendo: false,
     recargar: vi.fn(),
     reenviar: vi.fn(
       async (
@@ -278,6 +281,9 @@ describe("IntelisisUfePage", () => {
     mocks.reenvio.aviso = null;
     mocks.reenvio.errorEnvio = null;
     mocks.reenvio.errorResolucion = null;
+    mocks.reenvio.finalizaciones = 0;
+    mocks.reenvio.finalizadoSinConfirmar = false;
+    mocks.reenvio.siguiendo = false;
     mocks.reenvio.reenviar.mockClear();
     mocks.reenvio.resolver.mockClear();
     mocks.reenvio.recargar.mockClear();
@@ -1009,6 +1015,134 @@ describe("IntelisisUfePage", () => {
     );
 
     expect(mocks.reenvio.reenviar.mock.calls[0][3]).toBe(true);
+  });
+
+  it("refresca la grilla del periodo cuando la cola termina el lote reenviado", () => {
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    mocks.ufe.rows = [fila()];
+
+    const { rerender } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
+
+    mocks.reenvio.finalizaciones = 1;
+    rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Lote de reenvío finalizado")).toBeTruthy();
+
+    // Un nuevo render con el mismo contador no repite la consulta.
+    rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("repite la busqueda por numero cuando la cola termina el lote reenviado", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    mocks.ufe.busqueda = { documento: "B602-00142702", rows: [fila()] };
+
+    const { rerender } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    await user.click(
+      screen.getByRole("tab", { name: /Número de comprobante/i }),
+    );
+    await user.type(
+      screen.getByLabelText("Numero de comprobante"),
+      "B602-00142702",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar$/ }));
+    expect(mocks.ufe.buscar).toHaveBeenCalledTimes(1);
+
+    mocks.reenvio.finalizaciones = 1;
+    rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(mocks.ufe.buscar).toHaveBeenCalledTimes(2);
+    });
+    expect(mocks.ufe.buscar).toHaveBeenLastCalledWith("B602-00142702");
+  });
+
+  it("advierte si el lote se detuvo por NO_CONFIRMADO y refresca el drawer abierto", async () => {
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    const doc = fila();
+    mocks.ufe.rows = [doc];
+
+    const { rerender } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Consultar/ }));
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(1);
+
+    mocks.ufe.detalle = {
+      id_venta: doc.id_venta,
+      venta: doc,
+      intentos: [],
+      sunat: doc.sunat,
+      estado_sunat: doc.estado_sunat,
+    };
+    mocks.reenvio.finalizaciones = 1;
+    mocks.reenvio.finalizadoSinConfirmar = true;
+    rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    expect(mocks.ufe.run).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(mocks.ufe.abrirDetalle).toHaveBeenCalledWith(doc.id_venta);
+    });
+    expect(screen.getByText("Reenvío detenido para revisión")).toBeTruthy();
+  });
+
+  it("permite reenviar un comprobante directamente desde el drawer de detalle", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    const doc = fila({
+      estado_generacion: "error_validacion",
+      generador: "SIN OK",
+    });
+    mocks.ufe.detalle = {
+      id_venta: doc.id_venta,
+      venta: doc,
+      intentos: [],
+      sunat: doc.sunat,
+      estado_sunat: doc.estado_sunat,
+    };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Reenviar al generador" }),
+    );
+    expect(screen.getByText("Reenviar al generador UFE")).toBeTruthy();
+
+    await user.type(
+      screen.getByLabelText("Motivo del reenvío"),
+      "Desde el detalle",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Encolar 1 documento" }),
+    );
+
+    expect(mocks.reenvio.reenviar).toHaveBeenCalledTimes(1);
+    expect(mocks.reenvio.reenviar.mock.calls[0][0]).toEqual([doc.id_venta]);
+  });
+
+  it("habilita el atajo de reenvío sin checks al buscar por número un pendiente", async () => {
+    const user = userEvent.setup();
+    mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
+    const doc = fila({
+      estado_generacion: "sin_registro",
+      generador: "SIN TRAZA",
+    });
+    mocks.ufe.busqueda = { documento: "B602-00142702", rows: [doc] };
+
+    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    await user.click(
+      screen.getByRole("tab", { name: /Número de comprobante/i }),
+    );
+
+    const boton = screen.getByRole("button", {
+      name: /^Reenviar selección \(1\)$/,
+    }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(false);
+
+    await user.click(boton);
+    expect(screen.getByText("Reenviar al generador UFE")).toBeTruthy();
   });
 
   it("resuelve un NO_CONFIRMADO del panel con nota obligatoria", async () => {

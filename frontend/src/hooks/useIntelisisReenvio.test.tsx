@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IntelisisReenvioCola } from "../api/types";
+import type {
+  IntelisisReenvioCola,
+  IntelisisReenvioFila,
+} from "../api/types";
 
 const panelMock = vi.hoisted(() => vi.fn());
 const reenviarMock = vi.hoisted(() => vi.fn());
@@ -21,6 +24,7 @@ import { ApiError, AuthError } from "../api/client";
 import {
   REENVIO_POLL_MS,
   hayTrabajo,
+  loteTerminado,
   resumenReenvio,
   useIntelisisReenvio,
 } from "./useIntelisisReenvio";
@@ -41,6 +45,32 @@ function panel(
     total: 0,
     habilitado: true,
     max_batch: 10,
+    ...overrides,
+  };
+}
+
+function filaCola(
+  overrides: Partial<IntelisisReenvioFila> = {},
+): IntelisisReenvioFila {
+  return {
+    ID: 9,
+    IDVenta: 1,
+    Tipo: "03",
+    Procedimiento: "SPPUFE_UBL21",
+    Usuario: "dev@perfumeriasunidas.com.pe",
+    Motivo: "no se genero",
+    Estado: "EN_COLA",
+    Creado: "2026-11-04T09:00:00",
+    Inicio: null,
+    Fin: null,
+    SPID: null,
+    LogDesde: null,
+    LogHasta: null,
+    Retorno: null,
+    Detalle: null,
+    RevisadoPor: null,
+    Revision: null,
+    LoteID: null,
     ...overrides,
   };
 }
@@ -203,6 +233,194 @@ describe("useIntelisisReenvio", () => {
       vi.advanceTimersByTime(REENVIO_POLL_MS);
     });
     expect(panelMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("sigue el lote encolado y avisa una sola vez cuando termina", async () => {
+    vi.useFakeTimers();
+    panelMock.mockResolvedValue(
+      panel({ pendientes: 1, activos: [filaCola()] }),
+    );
+    reenviarMock.mockResolvedValue(resultado());
+    const { result } = renderHook(() => useIntelisisReenvio(vi.fn()));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      expect(
+        await result.current.reenviar([1], "no se genero", TOKEN),
+      ).toBe(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.siguiendo).toBe(true);
+    expect(result.current.finalizaciones).toBe(0);
+
+    panelMock.mockResolvedValue(
+      panel({
+        historial: [
+          filaCola({ Estado: "FINALIZADO_OK", Fin: "2026-11-04T09:00:05" }),
+        ],
+      }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(REENVIO_POLL_MS);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.finalizaciones).toBe(1);
+    expect(result.current.finalizadoSinConfirmar).toBe(false);
+    expect(result.current.siguiendo).toBe(false);
+
+    // El lote cerro: no queda trabajo ni seguimiento, el intervalo se detiene.
+    const llamadas = panelMock.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(REENVIO_POLL_MS);
+    });
+    expect(panelMock.mock.calls.length).toBe(llamadas);
+  });
+
+  it("cierra el seguimiento cuando el lote queda sin confirmar", async () => {
+    vi.useFakeTimers();
+    panelMock.mockResolvedValue(
+      panel({ pendientes: 1, activos: [filaCola()] }),
+    );
+    reenviarMock.mockResolvedValue(resultado());
+    const { result } = renderHook(() => useIntelisisReenvio(vi.fn()));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.reenviar([1], "no se genero", TOKEN);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    panelMock.mockResolvedValue(
+      panel({
+        sin_confirmar: 1,
+        activos: [filaCola({ Estado: "NO_CONFIRMADO" })],
+      }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(REENVIO_POLL_MS);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.finalizaciones).toBe(1);
+    expect(result.current.finalizadoSinConfirmar).toBe(true);
+    expect(result.current.siguiendo).toBe(false);
+  });
+
+  it("no sigue nada cuando ningun documento entro a la cola", async () => {
+    vi.useFakeTimers();
+    panelMock.mockResolvedValue(panel());
+    reenviarMock.mockResolvedValue(
+      resultado({
+        total: 1,
+        encolados: 0,
+        duplicados: 0,
+        rechazados: 1,
+        detalle: [
+          {
+            id_venta: 1,
+            documento: "602-00142702",
+            tipo: "",
+            procedimiento: "",
+            estado: "rechazado",
+            motivo: "El documento ya esta generado.",
+            queue_id: null,
+          },
+        ],
+      }),
+    );
+    const { result } = renderHook(() => useIntelisisReenvio(vi.fn()));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.reenviar([1], "no se genero", TOKEN);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.siguiendo).toBe(false);
+    expect(result.current.finalizaciones).toBe(0);
+  });
+
+  it("sigue sondeando aunque el primer panel tras encolar falle", async () => {
+    vi.useFakeTimers();
+    panelMock.mockResolvedValue(panel());
+    reenviarMock.mockResolvedValue(resultado());
+    const { result } = renderHook(() => useIntelisisReenvio(vi.fn()));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    panelMock.mockRejectedValueOnce(new Error("cola no disponible"));
+    await act(async () => {
+      await result.current.reenviar([1], "no se genero", TOKEN);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.siguiendo).toBe(true);
+
+    panelMock.mockResolvedValue(
+      panel({
+        historial: [filaCola({ Estado: "FINALIZADO_OK" })],
+      }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(REENVIO_POLL_MS);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.finalizaciones).toBe(1);
+  });
+});
+
+describe("loteTerminado", () => {
+  it("no cierra mientras el job siga encolado o ejecutandose", () => {
+    expect(
+      loteTerminado(panel({ activos: [filaCola()] }), new Set([9])),
+    ).toBe(false);
+    expect(
+      loteTerminado(
+        panel({ activos: [filaCola({ Estado: "EJECUTANDO" })] }),
+        new Set([9]),
+      ),
+    ).toBe(false);
+  });
+
+  it("cierra cuando el job aparece en el historial con estado final", () => {
+    expect(
+      loteTerminado(
+        panel({ historial: [filaCola({ Estado: "FINALIZADO_OK" })] }),
+        new Set([9]),
+      ),
+    ).toBe(true);
+  });
+
+  it("cierra cuando el job queda sin confirmar (requiere una persona)", () => {
+    expect(
+      loteTerminado(
+        panel({
+          sin_confirmar: 1,
+          activos: [filaCola({ Estado: "NO_CONFIRMADO" })],
+        }),
+        new Set([9]),
+      ),
+    ).toBe(true);
+  });
+
+  it("cierra con la cola vacia y sin rastro del job", () => {
+    expect(loteTerminado(panel(), new Set([9]))).toBe(true);
   });
 });
 

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DateRange } from "react-day-picker";
-import { intelisisUfeColumns } from "@/components/IntelisisUfeColumns";
+import {
+  intelisisUfeColumns,
+  puedeReenviar,
+} from "@/components/IntelisisUfeColumns";
 import { IntelisisUfeDetalle } from "@/components/IntelisisUfeDetalle";
 import {
   creaRenderFiltro,
@@ -26,6 +29,7 @@ import { Tabs } from "@/components/Tabs";
 import { exportIntelisisUfeExcel } from "../api/excel";
 import { toISODate } from "../api/format";
 import type {
+  IntelisisReenvioEstado,
   IntelisisReenvioFila,
   IntelisisUfeFiltros,
   IntelisisUfeRow,
@@ -96,8 +100,14 @@ export default function IntelisisUfePage({
     () => new Set<number>(),
   );
   const [reenvioDialogOpen, setReenvioDialogOpen] = useState(false);
+  /** Objetivo puntual del diálogo de reenvío (p. ej. desde el drawer). */
+  const [reenvioTarget, setReenvioTarget] = useState<IntelisisUfeRow[] | null>(
+    null,
+  );
   const [resolviendoFila, setResolviendoFila] =
     useState<IntelisisReenvioFila | null>(null);
+  /** Ultimo lote de reenvio que salio de la cola (dispara el aviso). */
+  const [colaFinalizada, setColaFinalizada] = useState<number | null>(null);
   const [sinDocumentoOpen, setSinDocumentoOpen] = useState(false);
   const sinDocumento = useIntelisisUfeSinDocumento({
     open: sinDocumentoOpen,
@@ -215,14 +225,24 @@ export default function IntelisisUfePage({
     [],
   );
 
+  /** Estado activo en la cola del ERP por `id_venta`, para pintar en la grilla. */
+  const reenviosActivos = useMemo(() => {
+    const mapa = new Map<number, IntelisisReenvioEstado>();
+    for (const fila of reenvio.panel?.activos ?? []) {
+      mapa.set(fila.IDVenta, fila.Estado);
+    }
+    return mapa;
+  }, [reenvio.panel?.activos]);
+
   const columns = useMemo(
     () =>
       intelisisUfeColumns({
         seleccionados: seleccion,
         onToggle: toggleSeleccion,
         onTogglePagina: togglePagina,
+        reenviosActivos,
       }),
-    [seleccion, toggleSeleccion, togglePagina],
+    [seleccion, toggleSeleccion, togglePagina, reenviosActivos],
   );
   const kpis = ufe.kpis;
   const visibles = filteredRows ?? filas;
@@ -250,10 +270,37 @@ export default function IntelisisUfePage({
   const reenvioHabilitado = reenvio.panel?.habilitado === true;
 
   /**
+   * Atajo de reenvío sin checks: cuando el usuario ya acotó la vista (por
+   * búsqueda por número, filtro de tabla o KPI) y quedan entre 1 y `maxBatch`
+   * comprobantes elegibles que aún no están generados, se pueden encolar
+   * directo sin obligar a marcar cada casilla.
+   */
+  const elegiblesDirectos = useMemo(() => {
+    if (seleccionadas.length > 0) return [];
+    const hayAcotacion =
+      modo === "number" ||
+      Object.values(borrador).some(
+        (valor) => String(valor ?? "").trim() !== "",
+      );
+    if (!hayAcotacion) return [];
+    const pendientes = visibles.filter(
+      (fila) => puedeReenviar(fila) && fila.estado_generacion !== "generado",
+    );
+    return pendientes.length > 0 && pendientes.length <= maxBatch
+      ? pendientes
+      : [];
+  }, [seleccionadas.length, modo, borrador, visibles, maxBatch]);
+
+  const filasParaReenvio =
+    reenvioTarget ??
+    (seleccionadas.length > 0 ? seleccionadas : elegiblesDirectos);
+
+  /**
    * Documentos que se validaran en SUNAT: manda la seleccion cuando existe
    * (permite acotar un periodo grande); sin seleccion, todos los mostrados.
    */
   const documentosSunat = seleccionadas.length ? seleccionadas : visibles;
+  const filasExportar = seleccionadas.length > 0 ? seleccionadas : visibles;
   /** Documentos consultables en SUNAT (el backend arma el payload final). */
   const consultables: SunatSelectable[] = useMemo(
     () =>
@@ -271,17 +318,57 @@ export default function IntelisisUfePage({
   );
 
   const refrescar = useCallback(async () => {
+    // Si el drawer está abierto, releer también el comprobante para que los
+    // intentos y el estado del generador no queden desactualizados.
+    const idAbierto = ufe.detalle?.id_venta ?? null;
     if (modo === "range") {
       if (consulta) setConsulta({ ...consulta });
-      return;
+    } else if (documentoBuscado) {
+      // En modo numero la tabla sale de la busqueda: repetirla es lo unico
+      // que trae el estado SUNAT o del generador nuevo.
+      await ufe.buscar(documentoBuscado);
     }
-    // En modo numero la tabla sale de la busqueda: repetirla es lo unico
-    // que trae el estado SUNAT nuevo (antes el lote no se veia refrescado).
-    if (documentoBuscado) await ufe.buscar(documentoBuscado);
-  }, [modo, consulta, documentoBuscado, ufe.buscar]);
+    if (idAbierto !== null) {
+      await ufe.abrirDetalle(idAbierto);
+    }
+  }, [
+    modo,
+    consulta,
+    documentoBuscado,
+    ufe.buscar,
+    ufe.detalle?.id_venta,
+    ufe.abrirDetalle,
+  ]);
 
   const hayConsulta =
     modo === "range" ? Boolean(consulta) : Boolean(ufe.busqueda);
+
+  /**
+   * Cuando la cola cierra el lote reenviado, la grilla tiene que releer el
+   * estado del generador: la bitacora ya trae el intento nuevo (OK REGISTRADO,
+   * intentos +1), pero `rows` se quedo con la foto anterior.
+   *
+   * Se guarda `refrescar` en una ref para que el efecto dependa solo del
+   * contador: `refrescar` cambia de identidad al relanzar la consulta y
+   * usarlo como dependencia dispararia un bucle de refrescos.
+   */
+  const refrescarRef = useRef(refrescar);
+  useEffect(() => {
+    refrescarRef.current = refrescar;
+  }, [refrescar]);
+
+  const hayConsultaRef = useRef(hayConsulta);
+  useEffect(() => {
+    hayConsultaRef.current = hayConsulta;
+  }, [hayConsulta]);
+
+  const finalizacionesCola = reenvio.finalizaciones ?? 0;
+  useEffect(() => {
+    if (!finalizacionesCola) return;
+    void refrescarRef.current();
+    // Sin una consulta previa no hay tabla que actualizar: el aviso sobraria.
+    if (hayConsultaRef.current) setColaFinalizada(finalizacionesCola);
+  }, [finalizacionesCola]);
 
   /** El servidor rechaza el lote entero por encima de este tope. */
   const loteExcedido = consultables.length > SUNAT_LOTE_MAX;
@@ -418,6 +505,32 @@ export default function IntelisisUfePage({
       });
     }
 
+    if (colaFinalizada !== null) {
+      const sinConfirmar = reenvio.finalizadoSinConfirmar === true;
+      const tone: NotificationItem["tone"] = sinConfirmar ? "warning" : "info";
+      list.push({
+        id: "ufe-cola-finalizada",
+        signature: `cola:${colaFinalizada}:${sinConfirmar ? 1 : 0}`,
+        tone,
+        onDismiss: () => setColaFinalizada(null),
+        content: (
+          <NotificationAlert
+            tone={tone}
+            title={
+              sinConfirmar
+                ? "Reenvío detenido para revisión"
+                : "Lote de reenvío finalizado"
+            }
+            description={
+              sinConfirmar
+                ? "Uno o más documentos quedaron sin confirmar en la cola del ERP. Se actualizó la tabla; revisa la sección En curso para cerrarlos manualmente."
+                : "La cola del ERP terminó el lote: la tabla de resultados se actualizó con el estado del generador."
+            }
+          />
+        ),
+      });
+    }
+
     return list;
   }, [
     formError,
@@ -432,6 +545,8 @@ export default function IntelisisUfePage({
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,
+    reenvio.finalizadoSinConfirmar,
+    colaFinalizada,
   ]);
 
   return (
@@ -497,8 +612,12 @@ export default function IntelisisUfePage({
         }}
         reenvio={{
           habilitado: reenvioHabilitado,
-          total: seleccionadas.length,
+          total:
+            seleccionadas.length > 0
+              ? seleccionadas.length
+              : elegiblesDirectos.length,
           onReenviar: () => {
+            setReenvioTarget(null);
             reenvio.limpiarMensajes();
             setReenvioDialogOpen(true);
           },
@@ -515,12 +634,15 @@ export default function IntelisisUfePage({
           },
         }}
         exportar={{
-          total: visibles.length,
-          truncado: ufe.truncado,
+          total: filasExportar.length,
+          truncado: seleccionadas.length === 0 && ufe.truncado,
           onExportar: () => {
-            void exportIntelisisUfeExcel(visibles, {
-              truncado: ufe.truncado,
-              filtradosTotal: ufe.filtradosTotal,
+            void exportIntelisisUfeExcel(filasExportar, {
+              truncado: seleccionadas.length === 0 && ufe.truncado,
+              filtradosTotal:
+                seleccionadas.length > 0
+                  ? seleccionadas.length
+                  : ufe.filtradosTotal,
             });
           },
         }}
@@ -539,15 +661,18 @@ export default function IntelisisUfePage({
 
       <IntelisisUfeReenvioDialog
         open={reenvioDialogOpen}
-        onOpenChange={setReenvioDialogOpen}
-        rows={seleccionadas}
+        onOpenChange={(open) => {
+          setReenvioDialogOpen(open);
+          if (!open) setReenvioTarget(null);
+        }}
+        rows={filasParaReenvio}
         maxBatch={maxBatch}
         enviando={reenvio.enviando}
         error={reenvio.errorEnvio}
         onConfirm={(motivo, token, forzar) => {
           void reenvio
             .reenviar(
-              seleccionadas.map((fila) => fila.id_venta),
+              filasParaReenvio.map((fila) => fila.id_venta),
               motivo,
               token,
               forzar,
@@ -555,6 +680,7 @@ export default function IntelisisUfePage({
             .then((ok) => {
               if (!ok) return;
               setSeleccion(new Set<number>());
+              setReenvioTarget(null);
               setReenvioDialogOpen(false);
             });
         }}
@@ -606,7 +732,14 @@ export default function IntelisisUfePage({
         loading={ufe.detalleLoading}
         error={ufe.detalleError}
         validando={ufe.validando}
+        reenvioHabilitado={reenvioHabilitado}
+        reenviando={reenvio.enviando}
         onValidar={(idVenta) => void ufe.validar(idVenta)}
+        onReenviar={(venta) => {
+          setReenvioTarget([venta]);
+          reenvio.limpiarMensajes();
+          setReenvioDialogOpen(true);
+        }}
         onClose={ufe.cerrarDetalle}
       />
 

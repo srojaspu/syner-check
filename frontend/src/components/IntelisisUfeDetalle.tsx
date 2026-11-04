@@ -3,9 +3,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Copy01Icon,
   Loading02Icon,
+  RefreshIcon,
   Search01Icon,
   TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
+import { puedeReenviar } from "./IntelisisUfeColumns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ import { formatDate, formatMoney } from "../api/format";
 import type {
   IntelisisUfeDetalle,
   IntelisisUfeIntento,
+  IntelisisUfeRow,
   UfeEstadoSunat,
 } from "../api/types";
 
@@ -121,7 +124,10 @@ export function IntelisisUfeDetalle({
   loading,
   error,
   validando,
+  reenvioHabilitado = false,
+  reenviando = false,
   onValidar,
+  onReenviar,
   onClose,
 }: {
   open: boolean;
@@ -129,9 +135,12 @@ export function IntelisisUfeDetalle({
   loading: boolean;
   error: string | null;
   validando: number | null;
+  reenvioHabilitado?: boolean;
+  reenviando?: boolean;
   aviso?: string | null;
   errorValidacion?: string | null;
   onValidar: (idVenta: number) => void;
+  onReenviar?: (venta: IntelisisUfeRow) => void;
   onClose: () => void;
 }) {
   const venta = detalle?.venta;
@@ -208,6 +217,34 @@ export function IntelisisUfeDetalle({
                   ? "Consultando…"
                   : "Validar en SUNAT"}
               </Button>
+              {reenvioHabilitado && onReenviar && puedeReenviar(venta) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={reenviando}
+                  onClick={() => onReenviar(venta)}
+                  title="Encola este comprobante en la cola de reenvíos del ERP"
+                >
+                  {reenviando ? (
+                    <HugeiconsIcon
+                      icon={Loading02Icon}
+                      size={15}
+                      strokeWidth={2}
+                      className="animate-spin"
+                      aria-hidden
+                    />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={RefreshIcon}
+                      size={15}
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                  )}{" "}
+                  {reenviando ? "Encolando…" : "Reenviar al generador"}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
