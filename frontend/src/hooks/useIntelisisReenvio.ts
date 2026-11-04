@@ -12,6 +12,11 @@ import type {
 
 /** Cadencia del panel mientras el worker tiene trabajo. */
 export const REENVIO_POLL_MS = 5000;
+/**
+ * Reintento mientras la cola nunca respondió: sin la primera foto no se sabe
+ * si el reenvío está habilitado y el botón queda oculto.
+ */
+export const REENVIO_RETRY_MS = 30000;
 /** Filas de historial que se piden al panel (2 paginas de 50). */
 const HISTORIAL_LIMITE = 100;
 /**
@@ -260,6 +265,13 @@ export function useIntelisisReenvio(onAuthFailure: () => void) {
     const timer = setInterval(() => void cargar(), REENVIO_POLL_MS);
     return () => clearInterval(timer);
   }, [sondeando, cargar]);
+
+  const sinPanel = state.panel === null && state.panelError !== null;
+  useEffect(() => {
+    if (!sinPanel) return;
+    const timer = setInterval(() => void cargar(), REENVIO_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [sinPanel, cargar]);
 
   const recargar = useCallback(() => {
     void cargar(true);

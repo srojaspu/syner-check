@@ -11,7 +11,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  NotificationAlert,
   NotificationHost,
   type NotificationItem,
 } from "./NotificationCenter";
@@ -87,13 +86,8 @@ export function RangePanel({
         signature: `range-error:${error}:${errorSeq}`,
         tone: "error",
         onDismiss: () => setError(null),
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="Revisa los filtros"
-            description={error}
-          />
-        ),
+        title: "Revisa los filtros",
+        description: error,
       },
     ];
   }, [error, errorSeq]);
@@ -171,13 +165,8 @@ export function NumberPanel({
         signature: `number-error:${error}:${errorSeq}`,
         tone: "error",
         onDismiss: () => setError(null),
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="Revisa los filtros"
-            description={error}
-          />
-        ),
+        title: "Revisa los filtros",
+        description: error,
       },
     ];
   }, [error, errorSeq]);

@@ -159,7 +159,7 @@ describe("App", () => {
     expect(screen.getByText("Resultados")).toBeTruthy();
   });
 
-  it("avisa en el sistema de notificaciones cuando la verificación de notas de crédito quedó incompleta", () => {
+  it("avisa en el sistema de notificaciones cuando la verificación de notas de crédito quedó incompleta", async () => {
     mocks.session.ready = true;
     mocks.rows = [row("1", true)];
     mocks.ncWarning = "credit_notes_unavailable";
@@ -167,7 +167,7 @@ describe("App", () => {
 
     const tray = screen.getByRole("region", { name: "Notificaciones" });
     expect(
-      within(tray).getByText("Notas de crédito sin verificar"),
+      await within(tray).findByText("Notas de crédito sin verificar"),
     ).toBeTruthy();
     expect(
       within(tray).getByText(/puede faltar algún resultado/i),

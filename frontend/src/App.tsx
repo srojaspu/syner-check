@@ -5,6 +5,7 @@ import { Account, AppShell, LoginCard, TopBar } from "./components/AppShell";
 import { PrimaryNav } from "./components/PrimaryNav";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useSession } from "./hooks/useSession";
+import { NotificationProvider } from "./components/NotificationCenter";
 import { OperationsHost } from "./operations/OperationsHost";
 import { OperationsProvider } from "./operations/OperationsContext";
 import ComprobantesPage from "./pages/ComprobantesPage";
@@ -99,7 +100,9 @@ function Workspace() {
 export default function App() {
   return (
     <ThemeProvider>
-      <Workspace />
+      <NotificationProvider>
+        <Workspace />
+      </NotificationProvider>
     </ThemeProvider>
   );
 }

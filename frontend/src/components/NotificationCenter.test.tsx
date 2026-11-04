@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_DISMISS_MS,
-  NotificationAlert,
   NotificationHost,
   type NotificationItem,
 } from "./NotificationCenter";
@@ -16,39 +15,73 @@ afterEach(() => {
   cleanup();
 });
 
+/** Sonner agrega cada toast en un `setTimeout`: con timers falsos hay que avanzarlos. */
+function flushToasts() {
+  act(() => {
+    vi.advanceTimersByTime(20);
+  });
+}
+
 describe("NotificationHost", () => {
-  it("muestra notificaciones de error, warning o info con boton de cierre integrado y auto-cierre", () => {
+  it("muestra el aviso como toast de Sonner con titulo, descripcion y auto-cierre", () => {
     vi.useFakeTimers();
     const items: NotificationItem[] = [
       {
         id: "sunat-warning",
         signature: "sunat:warning:1",
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Validación en SUNAT"
-            description="Algunos comprobantes quedaron pendientes."
-          />
-        ),
+        title: "Validación en SUNAT",
+        description: "Algunos comprobantes quedaron pendientes.",
       },
     ];
 
     render(<NotificationHost items={items} autoDismissMs={3000} />);
+    flushToasts();
 
+    expect(screen.getByText("Validación en SUNAT")).toBeTruthy();
     expect(
       screen.getByText("Algunos comprobantes quedaron pendientes."),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Cerrar notificación" }),
-    ).toBeTruthy();
 
     act(() => {
-      vi.advanceTimersByTime(3100);
+      vi.advanceTimersByTime(3500);
     });
     expect(
       screen.queryByText("Algunos comprobantes quedaron pendientes."),
     ).toBeNull();
+  });
+
+  it("muestra varios avisos a la vez, cada uno como su propio toast", async () => {
+    const items: NotificationItem[] = [
+      { id: "a", signature: "a", tone: "error", title: "Primer aviso" },
+      { id: "b", signature: "b", tone: "info", title: "Segundo aviso" },
+    ];
+
+    render(<NotificationHost items={items} />);
+
+    expect(await screen.findByText("Primer aviso")).toBeTruthy();
+    expect(await screen.findByText("Segundo aviso")).toBeTruthy();
+    expect(document.querySelectorAll("[data-sonner-toast]")).toHaveLength(2);
+  });
+
+  it("ejecuta la accion del toast", async () => {
+    const onClick = vi.fn();
+    render(
+      <NotificationHost
+        items={[
+          {
+            id: "cola",
+            signature: "cola:1",
+            tone: "error",
+            title: "No fue posible leer la cola",
+            action: { label: "Reintentar", onClick },
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reintentar" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it("vuelve a mostrar un aviso descartado si el estado se limpia y reaparece", () => {
@@ -56,25 +89,27 @@ describe("NotificationHost", () => {
       id: "ufe-error",
       signature: "ufe-error:sin-conexion",
       tone: "error",
-      content: (
-        <NotificationAlert
-          tone="error"
-          title="No fue posible consultar"
-          description="Sin conexión con Intelisis."
-        />
-      ),
+      persistent: true,
+      title: "No fue posible consultar",
+      description: "Sin conexión con Intelisis.",
     };
 
+    vi.useFakeTimers();
     const { rerender } = render(<NotificationHost items={[item]} />);
+    flushToasts();
     fireEvent.click(
       screen.getByRole("button", { name: "Cerrar notificación" }),
     );
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(screen.queryByText("Sin conexión con Intelisis.")).toBeNull();
 
     // El origen se limpia (nueva consulta) y el mismo error vuelve a ocurrir:
     // no debe quedar silenciado por el descarte anterior.
     rerender(<NotificationHost items={[]} />);
     rerender(<NotificationHost items={[item]} />);
+    flushToasts();
 
     expect(screen.getByText("Sin conexión con Intelisis.")).toBeTruthy();
   });
@@ -88,23 +123,19 @@ describe("NotificationHost", () => {
         signature: "number-error:Ingresa un número.:1",
         tone: "error",
         onDismiss,
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="Revisa los filtros"
-            description="Ingresa un número."
-          />
-        ),
+        title: "Revisa los filtros",
+        description: "Ingresa un número.",
       },
     ];
 
     render(<NotificationHost items={items} />);
+    flushToasts();
 
     expect(screen.getByText("Revisa los filtros")).toBeTruthy();
     expect(screen.getByText("Ingresa un número.")).toBeTruthy();
 
     act(() => {
-      vi.advanceTimersByTime(AUTO_DISMISS_MS + 300);
+      vi.advanceTimersByTime(AUTO_DISMISS_MS + 500);
     });
 
     expect(screen.queryByText("Ingresa un número.")).toBeNull();

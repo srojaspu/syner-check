@@ -41,8 +41,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as React.CSSProperties
       }
       toastOptions={{
+        closeButtonAriaLabel: "Cerrar notificación",
         classNames: {
           toast: "cn-toast w-full pointer-events-auto",
+          description: "text-muted-foreground!",
         },
       }}
       {...props}

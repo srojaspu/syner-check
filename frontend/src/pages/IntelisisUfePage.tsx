@@ -10,14 +10,13 @@ import {
   filtraUfeFilas,
 } from "@/components/IntelisisUfeFiltros";
 import { IntelisisUfeFlujo } from "@/components/IntelisisUfeFlujo";
-import { IntelisisUfeReenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
+import { reenvioAviso } from "@/components/IntelisisUfeReenvioAviso";
 import { IntelisisUfeReenvioDialog } from "@/components/IntelisisUfeReenvioDialog";
 import { IntelisisUfeReenvioPanel } from "@/components/IntelisisUfeReenvioPanel";
 import { IntelisisUfeResolverDialog } from "@/components/IntelisisUfeResolverDialog";
 import { IntelisisUfeResultados } from "@/components/IntelisisUfeResultados";
 import { IntelisisUfeSinDocumentoDialog } from "@/components/IntelisisUfeSinDocumentoDialog";
 import {
-  NotificationAlert,
   NotificationHost,
   type NotificationItem,
 } from "@/components/NotificationCenter";
@@ -405,13 +404,8 @@ export default function IntelisisUfePage({
         signature: `form:${formError}`,
         tone: "error",
         onDismiss: () => setFormError(null),
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="Revisa los filtros"
-            description={formError}
-          />
-        ),
+        title: "Revisa los filtros",
+        description: formError,
       });
     }
 
@@ -420,13 +414,8 @@ export default function IntelisisUfePage({
         id: "ufe-query-error",
         signature: `query:${ufe.error}`,
         tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No fue posible consultar"
-            description={ufe.error}
-          />
-        ),
+        title: "No fue posible consultar",
+        description: ufe.error,
       });
     }
 
@@ -436,28 +425,25 @@ export default function IntelisisUfePage({
         signature: `detalle-error:${ufe.detalleError}`,
         tone: "error",
         onDismiss: ufe.cerrarDetalle,
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No fue posible consultar la trazabilidad"
-            description={ufe.detalleError}
-          />
-        ),
+        title: "No fue posible consultar la trazabilidad",
+        description: ufe.detalleError,
       });
     }
 
     if (reenvio.panelError) {
+      // Sin panel no se sabe si el reenvío está habilitado: el botón queda
+      // oculto, así que el aviso se queda hasta que el usuario lo cierre.
       list.push({
         id: "ufe-reenvio-panel-error",
         signature: `reenvio-panel:${reenvio.panelError}`,
         tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No fue posible leer la cola"
-            description={reenvio.panelError}
-          />
-        ),
+        persistent: reenvio.panel === null,
+        title: "No fue posible leer la cola",
+        description:
+          reenvio.panel === null
+            ? `${reenvio.panelError} El reenvío no estará disponible hasta que la cola responda.`
+            : reenvio.panelError,
+        action: { label: "Reintentar", onClick: reenvio.recargar },
       });
     }
 
@@ -466,13 +452,9 @@ export default function IntelisisUfePage({
         id: "ufe-disabled",
         signature: "ufe-disabled",
         tone: "info",
-        content: (
-          <NotificationAlert
-            tone="info"
-            title="Intelisis no disponible"
-            description="No hay conexion configurada a la base de Intelisis. La pantalla queda sin datos hasta que se configure la lectura."
-          />
-        ),
+        title: "Intelisis no disponible",
+        description:
+          "No hay conexion configurada a la base de Intelisis. La pantalla queda sin datos hasta que se configure la lectura.",
       });
     }
 
@@ -481,13 +463,8 @@ export default function IntelisisUfePage({
         id: "ufe-truncado",
         signature: `truncado:${ufe.maxFilas}:${ufe.filtradosTotal}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Listado recortado"
-            description={`Se muestran ${ufe.maxFilas.toLocaleString("es-PE")} de ${ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan el filtro. Afina el periodo o usa los filtros (resultado, generador, tipo) para ver el resto.`}
-          />
-        ),
+        title: "Listado recortado",
+        description: `Se muestran ${ufe.maxFilas.toLocaleString("es-PE")} de ${ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan el filtro. Afina el periodo o usa los filtros (resultado, generador, tipo) para ver el resto.`,
       });
     }
 
@@ -497,13 +474,8 @@ export default function IntelisisUfePage({
         id: "ufe-sunat-lote-excedido",
         signature: `lote-excedido:${consultables.length}:${SUNAT_LOTE_MAX}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Lote SUNAT excedido"
-            description={`La validación SUNAT admite ${limite} documentos por solicitud y hay ${consultables.length.toLocaleString("es-PE")}: selecciona hasta ${limite} en la tabla o filtra (resultado, generador o tipo) para dejar menos.`}
-          />
-        ),
+        title: "Lote SUNAT excedido",
+        description: `La validación SUNAT admite ${limite} documentos por solicitud y hay ${consultables.length.toLocaleString("es-PE")}: selecciona hasta ${limite} en la tabla o filtra (resultado, generador o tipo) para dejar menos.`,
       });
     }
 
@@ -516,17 +488,10 @@ export default function IntelisisUfePage({
         id: "ufe-detalle-sunat",
         signature: `detalle-sunat:${ufe.aviso ?? ""}:${ufe.errorValidacion ?? ""}`,
         tone: detalleTone,
-        content: (
-          <NotificationAlert
-            tone={detalleTone}
-            title={
-              ufe.errorValidacion
-                ? "No se pudo validar en SUNAT"
-                : "Validación SUNAT"
-            }
-            description={detalleMsg}
-          />
-        ),
+        title: ufe.errorValidacion
+          ? "No se pudo validar en SUNAT"
+          : "Validación SUNAT",
+        description: detalleMsg,
       });
     }
 
@@ -540,16 +505,9 @@ export default function IntelisisUfePage({
           reenvio.resultado?.rechazados ?? 0,
           reenvio.aviso ?? "",
         ].join("|"),
-        tone: rechazados > 0 ? "warning" : "info",
-        hideCloseButton: true,
+        tone: rechazados > 0 ? "warning" : "success",
         onDismiss: reenvio.limpiarMensajes,
-        content: (
-          <IntelisisUfeReenvioAviso
-            resultado={reenvio.resultado}
-            aviso={reenvio.aviso}
-            onCerrar={reenvio.limpiarMensajes}
-          />
-        ),
+        ...reenvioAviso(reenvio.resultado, reenvio.aviso),
       });
     }
 
@@ -561,21 +519,12 @@ export default function IntelisisUfePage({
         signature: `cola:${colaFinalizada}:${sinConfirmar ? 1 : 0}`,
         tone,
         onDismiss: () => setColaFinalizada(null),
-        content: (
-          <NotificationAlert
-            tone={tone}
-            title={
-              sinConfirmar
-                ? "Reenvío detenido para revisión"
-                : "Lote de reenvío finalizado"
-            }
-            description={
-              sinConfirmar
-                ? "Uno o más documentos quedaron sin confirmar en la cola del ERP. Se actualizó la tabla; revisa la sección En curso para cerrarlos manualmente."
-                : "La cola del ERP terminó el lote: la tabla de resultados se actualizó con el estado del generador."
-            }
-          />
-        ),
+        title: sinConfirmar
+          ? "Reenvío detenido para revisión"
+          : "Lote de reenvío finalizado",
+        description: sinConfirmar
+          ? "Uno o más documentos quedaron sin confirmar en la cola del ERP. Se actualizó la tabla; revisa la sección En curso para cerrarlos manualmente."
+          : "La cola del ERP terminó el lote: la tabla de resultados se actualizó con el estado del generador.",
       });
     }
 
@@ -595,6 +544,8 @@ export default function IntelisisUfePage({
     loteExcedido,
     consultables.length,
     reenvio.panelError,
+    reenvio.panel,
+    reenvio.recargar,
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,

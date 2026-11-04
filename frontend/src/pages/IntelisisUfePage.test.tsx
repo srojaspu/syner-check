@@ -452,21 +452,21 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByText("cruce ambiguo")).toBeTruthy();
   });
 
-  it("avisa cuando Intelisis no esta disponible", () => {
+  it("avisa cuando Intelisis no esta disponible", async () => {
     mocks.ufe.intelisisEnabled = false;
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("Intelisis no disponible")).toBeTruthy();
+    expect(await screen.findByText("Intelisis no disponible")).toBeTruthy();
   });
 
-  it("muestra el error de consulta sin romper la pantalla", () => {
+  it("muestra el error de consulta sin romper la pantalla", async () => {
     mocks.ufe.error = "No fue posible consultar los comprobantes.";
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     expect(
-      screen.getByText("No fue posible consultar los comprobantes."),
+      await screen.findByText("No fue posible consultar los comprobantes."),
     ).toBeTruthy();
   });
 
@@ -757,14 +757,14 @@ describe("IntelisisUfePage", () => {
     ).toBeTruthy();
   });
 
-  it("avisa cuando el listado viene recortado", () => {
+  it("avisa cuando el listado viene recortado", async () => {
     mocks.ufe.truncado = true;
     mocks.ufe.maxFilas = 5000;
     mocks.ufe.filtradosTotal = 17976;
 
     render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
-    expect(screen.getByText("Listado recortado")).toBeTruthy();
+    expect(await screen.findByText("Listado recortado")).toBeTruthy();
     expect(screen.getByText(/17,976/)).toBeTruthy();
   });
 
@@ -915,7 +915,7 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByRole("button", { name: /Buscando/ })).toBeTruthy();
   });
 
-  it("no ofrece validar mas documentos de los que admite una solicitud", () => {
+  it("no ofrece validar mas documentos de los que admite una solicitud", async () => {
     mocks.ufe.rows = Array.from({ length: SUNAT_LOTE_MAX + 1 }, (_, index) =>
       fila({
         id_venta: 5000 + index,
@@ -930,7 +930,7 @@ describe("IntelisisUfePage", () => {
     }) as HTMLButtonElement;
     expect(boton.disabled).toBe(true);
     expect(
-      screen.getByText(/documentos por solicitud/),
+      await screen.findByText(/documentos por solicitud/),
     ).toBeTruthy();
   });
 
@@ -1019,7 +1019,7 @@ describe("IntelisisUfePage", () => {
     expect(mocks.reenvio.reenviar.mock.calls[0][3]).toBe(true);
   });
 
-  it("refresca la grilla del periodo cuando la cola termina el lote reenviado", () => {
+  it("refresca la grilla del periodo cuando la cola termina el lote reenviado", async () => {
     mocks.reenvio.panel = { habilitado: true, max_batch: 10 };
     mocks.ufe.rows = [fila()];
 
@@ -1031,7 +1031,7 @@ describe("IntelisisUfePage", () => {
     rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     expect(mocks.ufe.run).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Lote de reenvío finalizado")).toBeTruthy();
+    expect(await screen.findByText("Lote de reenvío finalizado")).toBeTruthy();
 
     // Un nuevo render con el mismo contador no repite la consulta.
     rerender(<IntelisisUfePage onAuthFailure={vi.fn()} />);
@@ -1344,26 +1344,29 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByRole("button", { name: "Resolver" })).toBeTruthy();
   });
 
-  it("muestra el error de la cola en el sistema de notificaciones sin incrustarlo en el panel", () => {
+  it("muestra el error de la cola en el sistema de notificaciones sin incrustarlo en el panel", async () => {
     mocks.reenvio.panelError = "No fue posible consultar la cola de reenvíos.";
 
     const { container } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     const tray = screen.getByRole("region", { name: "Notificaciones" });
     expect(
-      within(tray).getByText("No fue posible consultar la cola de reenvíos."),
+      await within(tray).findByText(/No fue posible consultar la cola de reenvíos\./),
+    ).toBeTruthy();
+    expect(
+      within(tray).getByRole("button", { name: "Reintentar" }),
     ).toBeTruthy();
     expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });
 
-  it("muestra el error de trazabilidad en el sistema de notificaciones cuando falla abrirDetalle", () => {
+  it("muestra el error de trazabilidad en el sistema de notificaciones cuando falla abrirDetalle", async () => {
     mocks.ufe.detalleError = "No fue posible consultar la trazabilidad.";
 
     const { container } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
     const tray = screen.getByRole("region", { name: "Notificaciones" });
     expect(
-      within(tray).getByText("No fue posible consultar la trazabilidad."),
+      await within(tray).findByText("No fue posible consultar la trazabilidad."),
     ).toBeTruthy();
     expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });

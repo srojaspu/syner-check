@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import {
-  NotificationAlert,
   NotificationHost,
+  type NotificationAction,
   type NotificationItem,
 } from "../components/NotificationCenter";
 import { MovSynerPosProgress } from "../components/MovSynerPosProgress";
@@ -28,23 +28,12 @@ function useBeforeUnloadGuard(active: boolean) {
   }, [active]);
 }
 
-function RetryFailed({
-  count,
-  onRetry,
-}: {
-  count: number;
-  onRetry: () => void;
-}) {
-  if (count <= 0) return null;
-  return (
-    <button
-      type="button"
-      className="w-fit font-medium underline underline-offset-2"
-      onClick={onRetry}
-    >
-      Reintentar solo los {count} fallidos
-    </button>
-  );
+function retryFailedAction(
+  count: number,
+  onRetry: () => void,
+): NotificationAction | undefined {
+  if (count <= 0) return undefined;
+  return { label: `Reintentar ${count} fallidos`, onClick: onRetry };
 }
 
 /**
@@ -91,13 +80,8 @@ export function OperationsHost() {
         id: "sunat-error",
         signature: `sunat-error:${sunatError}`,
         tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No se pudo validar en SUNAT"
-            description={sunatError}
-          />
-        ),
+        title: "No se pudo validar en SUNAT",
+        description: sunatError,
       });
     }
 
@@ -106,13 +90,8 @@ export function OperationsHost() {
         id: "sunat-warning",
         signature: `sunat-warning:${sunatWarning}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Validación en SUNAT"
-            description={sunatWarning}
-          />
-        ),
+        title: "Validación en SUNAT",
+        description: sunatWarning,
       });
     }
 
@@ -121,13 +100,8 @@ export function OperationsHost() {
         id: "sunat-notice",
         signature: `sunat-notice:${sunatNotice}`,
         tone: "info",
-        content: (
-          <NotificationAlert
-            tone="info"
-            title="Validación en SUNAT"
-            description={sunatNotice}
-          />
-        ),
+        title: "Validación en SUNAT",
+        description: sunatNotice,
       });
     }
 
@@ -136,18 +110,9 @@ export function OperationsHost() {
         id: "movsynerpos-error",
         signature: `mov-error:${movError}:${failedCount}`,
         tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No se pudo enviar a MovSynerPos"
-            description={
-              <span className="flex flex-col gap-1.5">
-                <span>{movError}</span>
-                <RetryFailed count={failedCount} onRetry={() => void retryMov()} />
-              </span>
-            }
-          />
-        ),
+        title: "No se pudo enviar a MovSynerPos",
+        description: movError,
+        action: retryFailedAction(failedCount, () => void retryMov()),
       });
     }
 
@@ -156,18 +121,9 @@ export function OperationsHost() {
         id: "movsynerpos-warning",
         signature: `mov-warning:${movWarning}:${failedCount}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Observaciones en MovSynerPos"
-            description={
-              <span className="flex flex-col gap-1.5">
-                <span>{movWarning}</span>
-                <RetryFailed count={failedCount} onRetry={() => void retryMov()} />
-              </span>
-            }
-          />
-        ),
+        title: "Observaciones en MovSynerPos",
+        description: movWarning,
+        action: retryFailedAction(failedCount, () => void retryMov()),
       });
     }
 
@@ -176,13 +132,8 @@ export function OperationsHost() {
         id: "movsynerpos-notice",
         signature: `mov-notice:${movNotice}`,
         tone: "info",
-        content: (
-          <NotificationAlert
-            tone="info"
-            title="Envío a MovSynerPos"
-            description={movNotice}
-          />
-        ),
+        title: "Envío a MovSynerPos",
+        description: movNotice,
       });
     }
 

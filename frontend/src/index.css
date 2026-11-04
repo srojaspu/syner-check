@@ -139,6 +139,11 @@
   display: none;
 }
 
+/* Sonner fija su propia pila de fuentes del sistema; los toasts usan la de la app. */
+[data-sonner-toaster] {
+  font-family: var(--font-sans);
+}
+
 @page {
   margin: 12mm;
 }

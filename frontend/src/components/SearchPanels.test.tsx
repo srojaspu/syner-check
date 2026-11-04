@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { render, screen, cleanup, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -64,7 +70,7 @@ describe("RangePanel", () => {
     }
     await user.click(screen.getByRole("button", { name: "Consultar" }));
     const tray = screen.getByRole("region", { name: "Notificaciones" });
-    expect(within(tray).getByText("Revisa los filtros")).toBeTruthy();
+    expect(await within(tray).findByText("Revisa los filtros")).toBeTruthy();
     expect(
       within(tray).getByText("Selecciona al menos un tipo de documento."),
     ).toBeTruthy();
@@ -93,14 +99,16 @@ describe("NumberPanel", () => {
     await user.click(screen.getByRole("button", { name: "Buscar" }));
 
     const tray = screen.getByRole("region", { name: "Notificaciones" });
-    expect(within(tray).getByText("Revisa los filtros")).toBeTruthy();
+    expect(await within(tray).findByText("Revisa los filtros")).toBeTruthy();
     expect(within(tray).getByText("Ingresa un número.")).toBeTruthy();
     expect(container.querySelector('[data-slot="alert"]')).toBeNull();
     expect(onSearch).not.toHaveBeenCalled();
 
     // Escribir limpia la notificación de filtro inválido
     await user.type(screen.getByLabelText("Número"), "F001-1");
-    expect(screen.queryByText("Ingresa un número.")).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByText("Ingresa un número.")).toBeNull(),
+    );
   });
 
   it("sin carga el boton dice Buscar y envia el numero", async () => {

@@ -10,7 +10,6 @@ import { DetailDrawer } from "@/components/DetailDrawer";
 import { FlowBar } from "@/components/FlowBar";
 import { MovSynerPosConfirmDialog } from "@/components/MovSynerPosConfirmDialog";
 import {
-  NotificationAlert,
   NotificationHost,
   type NotificationItem,
 } from "@/components/NotificationCenter";
@@ -250,13 +249,8 @@ export default function ComprobantesPage({
         id: "synerpos-query-error",
         signature: `query-error:${vouchers.error}`,
         tone: "error",
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="Error de consulta"
-            description={vouchers.error}
-          />
-        ),
+        title: "Error de consulta",
+        description: vouchers.error,
       });
     }
 
@@ -265,13 +259,8 @@ export default function ComprobantesPage({
         id: "synerpos-nc-warning",
         signature: `nc-warning:${vouchers.ncWarning}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Notas de crédito sin verificar"
-            description={ncWarningText}
-          />
-        ),
+        title: "Notas de crédito sin verificar",
+        description: ncWarningText,
       });
     }
 
@@ -280,13 +269,9 @@ export default function ComprobantesPage({
         id: "synerpos-intelisis-warning",
         signature: `intelisis-warning:${vouchers.intelisisWarning}`,
         tone: "warning",
-        content: (
-          <NotificationAlert
-            tone="warning"
-            title="Intelisis no disponible"
-            description="No se pudo consultar el estado en Intelisis; se muestran los comprobantes sin ese cruce."
-          />
-        ),
+        title: "Intelisis no disponible",
+        description:
+          "No se pudo consultar el estado en Intelisis; se muestran los comprobantes sin ese cruce.",
       });
     }
 
@@ -296,13 +281,8 @@ export default function ComprobantesPage({
         signature: `detail-error:${detail.error}`,
         tone: "error",
         onDismiss: detail.close,
-        content: (
-          <NotificationAlert
-            tone="error"
-            title="No se pudo cargar el detalle"
-            description={detail.error}
-          />
-        ),
+        title: "No se pudo cargar el detalle",
+        description: detail.error,
       });
     }
 
