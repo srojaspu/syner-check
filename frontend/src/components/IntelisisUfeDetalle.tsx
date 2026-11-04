@@ -5,10 +5,8 @@ import {
   Loading02Icon,
   RefreshIcon,
   Search01Icon,
-  TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
 import { puedeReenviar } from "./IntelisisUfeColumns";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,7 +120,6 @@ export function IntelisisUfeDetalle({
   open,
   detalle,
   loading,
-  error,
   validando,
   reenvioHabilitado = false,
   reenviando = false,
@@ -133,12 +130,10 @@ export function IntelisisUfeDetalle({
   open: boolean;
   detalle: IntelisisUfeDetalle | null;
   loading: boolean;
-  error: string | null;
+  error?: string | null;
   validando: number | null;
   reenvioHabilitado?: boolean;
   reenviando?: boolean;
-  aviso?: string | null;
-  errorValidacion?: string | null;
   onValidar: (idVenta: number) => void;
   onReenviar?: (venta: IntelisisUfeRow) => void;
   onClose: () => void;
@@ -167,13 +162,6 @@ export function IntelisisUfeDetalle({
               aria-hidden
             />
             Cargando trazabilidad…
-          </div>
-        ) : error ? (
-          <div className="p-6">
-            <Alert variant="destructive">
-              <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
           </div>
         ) : venta ? (
           <div className="flex flex-col gap-6">

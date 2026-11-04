@@ -101,24 +101,15 @@ export function IntelisisUfeResultados({
           : "Selecciona un periodo para comenzar."
       }
       details={
-        <>
-          {incidencias.length ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {incidencias.map((item) => (
-                <Badge key={item.key} variant="outline">
-                  {item.key}: {item.count}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-          {sunat.excedido ? (
-            <p className="text-xs text-muted-foreground" role="status">
-              La validacion SUNAT admite {limite} documentos por solicitud y hay{" "}
-              {sunat.total.toLocaleString("es-PE")}: selecciona hasta {limite} en
-              la tabla o filtra (resultado, generador o tipo) para dejar menos.
-            </p>
-          ) : null}
-        </>
+        incidencias.length ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {incidencias.map((item) => (
+              <Badge key={item.key} variant="outline">
+                {item.key}: {item.count}
+              </Badge>
+            ))}
+          </div>
+        ) : null
       }
       actions={
         <>

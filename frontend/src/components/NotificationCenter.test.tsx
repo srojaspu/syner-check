@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTO_DISMISS_MS,
   NotificationAlert,
   NotificationHost,
   type NotificationItem,
@@ -76,6 +77,38 @@ describe("NotificationHost", () => {
     rerender(<NotificationHost items={[item]} />);
 
     expect(screen.getByText("Sin conexión con Intelisis.")).toBeTruthy();
+  });
+
+  it("oculta automaticamente las notificaciones de error tras AUTO_DISMISS_MS usando Sonner", () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    const items: NotificationItem[] = [
+      {
+        id: "number-panel-error",
+        signature: "number-error:Ingresa un número.:1",
+        tone: "error",
+        onDismiss,
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="Revisa los filtros"
+            description="Ingresa un número."
+          />
+        ),
+      },
+    ];
+
+    render(<NotificationHost items={items} />);
+
+    expect(screen.getByText("Revisa los filtros")).toBeTruthy();
+    expect(screen.getByText("Ingresa un número.")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(AUTO_DISMISS_MS + 300);
+    });
+
+    expect(screen.queryByText("Ingresa un número.")).toBeNull();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
 

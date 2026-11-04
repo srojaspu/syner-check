@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { fireEvent } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,14 +159,20 @@ describe("App", () => {
     expect(screen.getByText("Resultados")).toBeTruthy();
   });
 
-  it("avisa cuando la verificación de notas de crédito quedó incompleta", () => {
+  it("avisa en el sistema de notificaciones cuando la verificación de notas de crédito quedó incompleta", () => {
     mocks.session.ready = true;
     mocks.rows = [row("1", true)];
     mocks.ncWarning = "credit_notes_unavailable";
-    render(<App />);
+    const { container } = render(<App />);
 
-    expect(screen.getByText("Notas de crédito sin verificar")).toBeTruthy();
-    expect(screen.getByText(/puede faltar algún resultado/i)).toBeTruthy();
+    const tray = screen.getByRole("region", { name: "Notificaciones" });
+    expect(
+      within(tray).getByText("Notas de crédito sin verificar"),
+    ).toBeTruthy();
+    expect(
+      within(tray).getByText(/puede faltar algún resultado/i),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });
 
   it("disables the MovSynerPos button without rows", () => {

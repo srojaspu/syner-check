@@ -3,9 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Loading02Icon,
   RefreshIcon,
-  TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -25,7 +23,7 @@ const TAMANOS_PAGINA = [10, 20, 50];
 interface IntelisisUfeReenvioPanelProps {
   panel: IntelisisReenvioCola | null;
   loading: boolean;
-  error: string | null;
+  error?: string | null;
   resolviendo: number | null;
   onRecargar: () => void;
   onResolver: (fila: IntelisisReenvioFila) => void;
@@ -44,7 +42,6 @@ interface IntelisisUfeReenvioPanelProps {
 export function IntelisisUfeReenvioPanel({
   panel,
   loading,
-  error,
   resolviendo,
   onRecargar,
   onResolver,
@@ -115,14 +112,6 @@ export function IntelisisUfeReenvioPanel({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
-        {error ? (
-          <Alert variant="destructive">
-            <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-            <AlertTitle>No fue posible leer la cola</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-
         <div
           className="flex flex-wrap items-center gap-2 text-sm"
           aria-live="polite"

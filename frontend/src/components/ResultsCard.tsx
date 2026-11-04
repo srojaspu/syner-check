@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 interface ResultsCardProps {
   /** Titulo de la seccion (h2: la pantalla no trae uno propio). */
   title: string;
-  /** Resumen de una linea: conteo, periodo o el error de la consulta. */
+  /** Resumen de una linea: conteo o periodo de la consulta. */
   summary: ReactNode;
   /** Contenido extra bajo el resumen: totales, incidencias, seleccion, avisos. */
   details?: ReactNode;

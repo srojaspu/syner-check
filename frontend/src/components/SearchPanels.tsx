@@ -1,17 +1,20 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   HashIcon,
   Loading02Icon,
   Search01Icon,
-  TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  NotificationAlert,
+  NotificationHost,
+  type NotificationItem,
+} from "./NotificationCenter";
 import { PeriodoPanel } from "./search/PeriodoPanel";
 import { ALL_TIPOS, TypeChips } from "./search/TypeChips";
 import { toISODate } from "../api/format";
@@ -58,14 +61,17 @@ export function RangePanel({
   });
   const [tipos, setTipos] = useState<string[]>([...ALL_TIPOS]);
   const [error, setError] = useState<string | null>(null);
+  const [errorSeq, setErrorSeq] = useState(0);
 
   const submit = () => {
     if (disabled) return;
     if (!range?.from || !range?.to) {
+      setErrorSeq((n) => n + 1);
       setError("Selecciona el rango completo (inicio y fin).");
       return;
     }
     if (!tipos.length) {
+      setErrorSeq((n) => n + 1);
       setError("Selecciona al menos un tipo de documento.");
       return;
     }
@@ -73,32 +79,54 @@ export function RangePanel({
     onSearch(toISODate(range.from), toISODate(range.to), tipos.join(","));
   };
 
+  const notificationItems = useMemo<NotificationItem[]>(() => {
+    if (!error) return [];
+    return [
+      {
+        id: "range-panel-error",
+        signature: `range-error:${error}:${errorSeq}`,
+        tone: "error",
+        onDismiss: () => setError(null),
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="Revisa los filtros"
+            description={error}
+          />
+        ),
+      },
+    ];
+  }, [error, errorSeq]);
+
   return (
     <div className="flex flex-col gap-3">
       <PeriodoPanel
         range={range}
-        onRange={setRange}
+        onRange={(nextRange) => {
+          setError(null);
+          setRange(nextRange);
+        }}
         onConsultar={submit}
         disabled={disabled}
         extra={
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Tipo de documento</span>
-            <TypeChips values={tipos} onChange={setTipos} />
+            <TypeChips
+              values={tipos}
+              onChange={(nextTipos) => {
+                setError(null);
+                setTipos(nextTipos);
+              }}
+            />
           </div>
         }
       />
-      {error ? (
-        <Alert variant="destructive">
-          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-          <AlertTitle>Revisa los filtros</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
       <p className="text-sm text-muted-foreground">
         Filtra por <b>rango de fechas + tipo de documento</b>. La consulta
         general usa campos resumidos para responder más rápido; abre un
         documento para cargar el detalle completo.
       </p>
+      <NotificationHost items={notificationItems} />
     </div>
   );
 }
@@ -121,17 +149,38 @@ export function NumberPanel({
 }) {
   const [number, setNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorSeq, setErrorSeq] = useState(0);
   const ocupado = disabled || loading;
 
   const submit = () => {
     if (ocupado) return;
     if (!number.trim()) {
+      setErrorSeq((n) => n + 1);
       setError("Ingresa un número.");
       return;
     }
     setError(null);
     onSearch(number.trim());
   };
+
+  const notificationItems = useMemo<NotificationItem[]>(() => {
+    if (!error) return [];
+    return [
+      {
+        id: "number-panel-error",
+        signature: `number-error:${error}:${errorSeq}`,
+        tone: "error",
+        onDismiss: () => setError(null),
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="Revisa los filtros"
+            description={error}
+          />
+        ),
+      },
+    ];
+  }, [error, errorSeq]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -141,7 +190,10 @@ export function NumberPanel({
           <Input
             id="numero-comprobante"
             value={number}
-            onChange={(event) => setNumber(event.target.value)}
+            onChange={(event) => {
+              setError(null);
+              setNumber(event.target.value);
+            }}
             disabled={ocupado}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
@@ -175,14 +227,8 @@ export function NumberPanel({
           Buscando el comprobante en Intelisis…
         </p>
       ) : null}
-      {error ? (
-        <Alert variant="destructive">
-          <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} />
-          <AlertTitle>Revisa los filtros</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      <p className="text-sm text-muted-foreground">{hint}</p>
+      {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
+      <NotificationHost items={notificationItems} />
     </div>
   );
 }

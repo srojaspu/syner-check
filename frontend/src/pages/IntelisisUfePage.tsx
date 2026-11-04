@@ -151,6 +151,10 @@ export default function IntelisisUfePage({
       setFormError(`El periodo maximo es de ${MAX_DIAS} dias.`);
       return;
     }
+    if (!tipos.length) {
+      setFormError("Selecciona al menos un tipo de documento.");
+      return;
+    }
     setFormError(null);
     setConsulta({
       desde: toISODate(range.from),
@@ -404,7 +408,7 @@ export default function IntelisisUfePage({
         content: (
           <NotificationAlert
             tone="error"
-            title="Revisa el periodo"
+            title="Revisa los filtros"
             description={formError}
           />
         ),
@@ -421,6 +425,37 @@ export default function IntelisisUfePage({
             tone="error"
             title="No fue posible consultar"
             description={ufe.error}
+          />
+        ),
+      });
+    }
+
+    if (ufe.detalleError) {
+      list.push({
+        id: "ufe-detalle-error",
+        signature: `detalle-error:${ufe.detalleError}`,
+        tone: "error",
+        onDismiss: ufe.cerrarDetalle,
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="No fue posible consultar la trazabilidad"
+            description={ufe.detalleError}
+          />
+        ),
+      });
+    }
+
+    if (reenvio.panelError) {
+      list.push({
+        id: "ufe-reenvio-panel-error",
+        signature: `reenvio-panel:${reenvio.panelError}`,
+        tone: "error",
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="No fue posible leer la cola"
+            description={reenvio.panelError}
           />
         ),
       });
@@ -451,6 +486,22 @@ export default function IntelisisUfePage({
             tone="warning"
             title="Listado recortado"
             description={`Se muestran ${ufe.maxFilas.toLocaleString("es-PE")} de ${ufe.filtradosTotal.toLocaleString("es-PE")} documentos que pasan el filtro. Afina el periodo o usa los filtros (resultado, generador, tipo) para ver el resto.`}
+          />
+        ),
+      });
+    }
+
+    if (loteExcedido) {
+      const limite = SUNAT_LOTE_MAX.toLocaleString("es-PE");
+      list.push({
+        id: "ufe-sunat-lote-excedido",
+        signature: `lote-excedido:${consultables.length}:${SUNAT_LOTE_MAX}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Lote SUNAT excedido"
+            description={`La validación SUNAT admite ${limite} documentos por solicitud y hay ${consultables.length.toLocaleString("es-PE")}: selecciona hasta ${limite} en la tabla o filtra (resultado, generador o tipo) para dejar menos.`}
           />
         ),
       });
@@ -490,10 +541,7 @@ export default function IntelisisUfePage({
           reenvio.aviso ?? "",
         ].join("|"),
         tone: rechazados > 0 ? "warning" : "info",
-        // El aviso trae su propio botón de cierre y no debe desvanecerse:
-        // los rechazos son información auditable del reenvío.
         hideCloseButton: true,
-        persistent: true,
         onDismiss: reenvio.limpiarMensajes,
         content: (
           <IntelisisUfeReenvioAviso
@@ -535,6 +583,8 @@ export default function IntelisisUfePage({
   }, [
     formError,
     ufe.error,
+    ufe.detalleError,
+    ufe.cerrarDetalle,
     ufe.searched,
     ufe.intelisisEnabled,
     ufe.truncado,
@@ -542,6 +592,9 @@ export default function IntelisisUfePage({
     ufe.filtradosTotal,
     ufe.aviso,
     ufe.errorValidacion,
+    loteExcedido,
+    consultables.length,
+    reenvio.panelError,
     reenvio.resultado,
     reenvio.aviso,
     reenvio.limpiarMensajes,
@@ -556,7 +609,10 @@ export default function IntelisisUfePage({
       {modo === "range" ? (
         <PeriodoPanel
           range={range}
-          onRange={setRange}
+          onRange={(nextRange) => {
+            setFormError(null);
+            setRange(nextRange);
+          }}
           onConsultar={consultarPeriodo}
           loading={ufe.loading}
           extra={
@@ -564,7 +620,10 @@ export default function IntelisisUfePage({
               <span className="text-sm font-medium">Tipo de documento</span>
               <TypeChips
                 values={tipos}
-                onChange={setTipos}
+                onChange={(nextTipos) => {
+                  setFormError(null);
+                  setTipos(nextTipos);
+                }}
                 tipos={ALL_TIPOS_UFE}
               />
             </div>

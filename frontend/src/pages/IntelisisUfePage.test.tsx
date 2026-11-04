@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     run: vi.fn(),
     detalle: null as unknown,
     detalleLoading: false,
+    detalleError: null as string | null,
     validando: null as number | null,
     aviso: null as string | null,
     errorValidacion: null as string | null,
@@ -250,6 +251,7 @@ describe("IntelisisUfePage", () => {
     mocks.ufe.hasta = "2026-10-21";
     mocks.ufe.detalle = null;
     mocks.ufe.detalleLoading = false;
+    mocks.ufe.detalleError = null;
     mocks.ufe.validando = null;
     mocks.ufe.aviso = null;
     mocks.ufe.errorValidacion = null;
@@ -1342,13 +1344,27 @@ describe("IntelisisUfePage", () => {
     expect(screen.getByRole("button", { name: "Resolver" })).toBeTruthy();
   });
 
-  it("muestra el error de la cola sin romper la pantalla", () => {
+  it("muestra el error de la cola en el sistema de notificaciones sin incrustarlo en el panel", () => {
     mocks.reenvio.panelError = "No fue posible consultar la cola de reenvíos.";
 
-    render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+    const { container } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
 
+    const tray = screen.getByRole("region", { name: "Notificaciones" });
     expect(
-      screen.getByText("No fue posible consultar la cola de reenvíos."),
+      within(tray).getByText("No fue posible consultar la cola de reenvíos."),
     ).toBeTruthy();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  it("muestra el error de trazabilidad en el sistema de notificaciones cuando falla abrirDetalle", () => {
+    mocks.ufe.detalleError = "No fue posible consultar la trazabilidad.";
+
+    const { container } = render(<IntelisisUfePage onAuthFailure={vi.fn()} />);
+
+    const tray = screen.getByRole("region", { name: "Notificaciones" });
+    expect(
+      within(tray).getByText("No fue posible consultar la trazabilidad."),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });
 });

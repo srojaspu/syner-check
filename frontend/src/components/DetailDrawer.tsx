@@ -183,7 +183,6 @@ export function DetailDrawer({
   open,
   document,
   loading,
-  error,
   copied,
   validatingSunat = false,
   sendingMovSynerPos = false,
@@ -195,7 +194,7 @@ export function DetailDrawer({
   open: boolean;
   document: Voucher | null;
   loading: boolean;
-  error: string | null;
+  error?: string | null;
   copied: boolean;
   validatingSunat?: boolean;
   sendingMovSynerPos?: boolean;
@@ -240,12 +239,6 @@ export function DetailDrawer({
               aria-hidden
             />
             Cargando detalle…
-          </div>
-        ) : error ? (
-          <div className="p-6">
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
           </div>
         ) : document ? (
           <div id="detail" className="flex flex-col gap-6">

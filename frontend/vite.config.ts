@@ -3,9 +3,34 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+/**
+ * Sonner injects a <style> tag at runtime via __insertCSS(). The backend CSP
+ * enforces `style-src 'self'` and rejects inline <style> elements; since
+ * `sonner/dist/styles.css` is already bundled via `src/index.css`, we
+ * neutralize __insertCSS() so no inline <style> is ever created.
+ */
+function stripSonnerInlineCss() {
+  return {
+    name: "strip-sonner-inline-css",
+    transform(code: string, id: string) {
+      if (!id.includes("sonner") || !code.includes("__insertCSS")) return null;
+      return {
+        code: code.replace(
+          "if (!code || typeof document == 'undefined') return",
+          "return;",
+        ),
+        map: null,
+      };
+    },
+  };
+}
+
 // Build output is served by FastAPI under /static/frontend/.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [stripSonnerInlineCss(), react(), tailwindcss()],
+  optimizeDeps: {
+    exclude: ["sonner"],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

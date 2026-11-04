@@ -53,17 +53,22 @@ describe("RangePanel", () => {
     );
   });
 
-  it("shows an inline error when no document type is selected", async () => {
+  it("shows a notification error when no document type is selected", async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn();
-    render(<RangePanel disabled={false} onSearch={onSearch} />);
+    const { container } = render(
+      <RangePanel disabled={false} onSearch={onSearch} />,
+    );
     for (const label of ["Factura", "Boleta", "Nota de crédito"]) {
       await user.click(screen.getByRole("checkbox", { name: label }));
     }
     await user.click(screen.getByRole("button", { name: "Consultar" }));
+    const tray = screen.getByRole("region", { name: "Notificaciones" });
+    expect(within(tray).getByText("Revisa los filtros")).toBeTruthy();
     expect(
-      screen.getByText("Selecciona al menos un tipo de documento."),
+      within(tray).getByText("Selecciona al menos un tipo de documento."),
     ).toBeTruthy();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
     expect(onSearch).not.toHaveBeenCalled();
   });
 });
@@ -78,6 +83,24 @@ describe("NumberPanel", () => {
     const boton = screen.getByRole("button", { name: /Buscando/ });
     expect((boton as HTMLButtonElement).disabled).toBe(true);
     expect(boton.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("muestra el error en el sistema de notificaciones cuando falta el numero y no lo incrusta en el cuerpo", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn();
+    const { container } = render(<NumberPanel onSearch={onSearch} />);
+
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    const tray = screen.getByRole("region", { name: "Notificaciones" });
+    expect(within(tray).getByText("Revisa los filtros")).toBeTruthy();
+    expect(within(tray).getByText("Ingresa un número.")).toBeTruthy();
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+    expect(onSearch).not.toHaveBeenCalled();
+
+    // Escribir limpia la notificación de filtro inválido
+    await user.type(screen.getByLabelText("Número"), "F001-1");
+    expect(screen.queryByText("Ingresa un número.")).toBeNull();
   });
 
   it("sin carga el boton dice Buscar y envia el numero", async () => {

@@ -243,9 +243,10 @@ export default function ComprobantesPage({
   // `OperationsHost` para que sobrevivan al cambio de pestaña. Aquí solo
   // quedan los de esta pantalla.
   const notificationItems = useMemo<NotificationItem[]>(() => {
-    if (!vouchers.error) return [];
-    return [
-      {
+    const list: NotificationItem[] = [];
+
+    if (vouchers.error) {
+      list.push({
         id: "synerpos-query-error",
         signature: `query-error:${vouchers.error}`,
         tone: "error",
@@ -256,9 +257,64 @@ export default function ComprobantesPage({
             description={vouchers.error}
           />
         ),
-      },
-    ];
-  }, [vouchers.error]);
+      });
+    }
+
+    if (ncWarningText) {
+      list.push({
+        id: "synerpos-nc-warning",
+        signature: `nc-warning:${vouchers.ncWarning}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Notas de crédito sin verificar"
+            description={ncWarningText}
+          />
+        ),
+      });
+    }
+
+    if (vouchers.intelisisWarning) {
+      list.push({
+        id: "synerpos-intelisis-warning",
+        signature: `intelisis-warning:${vouchers.intelisisWarning}`,
+        tone: "warning",
+        content: (
+          <NotificationAlert
+            tone="warning"
+            title="Intelisis no disponible"
+            description="No se pudo consultar el estado en Intelisis; se muestran los comprobantes sin ese cruce."
+          />
+        ),
+      });
+    }
+
+    if (detail.error) {
+      list.push({
+        id: "synerpos-detail-error",
+        signature: `detail-error:${detail.error}`,
+        tone: "error",
+        onDismiss: detail.close,
+        content: (
+          <NotificationAlert
+            tone="error"
+            title="No se pudo cargar el detalle"
+            description={detail.error}
+          />
+        ),
+      });
+    }
+
+    return list;
+  }, [
+    vouchers.error,
+    vouchers.ncWarning,
+    vouchers.intelisisWarning,
+    ncWarningText,
+    detail.error,
+    detail.close,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -323,24 +379,15 @@ export default function ComprobantesPage({
 
       <ResultsCard
         title="Resultados"
-        summary={vouchers.error ?? resultsSubtitle}
+        summary={resultsSubtitle}
         details={
           vouchers.searched ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-muted-foreground">
-                Total mostrado:{" "}
-                <span className="font-semibold tabular-nums text-foreground">
-                  {formatMoney(resultsTotal, resultsCurrency)}
-                </span>
-              </p>
-              {ncWarningText ? (
-                <NotificationAlert
-                  tone="warning"
-                  title="Notas de crédito sin verificar"
-                  description={ncWarningText}
-                />
-              ) : null}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Total mostrado:{" "}
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatMoney(resultsTotal, resultsCurrency)}
+              </span>
+            </p>
           ) : null
         }
         actions={

@@ -46,9 +46,9 @@ export function useDocument(onAuthFailure: () => void) {
         setDocument({ ...row, ...data.document });
       } catch (err: unknown) {
         if (err instanceof RequestAbortedError || id !== seq.current) return;
+        setOpen(false);
         if (err instanceof AuthError) {
           onAuthFailure();
-          setOpen(false);
         } else {
           setError(err instanceof Error ? err.message : "Error de consulta");
         }

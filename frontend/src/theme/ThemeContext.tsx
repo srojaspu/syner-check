@@ -83,3 +83,7 @@ export function useTheme(): ThemeValue {
   if (!value) throw new Error("useTheme must be used inside ThemeProvider");
   return value;
 }
+
+export function useOptionalTheme(): ThemeValue | null {
+  return useContext(ThemeContext);
+}
