@@ -10,6 +10,8 @@ import type {
   IntelisisUfeValidacion,
   MovSynerPosRequestDocumento,
   MovSynerPosResponse,
+  MovSynerPosDeleteRequest,
+  MovSynerPosDeleteResponse,
   SearchResponse,
   SessionUser,
   SummaryResponse,
@@ -55,6 +57,8 @@ const SUNAT_SUBMIT_TIMEOUT_MS = 30_000;
 const SUNAT_SUBMISSION_TIMEOUT_MS = 30_000;
 /** A MovSynerPos batch re-queries GraphQL and inserts per document. */
 const MOVSYNERPOS_TIMEOUT_MS = 180_000;
+/** Delete is short: read snapshot + one parameterized DELETE. */
+const MOVSYNERPOS_DELETE_TIMEOUT_MS = 60_000;
 
 /**
  * Tope de documentos por solicitud SUNAT (lo impone el servidor).
@@ -425,5 +429,27 @@ export function sendMovSynerPos(
       signal,
     },
     MOVSYNERPOS_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Audited DELETE of one wrong/duplicated document from MovSynerPos.
+ *
+ * ``motivo`` is mandatory (5-255 chars) and ``forzar`` only applies after the
+ * backend answered 409 because Intelisis already concluded the sale.
+ */
+export function deleteMovSynerPos(
+  payload: MovSynerPosDeleteRequest,
+  signal?: AbortSignal,
+): Promise<MovSynerPosDeleteResponse> {
+  return api(
+    "/api/movsynerpos/borrar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    },
+    MOVSYNERPOS_DELETE_TIMEOUT_MS,
   );
 }

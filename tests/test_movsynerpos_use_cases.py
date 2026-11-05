@@ -51,10 +51,11 @@ class FakeGateway:
 
 
 class FakeWriter:
-    def __init__(self, existing=None, conflicts=None, fail=False):
+    def __init__(self, existing=None, conflicts=None, fail=False, lines=None):
         self.existing = existing or {}
         self.conflicts = conflicts or {}
         self.fail = fail
+        self.lines = lines or {}
         self.inserted: list[dict] = []
         self.conflict_calls: list[tuple] = []
 
@@ -66,6 +67,9 @@ class FakeWriter:
         return {
             idx: owner for idx, owner in self.conflicts.items() if idx in set(idxs)
         }
+
+    def document_lines(self, oid, tipo):
+        return [dict(row) for row in self.lines.get(oid, [])]
 
     def insert_lines(self, documento, lineas):
         if self.fail:
@@ -170,6 +174,91 @@ def test_line_owned_by_another_oid_is_conflict() -> None:
 
     assert result["detalle"][0]["estado"] == ESTADO_CONFLICTO
     assert writer.inserted == []
+
+
+def _linea_conflicto(idx: int, cross_total: str) -> dict:
+    return {
+        "SerieNumero": BOLETA["number"],
+        "FechaDocumento": BOLETA["date"],
+        "Idx": idx,
+        "Sku": f"SKU-{idx}",
+        "Cantidad": 1,
+        "CrossTotal": cross_total,
+    }
+
+
+def test_conflict_reports_identity_of_the_registered_document() -> None:
+    writer = FakeWriter(
+        conflicts={1: "14257.000001"},
+        lines={
+            "14257.000001": [
+                _linea_conflicto(1, "120.5000"),
+                _linea_conflicto(2, "10.0000"),
+            ]
+        },
+    )
+    result = send_movsynerpos(
+        gateway_with(BOLETA), writer, documentos=[PAYLOAD_BOLETA]
+    )
+
+    assert result["detalle"][0]["conflictos"] == [
+        {
+            "oid": "14257.000001",
+            "number": BOLETA["number"],
+            "lineas": 2,
+            "total": "130.5000",
+            "fecha": BOLETA["date"],
+        }
+    ]
+
+
+def test_conflict_reports_the_serie_registered_for_the_same_oid() -> None:
+    writer = FakeWriter(
+        existing={1: "BS99-00000001"},
+        lines={
+            BOLETA["oid"]: [
+                {
+                    "SerieNumero": "BS99-00000001",
+                    "FechaDocumento": BOLETA["date"],
+                    "Idx": 1,
+                    "Sku": "SKU-1",
+                    "Cantidad": 1,
+                    "CrossTotal": "120.5000",
+                }
+            ]
+        },
+    )
+    result = send_movsynerpos(
+        gateway_with(BOLETA), writer, documentos=[PAYLOAD_BOLETA]
+    )
+
+    conflicto = result["detalle"][0]["conflictos"][0]
+    assert conflicto["oid"] == BOLETA["oid"]
+    assert conflicto["number"] == "BS99-00000001"
+    assert conflicto["lineas"] == 1
+
+
+def test_conflict_snapshot_failure_keeps_minimal_identity() -> None:
+    class BrokenLinesWriter(FakeWriter):
+        def document_lines(self, oid, tipo):
+            raise UpstreamError("snapshot failed")
+
+    writer = BrokenLinesWriter(conflicts={1: "otro-oid"})
+    result = send_movsynerpos(
+        gateway_with(BOLETA), writer, documentos=[PAYLOAD_BOLETA]
+    )
+
+    # El fallo al leer el snapshot no oculta el conflicto ni rompe el lote.
+    assert result["detalle"][0]["estado"] == ESTADO_CONFLICTO
+    assert result["detalle"][0]["conflictos"] == [
+        {
+            "oid": "otro-oid",
+            "number": BOLETA["number"],
+            "lineas": 0,
+            "total": None,
+            "fecha": "",
+        }
+    ]
 
 
 def test_serie_conflict_from_same_oid_does_not_block_insert() -> None:

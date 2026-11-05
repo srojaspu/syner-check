@@ -27,11 +27,15 @@ const mocks = vi.hoisted(() => ({
     warning: null,
     error: null,
     failed: [],
+    conflicts: [],
+    resolving: false,
+    resolveError: null,
     reset: vi.fn(),
     run: vi.fn(),
     retry: vi.fn(),
     cancel: vi.fn(),
     dismissProgress: vi.fn(),
+    resolveConflicts: vi.fn(),
   },
 }));
 

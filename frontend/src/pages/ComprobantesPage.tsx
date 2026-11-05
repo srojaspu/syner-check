@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FileDownIcon, Loading02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { ApiError, AuthError, deleteMovSynerPos } from "../api/client";
 import { exportExcel } from "../api/excel";
 import { formatMoney } from "../api/format";
 import type { FlowStageKey, Voucher } from "../api/types";
@@ -9,6 +10,7 @@ import { DataTable } from "@/components/DataTable";
 import { DetailDrawer } from "@/components/DetailDrawer";
 import { FlowBar } from "@/components/FlowBar";
 import { MovSynerPosConfirmDialog } from "@/components/MovSynerPosConfirmDialog";
+import { MovSynerPosDeleteDialog } from "@/components/MovSynerPosDeleteDialog";
 import {
   NotificationHost,
   type NotificationItem,
@@ -54,6 +56,18 @@ export default function ComprobantesPage({
   const [movSynerPosTarget, setMovSynerPosTarget] = useState<Voucher[] | null>(
     null,
   );
+  // Borrado de un comprobante erróneo: confirmación, progreso y resultado.
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Voucher | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState<{
+    tone: "success" | "error";
+    title: string;
+    description: string;
+    signature: string;
+  } | null>(null);
   const [flowSelection, setFlowSelection] = useState<FlowSelection | null>(
     null,
   );
@@ -229,12 +243,67 @@ export default function ComprobantesPage({
     return Promise.resolve();
   };
 
+  const openDeleteDialog = (doc: Voucher) => {
+    setDeleteTarget(doc);
+    setDeleteError(null);
+    setDeleteBlocked(false);
+    setDeleteDialogOpen(true);
+  };
+
+  const runDelete = async (motivo: string, forzar: boolean) => {
+    const target = deleteTarget;
+    if (!target || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteMovSynerPos({
+        oid: target.oid,
+        tipo: target.tipo,
+        number: target.number ?? "",
+        motivo,
+        forzar,
+      });
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      setDeleteBlocked(false);
+      setDeleteNotice({
+        tone: "success",
+        title: "Comprobante eliminado",
+        description: `${result.number} · ${
+          result.lineas_eliminadas === 1
+            ? "1 línea eliminada"
+            : `${result.lineas_eliminadas} líneas eliminadas`
+        } de MovSynerPos.`,
+        signature: `delete-ok:${result.solicitud_id}`,
+      });
+      await refreshRows();
+    } catch (err: unknown) {
+      if (err instanceof AuthError) {
+        setDeleteDialogOpen(false);
+        onAuthFailure();
+        return;
+      }
+      // 409 = Intelisis ya concluyó la venta: se ofrece "forzar" en el modal.
+      if (err instanceof ApiError && err.status === 409) {
+        setDeleteBlocked(true);
+      }
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo eliminar el comprobante.",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   // Un solo proceso a la vez: los botones de operación quedan bloqueados
   // mientras cualquiera esté corriendo, con el resultado abierto o refrescando.
   const operationsDisabled =
     !targetRows.length ||
     vouchers.loading ||
     operationActive ||
+    deleteBusy ||
     sunat.refreshing ||
     movsynerpos.refreshing;
 
@@ -286,6 +355,17 @@ export default function ComprobantesPage({
       });
     }
 
+    if (deleteNotice) {
+      list.push({
+        id: "synerpos-delete-result",
+        signature: deleteNotice.signature,
+        tone: deleteNotice.tone,
+        title: deleteNotice.title,
+        description: deleteNotice.description,
+        onDismiss: () => setDeleteNotice(null),
+      });
+    }
+
     return list;
   }, [
     vouchers.error,
@@ -294,6 +374,7 @@ export default function ComprobantesPage({
     ncWarningText,
     detail.error,
     detail.close,
+    deleteNotice,
   ]);
 
   return (
@@ -505,6 +586,7 @@ export default function ComprobantesPage({
         copied={copied}
         validatingSunat={operationActive || sunat.refreshing}
         sendingMovSynerPos={operationActive || movsynerpos.refreshing}
+        deletingMovSynerPos={deleteBusy}
         onCopy={() => void copyNumber()}
         onValidateSunat={(doc) => {
           void sunat.runBatch([doc], refreshRows, "todos");
@@ -513,6 +595,7 @@ export default function ComprobantesPage({
           setMovSynerPosTarget([doc]);
           setMovSynerPosDialogOpen(true);
         }}
+        onDeleteMovSynerPos={openDeleteDialog}
         onClose={detail.close}
       />
 
@@ -540,6 +623,24 @@ export default function ComprobantesPage({
           const rowsToSend = movSynerPosTarget ?? targetRows;
           void movsynerpos.run(rowsToSend, refreshRows, reparar);
         }}
+      />
+
+      <MovSynerPosDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (deleteBusy) return;
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+            setDeleteBlocked(false);
+          }
+        }}
+        document={deleteTarget}
+        busy={deleteBusy}
+        error={deleteError}
+        blocked={deleteBlocked}
+        onConfirm={(motivo, forzar) => void runDelete(motivo, forzar)}
       />
     </div>
   );

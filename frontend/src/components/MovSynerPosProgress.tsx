@@ -11,6 +11,7 @@ interface MovSynerPosProgressProps {
   failedCount: number;
   running: boolean;
   onRetry?: () => void;
+  onResolveConflicts?: () => void;
 }
 
 export function MovSynerPosProgress({
@@ -21,6 +22,7 @@ export function MovSynerPosProgress({
   failedCount,
   running,
   onRetry,
+  onResolveConflicts,
 }: MovSynerPosProgressProps) {
   if (!progress && !notice && !warning && !error) return null;
 
@@ -81,6 +83,18 @@ export function MovSynerPosProgress({
                 </span>
               ) : null}
             </span>
+            {progress.conflictos > 0 && !running && onResolveConflicts ? (
+              <span>
+                <button
+                  type="button"
+                  className="font-medium text-destructive underline underline-offset-2"
+                  onClick={onResolveConflicts}
+                >
+                  Revisar y resolver {progress.conflictos}{" "}
+                  {progress.conflictos === 1 ? "conflicto" : "conflictos"}
+                </button>
+              </span>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}

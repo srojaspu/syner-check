@@ -41,6 +41,7 @@ from src.application.sunat_submission import (
 from src.application.sunat_worker import run_sunat_reconcile_worker
 from src.interfaces.wiring import (
     document_detail as clean_document_detail,
+    movsynerpos_delete as clean_movsynerpos_delete,
     movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
     summary as clean_summary,
@@ -493,6 +494,7 @@ def _actor_email(request: Request) -> str:
 
 # The browser only sends document identity; 64 KB is plenty for 25 documents.
 MOVSYNERPOS_REQUEST_BYTES = 64 * 1024
+MOVSYNERPOS_DELETE_REQUEST_BYTES = 16 * 1024
 
 
 @app.post("/api/movsynerpos/enviar")
@@ -522,6 +524,32 @@ async def api_movsynerpos_send(request: Request):
         clean_movsynerpos_send,
         documentos,
         reparar,
+        _actor_email(request),
+        request_id_var.get(),
+    )
+
+
+@app.post("/api/movsynerpos/borrar")
+async def api_movsynerpos_delete(request: Request):
+    """Audited DELETE of one wrong/duplicated document from ``MovSynerPos``.
+
+    Exists because SynerCom sometimes duplicates a receipt and migrates the
+    wrong one; the series collision then blocks inserting the right document.
+    Writes are disabled unless ``MOVSYNERPOS_DELETE_ENABLED=true``.
+    """
+    protected(request)
+    body = await read_json_limited(
+        request, min(MAX_REQUEST_BYTES, MOVSYNERPOS_DELETE_REQUEST_BYTES)
+    )
+    if not isinstance(body, dict):
+        raise HTTPException(400, "El cuerpo debe ser un objeto JSON.")
+    return await run_blocking(
+        clean_movsynerpos_delete,
+        str(body.get("oid", "") or ""),
+        str(body.get("tipo", "") or ""),
+        str(body.get("number", "") or ""),
+        str(body.get("motivo", "") or ""),
+        bool(body.get("forzar", False)),
         _actor_email(request),
         request_id_var.get(),
     )

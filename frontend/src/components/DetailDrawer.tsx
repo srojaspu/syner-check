@@ -3,6 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Copy01Icon,
   Database01Icon,
+  Delete02Icon,
   Loading02Icon,
   PrinterIcon,
   ReceiptTextIcon,
@@ -186,9 +187,11 @@ export function DetailDrawer({
   copied,
   validatingSunat = false,
   sendingMovSynerPos = false,
+  deletingMovSynerPos = false,
   onCopy,
   onValidateSunat,
   onSendMovSynerPos,
+  onDeleteMovSynerPos,
   onClose,
 }: {
   open: boolean;
@@ -198,9 +201,11 @@ export function DetailDrawer({
   copied: boolean;
   validatingSunat?: boolean;
   sendingMovSynerPos?: boolean;
+  deletingMovSynerPos?: boolean;
   onCopy: () => void;
   onValidateSunat?: (doc: Voucher) => void;
   onSendMovSynerPos?: (doc: Voucher) => void;
+  onDeleteMovSynerPos?: (doc: Voucher) => void;
   onClose: () => void;
 }) {
   const currency = document?.currency?.isoCode ?? "PEN";
@@ -211,7 +216,10 @@ export function DetailDrawer({
   const isInMovSynerPos = document?.in_sql === true;
   const showValidateSunat = Boolean(onValidateSunat) && !isSunatAccepted;
   const showSendMovSynerPos = Boolean(onSendMovSynerPos) && !isInMovSynerPos;
-  const actionsBusy = validatingSunat || sendingMovSynerPos;
+  const showDeleteMovSynerPos =
+    Boolean(onDeleteMovSynerPos) && isInMovSynerPos;
+  const actionsBusy =
+    validatingSunat || sendingMovSynerPos || deletingMovSynerPos;
   return (
     <Sheet
       open={open}
@@ -327,6 +335,36 @@ export function DetailDrawer({
                     <HugeiconsIcon icon={Database01Icon} size={15} strokeWidth={2} aria-hidden />
                   )}{" "}
                   {sendingMovSynerPos ? "Enviando…" : "Reenviar a MovSynerPos"}
+                </Button>
+              ) : null}
+              {showDeleteMovSynerPos && onDeleteMovSynerPos ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={actionsBusy}
+                  onClick={() => onDeleteMovSynerPos(document)}
+                  title="Elimina este comprobante de MovSynerPos (acción auditada)"
+                >
+                  {deletingMovSynerPos ? (
+                    <HugeiconsIcon
+                      icon={Loading02Icon}
+                      size={15}
+                      strokeWidth={2}
+                      className="animate-spin"
+                      aria-hidden
+                    />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={Delete02Icon}
+                      size={15}
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                  )}{" "}
+                  {deletingMovSynerPos
+                    ? "Eliminando…"
+                    : "Eliminar de MovSynerPos"}
                 </Button>
               ) : null}
             </div>

@@ -4,10 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MovSynerPosResponse, Voucher } from "../api/types";
 
 const sendMock = vi.hoisted(() => vi.fn());
+const deleteMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, sendMovSynerPos: sendMock };
+  return {
+    ...actual,
+    sendMovSynerPos: sendMock,
+    deleteMovSynerPos: deleteMock,
+  };
 });
 
 import { AuthError } from "../api/client";
@@ -40,8 +45,57 @@ function response(
   };
 }
 
+function conflictResponse(): MovSynerPosResponse {
+  return response({
+    total: 1,
+    insertados: 0,
+    conflictos: 1,
+    detalle: [
+      {
+        tipo: "BOLETA",
+        oid: "oid-0",
+        number: "B004-0",
+        estado: "conflicto",
+        lineas_insertadas: 0,
+        lineas_existentes: 1,
+        lineas_faltantes: 1,
+        error: "Ya existen líneas de este oid con otra serie.",
+        conflictos: [
+          {
+            oid: "14257.000042",
+            number: "B004-0",
+            lineas: 1,
+            total: "10",
+            fecha: "2026-10-20",
+          },
+        ],
+      },
+    ],
+  });
+}
+
+function insertedResponse(): MovSynerPosResponse {
+  return response({
+    total: 1,
+    insertados: 1,
+    detalle: [
+      {
+        tipo: "BOLETA",
+        oid: "oid-0",
+        number: "B004-0",
+        estado: "insertado",
+        lineas_insertadas: 1,
+        lineas_existentes: 0,
+        lineas_faltantes: 0,
+        error: null,
+      },
+    ],
+  });
+}
+
 afterEach(() => {
   sendMock.mockReset();
+  deleteMock.mockReset();
 });
 
 describe("useMovSynerPos", () => {
@@ -215,5 +269,128 @@ describe("useMovSynerPos", () => {
     act(() => result.current.dismissProgress());
     expect(result.current.progress).toBeNull();
     expect(result.current.status).toBe("idle");
+  });
+
+  it("expone los conflictos con la identidad del registro existente", async () => {
+    sendMock.mockResolvedValueOnce(conflictResponse());
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+
+    await act(async () => {
+      await result.current.run([row(0)], vi.fn());
+    });
+
+    expect(result.current.conflicts).toHaveLength(1);
+    expect(result.current.conflicts[0].documento.oid).toBe("oid-0");
+    expect(result.current.conflicts[0].existentes).toEqual([
+      {
+        oid: "14257.000042",
+        number: "B004-0",
+        lineas: 1,
+        total: "10",
+        fecha: "2026-10-20",
+      },
+    ]);
+  });
+
+  it("resuelve el conflicto eliminando el registro existente y reenviando", async () => {
+    sendMock.mockResolvedValueOnce(conflictResponse());
+    sendMock.mockResolvedValueOnce(insertedResponse());
+    deleteMock.mockResolvedValueOnce({
+      solicitud_id: "d-1",
+      oid: "14257.000042",
+      tipo: "BOLETA",
+      number: "B004-0",
+      estado: "eliminado",
+      lineas_eliminadas: 1,
+      mensaje: "Registro eliminado.",
+      intelisis_estatus: null,
+    });
+    const refresh = vi.fn();
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+
+    await act(async () => {
+      await result.current.run([row(0)], refresh);
+    });
+    expect(result.current.conflicts).toHaveLength(1);
+
+    await act(async () => {
+      await result.current.resolveConflicts("  duplicado en SynerCom  ");
+    });
+
+    expect(deleteMock).toHaveBeenCalledWith({
+      oid: "14257.000042",
+      tipo: "BOLETA",
+      number: "B004-0",
+      motivo: "duplicado en SynerCom",
+    });
+    expect(sendMock).toHaveBeenCalledTimes(2);
+    expect(sendMock.mock.calls[1][0]).toEqual([
+      {
+        tipo: "BOLETA",
+        oid: "oid-0",
+        number: "B004-0",
+        date: "2026-10-20",
+      },
+    ]);
+    expect(sendMock.mock.calls[1][1]).toBe(true);
+    expect(result.current.conflicts).toEqual([]);
+    expect(result.current.resolveError).toBeNull();
+    expect(result.current.resolving).toBe(false);
+    expect(result.current.notice).toContain("Conflictos resueltos");
+    // Una vez en el modal y otra tras resolverlo.
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("conserva el conflicto cuando el borrado falla", async () => {
+    sendMock.mockResolvedValueOnce(conflictResponse());
+    deleteMock.mockRejectedValueOnce(
+      new Error("MovSynerPos respondió 503: falta el permiso DELETE."),
+    );
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+
+    await act(async () => {
+      await result.current.run([row(0)], vi.fn());
+    });
+
+    await act(async () => {
+      await result.current.resolveConflicts("duplicado en SynerCom");
+    });
+
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(result.current.conflicts).toHaveLength(1);
+    expect(result.current.resolveError).toContain("permiso DELETE");
+    expect(result.current.resolving).toBe(false);
+  });
+
+  it("no vuelve a ofrecer el borrado cuando el registro ya se eliminó", async () => {
+    sendMock.mockResolvedValueOnce(conflictResponse());
+    sendMock.mockRejectedValueOnce(new Error("SynerPOS no responde."));
+    deleteMock.mockResolvedValueOnce({
+      solicitud_id: "d-1",
+      oid: "14257.000042",
+      tipo: "BOLETA",
+      number: "B004-0",
+      estado: "eliminado",
+      lineas_eliminadas: 1,
+      mensaje: "Registro eliminado.",
+      intelisis_estatus: null,
+    });
+    const { result } = renderHook(() => useMovSynerPos(vi.fn()));
+
+    await act(async () => {
+      await result.current.run([row(0)], vi.fn());
+    });
+    await act(async () => {
+      await result.current.resolveConflicts("duplicado en SynerCom");
+    });
+
+    // El borrado ya ocurrió: reintentarlo daría 404, así que el conflicto
+    // desaparece y el documento queda en la lista de fallidos para reintentar
+    // solo el envío.
+    expect(result.current.conflicts).toEqual([]);
+    expect(result.current.resolveError).toContain("SynerPOS no responde");
+    expect(result.current.failed).toHaveLength(1);
+    expect(result.current.failed[0].oid).toBe("oid-0");
   });
 });

@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   NotificationHost,
   type NotificationAction,
   type NotificationItem,
 } from "../components/NotificationCenter";
+import { MovSynerPosConflictDialog } from "../components/MovSynerPosConflictDialog";
 import { MovSynerPosProgress } from "../components/MovSynerPosProgress";
 import { OperationProgressDialog } from "../components/OperationProgressDialog";
 import { SunatProgress } from "../components/SunatProgress";
@@ -49,8 +50,23 @@ function retryFailedAction(
  */
 export function OperationsHost() {
   const { sunat, movsynerpos } = useOperations();
+  const [conflictOpen, setConflictOpen] = useState(false);
 
   useBeforeUnloadGuard(sunat.busy || movsynerpos.busy);
+
+  const conflictCount = movsynerpos.conflicts.length;
+  const conflictsSignature = movsynerpos.conflicts
+    .map(
+      (conflict) =>
+        `${String(conflict.documento.tipo)}|${conflict.documento.oid}|${conflict.existentes
+          .map((existente) => `${existente.oid}|${existente.number}`)
+          .join(",")}`,
+    )
+    .join(";");
+
+  useEffect(() => {
+    if (!conflictCount) setConflictOpen(false);
+  }, [conflictCount]);
 
   const {
     progress: sunatProgress,
@@ -69,6 +85,10 @@ export function OperationsHost() {
     refreshing: movRefreshing,
     failed: movFailed,
     retry: retryMov,
+    conflicts: movConflicts,
+    resolving: movResolving,
+    resolveError: movResolveError,
+    resolveConflicts,
   } = movsynerpos;
   const failedCount = movFailed.length;
 
@@ -119,11 +139,17 @@ export function OperationsHost() {
     if (!movProgress && movWarning) {
       list.push({
         id: "movsynerpos-warning",
-        signature: `mov-warning:${movWarning}:${failedCount}`,
+        signature: `mov-warning:${movWarning}:${failedCount}:${conflictsSignature}`,
         tone: "warning",
         title: "Observaciones en MovSynerPos",
         description: movWarning,
-        action: retryFailedAction(failedCount, () => void retryMov()),
+        action:
+          conflictCount > 0
+            ? {
+                label: "Resolver conflictos",
+                onClick: () => setConflictOpen(true),
+              }
+            : retryFailedAction(failedCount, () => void retryMov()),
       });
     }
 
@@ -153,6 +179,8 @@ export function OperationsHost() {
     movRefreshing,
     failedCount,
     retryMov,
+    conflictCount,
+    conflictsSignature,
   ]);
 
   return (
@@ -197,8 +225,23 @@ export function OperationsHost() {
           onRetry={() => {
             void movsynerpos.retry();
           }}
+          onResolveConflicts={() => {
+            movsynerpos.dismissProgress();
+            setConflictOpen(true);
+          }}
         />
       </OperationProgressDialog>
+
+      <MovSynerPosConflictDialog
+        open={conflictOpen && conflictCount > 0}
+        onOpenChange={setConflictOpen}
+        conflicts={movConflicts}
+        busy={movResolving}
+        error={movResolveError}
+        onConfirm={(motivo) => {
+          void resolveConflicts(motivo);
+        }}
+      />
 
       <NotificationHost items={items} />
     </>

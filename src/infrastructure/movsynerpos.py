@@ -1,6 +1,6 @@
 """Adaptador pyodbc para la tabla SynerPOS configurada en ``TABLE_NAME``
-(SELECT + INSERT). En producción es ``dbo.MovSynerPos``; para probar sin tocar
-producción basta ``TABLE_NAME=MovSynerPosQA`` (misma base).
+(SELECT + INSERT + DELETE). En producción es ``dbo.MovSynerPos``; para probar
+sin tocar producción basta ``TABLE_NAME=MovSynerPosQA`` (misma base).
 
 Fuente de la conexión: ``get_movsynerpos_config()`` (deriva de DB_* y fuerza
 ``application_intent_read_only=False``). Nunca se reutiliza el pool de lectura:
@@ -10,7 +10,7 @@ Seguridad:
 - Nombres de tabla validados/entrecomillados (``quote_table_name``).
 - Nombres de columna salen de la allowlist ``COLUMNAS`` del dominio.
 - Valores siempre parametrizados.
-- Sin ``UPDATE`` ni ``DELETE``.
+- ``DELETE`` solo por identidad + serie, en transacción y con rollback.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Sequence
 
-from src.domain.errors import UpstreamError
+from src.domain.errors import MovSynerPosPermissionError, UpstreamError
 from src.domain.movsynerpos import COLUMNAS
 
 logger = logging.getLogger("syner_check.movsynerpos")
@@ -35,6 +35,17 @@ _INSERT_COLUMNS = ", ".join(
 _INSERT_PLACEHOLDERS = ", ".join(
     [*( "?" for _ in COLUMNAS), "GETDATE()"]
 )
+
+
+def _is_permission_denied(exc: Exception) -> bool:
+    """True when SQL Server rejected the statement for missing permission.
+
+    pyodbc exposes the server message in ``str(exc)``; there is no dedicated
+    SQLSTATE for "denied" beyond 42000. Keep the match narrow so a real data
+    error is never reported as a permissions problem.
+    """
+    text = str(exc).lower()
+    return "permission was denied" in text or "denied" in text and "delete" in text
 
 
 class MovSynerPosWriterAdapter:
@@ -131,6 +142,96 @@ class MovSynerPosWriterAdapter:
         except Exception as exc:  # noqa: BLE001 - se traduce al dominio
             raise UpstreamError(
                 f"MovSynerPos read failed: {type(exc).__name__}."
+            ) from exc
+        finally:
+            connection.close()
+
+    def document_lines(self, oid: str, tipo: str) -> list[dict]:
+        """Snapshot de las líneas del documento antes de borrar (ODD).
+
+        Devuelve solo identidad y montos agregados: sirve para validar la
+        serie y para auditar qué se eliminó, sin volcar PII.
+        """
+        table = self._table()
+        query = (
+            "SELECT [SerieNumero], [FechaDocumento], [Idx], [Sku], "
+            "[Cantidad], [CrossTotal] "
+            f"FROM {table} WHERE [IDSynerPos] = ? AND [TipoDocumento] = ? "
+            "ORDER BY [Idx]"
+        )
+        connection = self._connect()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(query, oid, tipo)
+            rows: list[dict] = []
+            for row in cursor.fetchall():
+                rows.append(
+                    {
+                        "SerieNumero": str(row[0] or "").strip(),
+                        "FechaDocumento": row[1],
+                        "Idx": row[2],
+                        "Sku": str(row[3] or "").strip(),
+                        "Cantidad": row[4],
+                        "CrossTotal": row[5],
+                    }
+                )
+            return rows
+        except Exception as exc:  # noqa: BLE001 - se traduce al dominio
+            raise UpstreamError(
+                f"MovSynerPos read failed: {type(exc).__name__}."
+            ) from exc
+        finally:
+            connection.close()
+
+    def delete_document(self, oid: str, tipo: str, serie: str) -> int:
+        """Borra todas las líneas del documento en una transacción.
+
+        El ``WHERE`` exige ``IDSynerPos + TipoDocumento + SerieNumero``: si la
+        serie no coincide no se elimina nada (protección contra un oid
+        copiado mal). Un error de permisos se distingue del resto para que la
+        API responda 503 con una instrucción accionable al DBA.
+        """
+        table = self._table()
+        query = (
+            f"DELETE FROM {table} "
+            "WHERE [IDSynerPos] = ? AND [TipoDocumento] = ? AND [SerieNumero] = ?"
+        )
+        connection = self._connect()
+        deleted = 0
+        try:
+            connection.autocommit = False
+            cursor = connection.cursor()
+            cursor.execute(query, oid, tipo, serie)
+            deleted = int(getattr(cursor, "rowcount", -1))
+            connection.commit()
+            logger.info(
+                "MovSynerPos delete target=%s tipo=%s oid=%s serie=%s lineas=%d",
+                table,
+                tipo,
+                oid,
+                serie,
+                deleted,
+            )
+            return max(0, deleted)
+        except Exception as exc:  # noqa: BLE001 - rollback total del borrado
+            try:
+                connection.rollback()
+            except Exception:  # noqa: BLE001 - rollback no debe tapar el error
+                logger.warning("MovSynerPos delete rollback failed")
+            logger.warning(
+                "MovSynerPos delete failed tipo=%s oid=%s serie=%s error_class=%s",
+                tipo,
+                oid,
+                serie,
+                type(exc).__name__,
+            )
+            if _is_permission_denied(exc):
+                raise MovSynerPosPermissionError(
+                    "El login de escritura no tiene permiso DELETE sobre la "
+                    "tabla configurada."
+                ) from exc
+            raise UpstreamError(
+                f"MovSynerPos delete failed: {type(exc).__name__}."
             ) from exc
         finally:
             connection.close()

@@ -110,4 +110,46 @@ describe("DetailDrawer · acciones condicionales de SUNAT y MovSynerPos", () => 
       screen.queryByRole("button", { name: /Reenviar a MovSynerPos/ }),
     ).toBeNull();
   });
+
+  it("muestra Eliminar de MovSynerPos solo cuando el documento esta en MovSynerPos", () => {
+    const onDeleteMovSynerPos = vi.fn();
+    const doc = buildVoucher({ in_sql: true });
+
+    const { unmount } = render(
+      <DetailDrawer
+        open={true}
+        document={doc}
+        loading={false}
+        error={null}
+        copied={false}
+        onCopy={vi.fn()}
+        onDeleteMovSynerPos={onDeleteMovSynerPos}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const btnDelete = screen.getByRole("button", {
+      name: /Eliminar de MovSynerPos/,
+    });
+    fireEvent.click(btnDelete);
+    expect(onDeleteMovSynerPos).toHaveBeenCalledWith(doc);
+    unmount();
+
+    render(
+      <DetailDrawer
+        open={true}
+        document={buildVoucher({ in_sql: false })}
+        loading={false}
+        error={null}
+        copied={false}
+        onCopy={vi.fn()}
+        onDeleteMovSynerPos={onDeleteMovSynerPos}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Eliminar de MovSynerPos/ }),
+    ).toBeNull();
+  });
 });

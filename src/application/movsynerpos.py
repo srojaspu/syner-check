@@ -12,29 +12,34 @@ Reglas de negocio (D2-D8 del plan):
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.domain.entities import TipoDocumento
 from src.domain.errors import (
     InvalidDocumentTypeError,
     InvalidRangeError,
+    MovSynerPosDeleteBlockedError,
     MovSynerPosValidationError,
     NotFoundError,
     UpstreamError,
 )
 from src.domain.movsynerpos import (
+    ESTADO_ELIMINADO,
     MAX_DOCUMENTOS,
     DocumentoMovSynerPos,
     build_documento,
     normalize_date_iso,
+    validate_delete_params,
 )
 
 from .key_lock import StripedLock
-from .ports import GraphqlGateway, MovSynerPosWriter
-from .use_cases import get_detail
+from .ports import GraphqlGateway, IntelisisReader, MovSynerPosWriter
+from .use_cases import _flow_key, _intelisis_index, _norm_receipt, get_detail
 
 logger = logging.getLogger("syner_check.movsynerpos")
 
@@ -103,6 +108,9 @@ def _detalle(tipo: str, oid: str, number: str, estado: str, **kwargs: Any) -> di
         "lineas_existentes": int(kwargs.get("existentes", 0)),
         "lineas_faltantes": int(kwargs.get("faltantes", 0)),
         "error": kwargs.get("error"),
+        # Registros existentes que bloquean la inserción (identidad completa
+        # para que el operador sepa exactamente qué eliminaría).
+        "conflictos": list(kwargs.get("conflictos") or []),
     }
 
 
@@ -119,6 +127,7 @@ def _process(
     number = item["number"]
     started = time.monotonic()
     estado = ESTADO_ERROR
+    conflictos: list[dict[str, Any]] = []
     inserted = 0
     existing = 0
     missing = 0
@@ -153,6 +162,18 @@ def _process(
                 ]
                 if mismatch:
                     estado = ESTADO_CONFLICTO
+                    # El conflicto está en las series ya registradas para el
+                    # mismo oid; se reportan con su identidad para poder
+                    # eliminarlas desde la UI.
+                    todas = _conflicto_entries(
+                        writer, tipo, oid, fallback_serie=serie
+                    )
+                    conflictos = [
+                        entry
+                        for entry in todas
+                        if str(entry.get("number") or "").strip().upper()
+                        != serie
+                    ] or todas
                     error = (
                         "Ya existen líneas de este oid con otra serie; "
                         "no se insertó nada."
@@ -171,6 +192,7 @@ def _process(
                     inserted = int(outcome["insertadas"])
                     error = outcome["error"]
                     estado = outcome["estado"]
+                    conflictos = list(outcome.get("conflictos") or [])
             else:
                 outcome = _insertar_faltantes(
                     writer,
@@ -184,6 +206,7 @@ def _process(
                 inserted = int(outcome["insertadas"])
                 error = outcome["error"]
                 estado = outcome["estado"]
+                conflictos = list(outcome.get("conflictos") or [])
                 if estado == ESTADO_REPARADO:
                     estado = ESTADO_INSERTADO
     except Exception as exc:  # noqa: BLE001 - un documento no aborta el lote
@@ -207,6 +230,7 @@ def _process(
             existentes=existing,
             faltantes=missing,
             error=error,
+            conflictos=conflictos,
         )
 
     logger.info(
@@ -230,6 +254,7 @@ def _process(
         existentes=existing,
         faltantes=missing,
         error=error,
+        conflictos=conflictos,
     )
 
 
@@ -266,14 +291,36 @@ def _insertar_faltantes(
                 "Existe otra línea con la misma serie y número de línea; "
                 "no se insertó nada."
             ),
+            "conflictos": [
+                entry
+                for owner in sorted({str(value) for value in foreign.values()})
+                for entry in _conflicto_entries(
+                    writer, tipo, owner, fallback_serie=serie
+                )
+            ],
         }
     if not pendientes:
-        return {"estado": ESTADO_SIN_CAMBIOS, "insertadas": 0, "error": None}
+        return {
+            "estado": ESTADO_SIN_CAMBIOS,
+            "insertadas": 0,
+            "error": None,
+            "conflictos": [],
+        }
 
     inserted = writer.insert_lines(documento, pendientes)
     if not inserted:
-        return {"estado": ESTADO_SIN_CAMBIOS, "insertadas": 0, "error": None}
-    return {"estado": ESTADO_REPARADO, "insertadas": inserted, "error": None}
+        return {
+            "estado": ESTADO_SIN_CAMBIOS,
+            "insertadas": 0,
+            "error": None,
+            "conflictos": [],
+        }
+    return {
+        "estado": ESTADO_REPARADO,
+        "insertadas": inserted,
+        "error": None,
+        "conflictos": [],
+    }
 
 
 def send_movsynerpos(
@@ -334,3 +381,231 @@ def send_movsynerpos(
         int((time.monotonic() - started) * 1000),
     )
     return result
+
+
+def _iso_date(value: Any) -> str:
+    """``datetime``/``date``/``str`` -> ``YYYY-MM-DD`` (vacío si inválido)."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())[:10]
+    return str(value)[:10]
+
+
+def _single_line(value: str) -> str:
+    """Neutraliza saltos de línea en texto libre antes de loguearlo.
+
+    El motivo lo escribe el operador y en formato de log ``text`` un ``\\n``
+    podría falsear una línea nueva del log de auditoría.
+    """
+    return " ".join(str(value).split())
+
+
+def _conflicto_entries(
+    writer: MovSynerPosWriter,
+    tipo: str,
+    owner_oid: str,
+    *,
+    fallback_serie: str = "",
+) -> list[dict[str, Any]]:
+    """Identidad y resumen del registro que bloquea la inserción.
+
+    Se agrupa por serie porque el borrado es ``oid + tipo + serie``: si el
+    mismo oid tuviera líneas de dos series, la UI debe ofrecer ambas y el
+    operador ve exactamente qué desaparecería. Si el snapshot falla se
+    devuelve la identidad mínima y el flujo sigue siendo accionable.
+    """
+    rows: list[dict] = []
+    try:
+        rows = writer.document_lines(owner_oid, tipo)
+    except Exception as exc:  # noqa: BLE001 - el conflicto no debe caerse
+        logger.warning(
+            "MovSynerPos conflict snapshot failed oid=%s error_class=%s",
+            owner_oid,
+            type(exc).__name__,
+        )
+
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        serie = str(row.get("SerieNumero") or "").strip() or fallback_serie
+        grouped.setdefault(serie, []).append(row)
+
+    if not grouped:
+        return [
+            {
+                "oid": owner_oid,
+                "number": fallback_serie,
+                "lineas": 0,
+                "total": None,
+                "fecha": "",
+            }
+        ]
+
+    entries: list[dict[str, Any]] = []
+    for serie, group in grouped.items():
+        try:
+            total: Decimal | None = sum(
+                (
+                    Decimal(str(row.get("CrossTotal") or "0"))
+                    for row in group
+                ),
+                Decimal("0"),
+            )
+        except (InvalidOperation, ValueError):
+            total = None
+        entries.append(
+            {
+                "oid": owner_oid,
+                "number": serie,
+                "lineas": len(group),
+                "total": str(total) if total is not None else None,
+                "fecha": _iso_date(group[0].get("FechaDocumento")),
+            }
+        )
+    return entries
+
+
+def _intelisis_estatus(
+    reader: IntelisisReader | None,
+    *,
+    tipo: str,
+    number: str,
+    fecha_iso: str,
+    correlation_id: str,
+) -> str | None:
+    """Best-effort Intelisis status for the document, or ``None``.
+
+    A failure here never blocks the deletion: Intelisis is a cross-system
+    read and the operator already confirmed the document is wrong. The
+    returned value is only used to refuse deleting a *concluded* sale.
+    """
+    if reader is None or not fecha_iso:
+        return None
+    try:
+        headers = reader.fetch_headers(fecha_iso, fecha_iso)
+    except Exception as exc:  # noqa: BLE001 - degraded mode, no bloquea
+        logger.warning(
+            "MovSynerPos delete intelisis check failed correlation_id=%s "
+            "error_class=%s",
+            correlation_id,
+            type(exc).__name__,
+        )
+        return None
+    row = _intelisis_index(headers).get(
+        _flow_key(tipo, _norm_receipt(number), fecha_iso)
+    )
+    if row is None:
+        return ""
+    return str(row.get("EstatusIntelisis") or "").strip().upper()
+
+
+def delete_movsynerpos(
+    writer: MovSynerPosWriter,
+    intelisis: IntelisisReader | None,
+    *,
+    oid: Any,
+    tipo: Any,
+    number: Any,
+    motivo: Any,
+    forzar: bool = False,
+    actor: str = "",
+    correlation_id: str = "",
+) -> dict:
+    """Elimina de MovSynerPos las líneas de un documento erróneo.
+
+    Es la contraparte destructiva del reenvío manual: SynerCom a veces duplica
+    un comprobante y migra el equivocado, y la colisión por serie impide
+    insertar el correcto. El borrado es quirúrgico (un documento), auditado y
+    bloqueado si Intelisis ya concluyó la venta.
+    """
+    params = validate_delete_params(oid, tipo, number, motivo)
+    clean_oid = params["oid"]
+    clean_tipo = params["tipo"]
+    clean_number = params["number"]
+    clean_motivo = params["motivo"]
+    correlation = (correlation_id or "").strip() or str(uuid.uuid4())
+    started = time.monotonic()
+
+    logger.info(
+        "MovSynerPos delete start correlation_id=%s actor=%s tipo=%s oid=%s "
+        "number=%s forzar=%s",
+        correlation,
+        actor or "-",
+        clean_tipo,
+        clean_oid,
+        clean_number,
+        bool(forzar),
+    )
+
+    with _MOVSYNERPOS_LOCK.hold([(clean_tipo, clean_oid.upper())]):
+        rows = writer.document_lines(clean_oid, clean_tipo)
+        if not rows:
+            raise NotFoundError(
+                "No se encontraron líneas en MovSynerPos para el comprobante indicado."
+            )
+
+        series = {
+            str(row.get("SerieNumero") or "").strip().upper() for row in rows
+        }
+        if series != {clean_number}:
+            raise ValueError(
+                "La serie/número enviada no coincide con la registrada para ese oid; "
+                "no se eliminó nada."
+            )
+
+        fecha_iso = _iso_date(rows[0].get("FechaDocumento"))
+        estatus = _intelisis_estatus(
+            intelisis,
+            tipo=clean_tipo,
+            number=clean_number,
+            fecha_iso=fecha_iso,
+            correlation_id=correlation,
+        )
+        if estatus == "CONCLUIDO" and not forzar:
+            raise MovSynerPosDeleteBlockedError(
+                "El comprobante ya fue concluido en Intelisis; anúlalo en el ERP "
+                "antes de eliminarlo de SynerPOS."
+            )
+
+        deleted = writer.delete_document(clean_oid, clean_tipo, clean_number)
+        if deleted <= 0:
+            raise NotFoundError(
+                "No se encontraron líneas en MovSynerPos para el comprobante indicado."
+            )
+
+    snapshot = [
+        {
+            "idx": row.get("Idx"),
+            "sku": row.get("Sku"),
+            "cantidad": row.get("Cantidad"),
+            "crossTotal": str(row.get("CrossTotal")),
+        }
+        for row in rows
+    ]
+    logger.info(
+        "MovSynerPos delete done correlation_id=%s actor=%s tipo=%s oid=%s "
+        "number=%s estado=%s lineas_eliminadas=%d intelisis=%s motivo=%s "
+        "snapshot=%s elapsed_ms=%d",
+        correlation,
+        actor or "-",
+        clean_tipo,
+        clean_oid,
+        clean_number,
+        ESTADO_ELIMINADO,
+        deleted,
+        estatus if estatus is not None else "-",
+        _single_line(clean_motivo),
+        json.dumps(snapshot, ensure_ascii=False, default=str),
+        int((time.monotonic() - started) * 1000),
+    )
+
+    return {
+        "solicitud_id": correlation,
+        "oid": clean_oid,
+        "tipo": clean_tipo,
+        "number": clean_number,
+        "estado": ESTADO_ELIMINADO,
+        "lineas_eliminadas": deleted,
+        "mensaje": "Comprobante eliminado exitosamente de MovSynerPos.",
+        "intelisis_estatus": estatus or None,
+    }

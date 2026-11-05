@@ -231,6 +231,17 @@ def movsynerpos_enabled() -> bool:
     return _is_truthy(os.getenv("MOVSYNERPOS_WRITE_ENABLED", "false"))
 
 
+def movsynerpos_delete_enabled() -> bool:
+    """Kill switch independiente del borrado: apagado por defecto.
+
+    Es una capacidad destructiva, así que no comparte bandera con el reenvío:
+    habilitar inserciones no habilita borrados.
+    """
+    import os
+
+    return _is_truthy(os.getenv("MOVSYNERPOS_DELETE_ENABLED", "false"))
+
+
 def get_movsynerpos_config() -> dict:
     """Config del writer derivada de ``get_db_config()``.
 

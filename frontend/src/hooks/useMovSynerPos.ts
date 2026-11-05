@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AuthError, RequestAbortedError, sendMovSynerPos } from "../api/client";
+import {
+  AuthError,
+  RequestAbortedError,
+  deleteMovSynerPos,
+  sendMovSynerPos,
+} from "../api/client";
 import type {
+  MovSynerPosConflictoRegistro,
   MovSynerPosRequestDocumento,
   MovSynerPosResponse,
   Voucher,
@@ -21,6 +27,17 @@ export interface MovSynerPosProgressState {
   sinCambios: number;
   conflictos: number;
   errores: number;
+}
+
+/**
+ * Un documento actual bloqueado por uno o más registros ya existentes.
+ *
+ * El backend devuelve la identidad completa de cada registro en conflicto
+ * (`oid` + serie/número) para que la UI muestre exactamente qué se eliminaría.
+ */
+export interface MovSynerPosConflicto {
+  documento: MovSynerPosRequestDocumento;
+  existentes: MovSynerPosConflictoRegistro[];
 }
 
 const EMPTY_PROGRESS: MovSynerPosProgressState = {
@@ -118,6 +135,40 @@ function failureMessages(data: MovSynerPosResponse): string[] {
   return messages;
 }
 
+function documentKey(documento: MovSynerPosRequestDocumento): string {
+  return `${String(documento.tipo)}|${documento.oid}`;
+}
+
+/** Agrupa los conflictos por documento actual, sin duplicar registros. */
+function collectConflicts(
+  data: MovSynerPosResponse,
+  sources: MovSynerPosRequestDocumento[],
+  into: Map<string, MovSynerPosConflicto>,
+) {
+  for (const item of data.detalle ?? []) {
+    if (item.estado !== "conflicto" || !item.conflictos?.length) continue;
+    const source =
+      sources.find(
+        (doc) => doc.oid === item.oid && String(doc.tipo) === String(item.tipo),
+      ) ?? {
+        tipo: item.tipo as MovSynerPosRequestDocumento["tipo"],
+        oid: item.oid,
+        number: item.number,
+      };
+    const key = documentKey(source);
+    const group = into.get(key) ?? { documento: source, existentes: [] };
+    for (const registro of item.conflictos) {
+      const duplicated = group.existentes.some(
+        (existente) =>
+          existente.oid === registro.oid &&
+          existente.number === registro.number,
+      );
+      if (!duplicated) group.existentes.push(registro);
+    }
+    into.set(key, group);
+  }
+}
+
 /**
  * Manual resend to dbo.MovSynerPos.
  *
@@ -136,6 +187,9 @@ export function useMovSynerPos(onAuthFailure: () => void) {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState<MovSynerPosRequestDocumento[]>([]);
+  const [conflicts, setConflicts] = useState<MovSynerPosConflicto[]>([]);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const refreshRef = useRef<(() => Promise<void> | void) | null>(null);
   /** Último refresco conocido: permite reintentar sin volver a cablearlo. */
@@ -161,6 +215,9 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     setWarning(null);
     setError(null);
     setFailed([]);
+    setConflicts([]);
+    setResolving(false);
+    setResolveError(null);
   }, []);
 
   const dismissProgress = useCallback(() => {
@@ -228,6 +285,8 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       setWarning(null);
       setError(null);
       setFailed([]);
+      setConflicts([]);
+      setResolveError(null);
 
       const refreshResults = async () => {
         setBusy(false);
@@ -247,6 +306,7 @@ export function useMovSynerPos(onAuthFailure: () => void) {
       };
       const failedDocuments: MovSynerPosRequestDocumento[] = [];
       const messages: string[] = [];
+      const conflictsByDocument = new Map<string, MovSynerPosConflicto>();
 
       /** Resultado terminal; se publica en el `finally` del dueño actual. */
       let outcome: OperationStatus = "completed";
@@ -261,6 +321,8 @@ export function useMovSynerPos(onAuthFailure: () => void) {
           setProgress(aggregate);
           failedDocuments.push(...failureIdentity(data, chunk));
           messages.push(...failureMessages(data));
+          collectConflicts(data, chunk, conflictsByDocument);
+          setConflicts([...conflictsByDocument.values()]);
         }
 
         setFailed(failedDocuments);
@@ -320,6 +382,125 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     [execute, failed],
   );
 
+  /**
+   * Elimina el registro existente de cada conflicto y reenvía el actual.
+   *
+   * Es secuencial y con un solo motivo para toda la resolución: el borrado es
+   * auditable, así que la UI pide confirmación explícita mostrando el número y
+   * el oid de lo que se elimina. Si un grupo falla, los resueltos se quitan de
+   * la lista y el diálogo conserva solo los pendientes.
+   */
+  const resolveConflicts = useCallback(
+    async (motivo: string) => {
+      if (!conflicts.length || resolving) return;
+      const motivoLimpio = motivo.trim();
+      if (motivoLimpio.length < 5) {
+        setResolveError("El motivo debe tener al menos 5 caracteres.");
+        return;
+      }
+
+      const pending = [...conflicts];
+      const resolvedKeys = new Set<string>();
+      const errors: string[] = [];
+      setResolving(true);
+      setResolveError(null);
+
+      try {
+        for (const group of pending) {
+          const key = documentKey(group.documento);
+          const label = group.documento.number || group.documento.oid;
+          for (const existente of group.existentes) {
+            await deleteMovSynerPos({
+              oid: existente.oid,
+              tipo: group.documento.tipo,
+              number: existente.number,
+              motivo: motivoLimpio,
+            });
+          }
+
+          // A partir de aquí el registro existente ya no existe: reintentar el
+          // borrado daría 404, así que el grupo sale de la lista pase lo que
+          // pase con el reenvío. Si el reenvío falla queda en `failed` para
+          // reintentarlo sin volver a borrar.
+          let failure: string | null = null;
+          try {
+            const data = await sendMovSynerPos([group.documento], true);
+            const detalle = data.detalle?.[0];
+            if (
+              !detalle ||
+              detalle.estado === "conflicto" ||
+              detalle.estado === "error"
+            ) {
+              failure = `${label}: ${
+                detalle?.error ??
+                "no se pudo reenviar el comprobante después de eliminar el registro existente."
+              }`;
+            }
+          } catch (err: unknown) {
+            if (err instanceof AuthError) throw err;
+            failure = `${label}: ${
+              err instanceof Error
+                ? err.message
+                : "no se pudo reenviar el comprobante después de eliminar el registro existente."
+            }`;
+          }
+
+          setConflicts((prev) =>
+            prev.filter(
+              (item) => documentKey(item.documento) !== key,
+            ),
+          );
+          if (failure) {
+            errors.push(failure);
+            continue;
+          }
+          resolvedKeys.add(key);
+        }
+
+        if (resolvedKeys.size > 0) {
+          setFailed((prev) =>
+            prev.filter((doc) => !resolvedKeys.has(documentKey(doc))),
+          );
+          setNotice(
+            `Conflictos resueltos: ${resolvedKeys.size} ${
+              resolvedKeys.size === 1 ? "comprobante reenviado" : "comprobantes reenviados"
+            } a MovSynerPos.`,
+          );
+          setWarning(null);
+          setError(null);
+          const refresh = lastRefreshRef.current;
+          if (refresh) {
+            setRefreshing(true);
+            try {
+              await refresh();
+            } catch {
+              // useVouchers owns table errors; never mask the resolution result.
+            } finally {
+              setRefreshing(false);
+            }
+          }
+        }
+
+        if (errors.length) {
+          setResolveError(errors.slice(0, 3).join(" "));
+        }
+      } catch (err: unknown) {
+        if (err instanceof AuthError) {
+          onAuthFailure();
+          return;
+        }
+        setResolveError(
+          err instanceof Error
+            ? err.message
+            : "No se pudieron resolver los conflictos.",
+        );
+      } finally {
+        setResolving(false);
+      }
+    },
+    [conflicts, resolving, onAuthFailure],
+  );
+
   return {
     busy,
     refreshing,
@@ -329,6 +510,10 @@ export function useMovSynerPos(onAuthFailure: () => void) {
     warning,
     error,
     failed,
+    conflicts,
+    resolving,
+    resolveError,
+    resolveConflicts,
     run,
     retry,
     cancel,

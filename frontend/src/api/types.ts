@@ -246,6 +246,17 @@ export interface MovSynerPosDetalle {
   lineas_existentes: number;
   lineas_faltantes: number;
   error: string | null;
+  /** Registros existentes que bloquean la inserción (solo en `conflicto`). */
+  conflictos?: MovSynerPosConflictoRegistro[];
+}
+
+/** Identity of the MovSynerPos row that owns a conflicting serie/idx. */
+export interface MovSynerPosConflictoRegistro {
+  oid: string;
+  number: string;
+  lineas: number;
+  total: string | null;
+  fecha: string;
 }
 
 export interface MovSynerPosResponse {
@@ -257,6 +268,32 @@ export interface MovSynerPosResponse {
   conflictos: number;
   errores: number;
   detalle: MovSynerPosDetalle[];
+}
+
+/**
+ * Borrado quirúrgico de un comprobante erróneo/duplicado en MovSynerPos.
+ *
+ * La identidad completa `(oid, tipo, number)` es obligatoria: la serie es la
+ * salvaguarda contra borrar el `oid` equivocado. `forzar` solo se usa después
+ * de un 409 (Intelisis ya concluyó la venta).
+ */
+export interface MovSynerPosDeleteRequest {
+  oid: string;
+  tipo: TipoDocumento | string;
+  number: string;
+  motivo: string;
+  forzar?: boolean;
+}
+
+export interface MovSynerPosDeleteResponse {
+  solicitud_id: string;
+  oid: string;
+  tipo: string;
+  number: string;
+  estado: "eliminado";
+  lineas_eliminadas: number;
+  mensaje: string;
+  intelisis_estatus: string | null;
 }
 
 /* --- Pantalla Intelisis UFE (comprobantes de origen Intelisis) --------- */

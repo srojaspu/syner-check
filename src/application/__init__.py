@@ -1,7 +1,7 @@
 """Application public surface."""
 
 from .movsynerpos import MAX_DOCUMENTOS as MOVSYNERPOS_MAX_DOCUMENTOS
-from .movsynerpos import send_movsynerpos
+from .movsynerpos import delete_movsynerpos, send_movsynerpos
 from .ports import (
     GraphqlGateway,
     IntelisisReader,
@@ -44,6 +44,7 @@ __all__ = [
     "SunatSubmissionRegistry",
     "SunatValidator",
     "attach_sunat_status",
+    "delete_movsynerpos",
     "get_detail",
     "reconcile_pending_sunat_jobs",
     "search_by_number",

@@ -8,8 +8,32 @@ import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({
+  disablePointerDismissal = true,
+  onOpenChange,
+  ...props
+}: DialogPrimitive.Root.Props) {
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      disablePointerDismissal={disablePointerDismissal}
+      onOpenChange={(nextOpen, eventDetails) => {
+        // Los modales solo se cierran desde el botón Cancelar o la X: un clic
+        // fuera o Escape no deben descartar formularios ni confirmaciones.
+        if (
+          !nextOpen &&
+          eventDetails &&
+          (eventDetails.reason === "outside-press" ||
+            eventDetails.reason === "escape-key" ||
+            eventDetails.reason === "focus-out")
+        ) {
+          return
+        }
+        onOpenChange?.(nextOpen, eventDetails)
+      }}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -52,6 +76,13 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-5 rounded-xl border bg-popover p-6 text-sm text-popover-foreground shadow-lg transition duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0",
+          // Nunca debe exceder el viewport: en pantallas bajas el contenido
+          // (errores 409, formularios largos) y los botones del pie se
+          // desplazan haciendo scroll. `100dvh` evita que la barra del
+          // navegador móvil tape el modal; `100vh` es el fallback.
+          // `base-ui-disable-scrollbar` oculta la barra visual (reglas en
+          // `index.css`) manteniendo el scroll.
+          "base-ui-disable-scrollbar max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain supports-[height:100dvh]:max-h-[calc(100dvh-2rem)]",
           className
         )}
         {...props}

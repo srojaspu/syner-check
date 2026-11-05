@@ -682,3 +682,59 @@ def build_documento(tipo: str, doc: dict) -> DocumentoMovSynerPos:
         lineas=tuple(lineas),
         warnings=tuple(warnings),
     )
+
+
+# --- Borrado seguro -------------------------------------------------------
+# Estados de resultado del caso de uso (el adaptador devuelve el conteo).
+ESTADO_ELIMINADO = "eliminado"
+ESTADO_NO_ENCONTRADO = "no_encontrado"
+ESTADO_BLOQUEADO_INTELISIS = "bloqueado_intelisis"
+
+MOTIVO_MIN = 5
+MOTIVO_MAX = 255
+
+
+def validate_delete_params(
+    oid: object,
+    tipo: object,
+    number: object,
+    motivo: object,
+) -> dict[str, str]:
+    """Normaliza y valida la identidad de un borrado (sin I/O).
+
+    La tripleta ``(oid, tipo, number)`` es obligatoria: el ``oid`` identifica
+    el documento en SynerCom, y la serie/número evita borrar el comprobante
+    equivocado por un error de copiado. El ``motivo`` deja rastro auditable.
+    """
+    clean_oid = str(oid or "").strip()
+    if not clean_oid or clean_oid == SENTINEL:
+        raise MovSynerPosValidationError(
+            "El oid del documento es obligatorio para eliminar."
+        )
+
+    clean_tipo = str(tipo or "").strip().upper()
+    if clean_tipo not in TIPOS:
+        raise MovSynerPosValidationError("Tipo de documento no permitido.")
+
+    clean_number = str(number or "").strip().upper()
+    if not clean_number or clean_number == SENTINEL:
+        raise MovSynerPosValidationError(
+            "La serie y número del documento son obligatorios para eliminar."
+        )
+
+    clean_motivo = str(motivo or "").strip()
+    if len(clean_motivo) < MOTIVO_MIN:
+        raise MovSynerPosValidationError(
+            f"El motivo de eliminación es obligatorio (mínimo {MOTIVO_MIN} caracteres)."
+        )
+    if len(clean_motivo) > MOTIVO_MAX:
+        raise MovSynerPosValidationError(
+            f"El motivo de eliminación no puede exceder {MOTIVO_MAX} caracteres."
+        )
+
+    return {
+        "oid": clean_oid,
+        "tipo": clean_tipo,
+        "number": clean_number,
+        "motivo": clean_motivo,
+    }

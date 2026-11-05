@@ -23,6 +23,14 @@ class MovSynerPosValidationError(DomainError):
     """Raised when a document cannot be mapped to dbo.MovSynerPos safely."""
 
 
+class MovSynerPosDeleteBlockedError(DomainError):
+    """Raised when a document cannot be deleted from MovSynerPos safely.
+
+    Today the only blocking reason is that Intelisis already concluded the
+    sale: deleting the MovSynerPos rows first would desynchronize the ERP.
+    """
+
+
 class ReenvioNoPermitidoError(DomainError):
     """Raised when a document cannot be queued for regeneration."""
 
@@ -49,3 +57,12 @@ class UpstreamError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.http_status = http_status
+
+
+class MovSynerPosPermissionError(UpstreamError):
+    """Raised when the write login lacks DELETE on the configured table.
+
+    It is an infrastructure/configuration failure (HTTP 503), not a data
+    problem: the DBA must grant ``DELETE`` to ``DB_USER`` before the feature
+    can be enabled in production.
+    """

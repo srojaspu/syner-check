@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from src.application import (
     SUNAT_SCOPE_NO_ACEPTADOS,
+    delete_movsynerpos,
     get_detail,
     reconcile_pending_sunat_jobs,
     search_by_number,
@@ -37,6 +38,9 @@ from src.domain.entities import TipoDocumento
 from src.domain.errors import (
     InvalidDocumentTypeError,
     InvalidRangeError,
+    MovSynerPosDeleteBlockedError,
+    MovSynerPosPermissionError,
+    MovSynerPosValidationError,
     NotFoundError,
     ReenvioNoPermitidoError,
     UpstreamError,
@@ -611,3 +615,64 @@ def movsynerpos_send(
     except Exception:
         logger.exception("MovSynerPos unexpected failure")
         raise HTTPException(500, "No se pudo reenviar a SynerPOS.")
+
+
+def movsynerpos_delete(
+    oid: str,
+    tipo: str,
+    number: str,
+    motivo: str,
+    forzar: bool,
+    actor: str,
+    correlation_id: str = "",
+) -> dict:
+    """Blocking, audited DELETE of one document from dbo.MovSynerPos."""
+    from syner_check import config as cfg
+
+    if not cfg.movsynerpos_delete_enabled():
+        raise HTTPException(
+            503, "La eliminación en SynerPOS está deshabilitada."
+        )
+    if not cfg.is_movsynerpos_configured():
+        raise HTTPException(503, "Eliminación en SynerPOS no configurada.")
+
+    intelisis = (
+        IntelisisReaderAdapter() if cfg.is_intelisis_configured() else None
+    )
+    try:
+        return delete_movsynerpos(
+            MovSynerPosWriterAdapter(),
+            intelisis,
+            oid=oid,
+            tipo=tipo,
+            number=number,
+            motivo=motivo,
+            forzar=bool(forzar),
+            actor=actor or "",
+            correlation_id=correlation_id or "",
+        )
+    except MovSynerPosDeleteBlockedError as exc:
+        raise HTTPException(409, str(exc) or "Eliminación bloqueada.") from exc
+    except MovSynerPosValidationError as exc:
+        raise HTTPException(400, str(exc) or "Solicitud inválida.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Solicitud inválida.") from exc
+    except NotFoundError as exc:
+        raise HTTPException(
+            404, str(exc) or "Comprobante no encontrado en MovSynerPos."
+        ) from exc
+    except MovSynerPosPermissionError as exc:
+        logger.error("MovSynerPos delete permission denied: %s", type(exc).__name__)
+        raise HTTPException(
+            503,
+            "El usuario de escritura no tiene permiso DELETE sobre la tabla. "
+            "Solicita al DBA el GRANT correspondiente.",
+        ) from exc
+    except UpstreamError:
+        logger.exception("MovSynerPos delete upstream failure")
+        raise HTTPException(502, "No fue posible eliminar el comprobante.")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("MovSynerPos delete unexpected failure")
+        raise HTTPException(500, "No se pudo eliminar el comprobante.")

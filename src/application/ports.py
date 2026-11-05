@@ -164,7 +164,7 @@ class SunatCacheStore(Protocol):
 
 
 class MovSynerPosWriter(Protocol):
-    """Escritura idempotente en dbo.MovSynerPos (solo SELECT + INSERT)."""
+    """Escritura idempotente en dbo.MovSynerPos (SELECT + INSERT + DELETE)."""
 
     def existing_lines(self, oid: str, tipo: str) -> dict[int, str]:
         """``Idx`` existentes para el documento -> ``SerieNumero``."""
@@ -178,6 +178,19 @@ class MovSynerPosWriter(Protocol):
 
     def insert_lines(self, documento: object, lineas: Sequence[dict]) -> int:
         """Inserta las líneas en una transacción; devuelve cuántas insertó."""
+        ...
+
+    def document_lines(self, oid: str, tipo: str) -> list[dict]:
+        """Líneas actuales del documento (identidad + snapshot de auditoría)."""
+        ...
+
+    def delete_document(self, oid: str, tipo: str, serie: str) -> int:
+        """Borra las líneas del documento en una transacción.
+
+        El ``WHERE`` incluye la serie como salvaguarda extra: un ``oid``
+        correcto con una serie equivocada no borra nada. Devuelve el número
+        de filas eliminadas.
+        """
         ...
 
 
