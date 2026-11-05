@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 
 /** Secciones de primer nivel de la aplicacion. */
-export type AppRoute = "comprobantes" | "intelisis-ufe";
+export type AppRoute = "comprobantes" | "intelisis-ufe" | "series-sucursal";
 
 const RUTAS: Record<string, AppRoute> = {
   "#/comprobantes": "comprobantes",
   "#/intelisis-ufe": "intelisis-ufe",
+  "#/series-sucursal": "series-sucursal",
 };
 
 export const RUTA_COMPROBANTES: AppRoute = "comprobantes";

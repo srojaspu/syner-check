@@ -72,6 +72,8 @@ export function MovSynerPosDeleteDialog({
   return (
     <Dialog
       open={open}
+      preventOutsideDismiss
+      preventEscapeDismiss
       onOpenChange={(value) => {
         if (busy) return;
         onOpenChange(value);

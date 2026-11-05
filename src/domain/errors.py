@@ -66,3 +66,16 @@ class MovSynerPosPermissionError(UpstreamError):
     problem: the DBA must grant ``DELETE`` to ``DB_USER`` before the feature
     can be enabled in production.
     """
+
+
+class SerieSucursalValidationError(DomainError):
+    """Raised when data for SerieSucursal fails domain validation."""
+
+
+class SerieSucursalDuplicateError(DomainError):
+    """Raised when a sucursal or seriesynerpos already exists."""
+
+
+class SerieSucursalNotFoundError(NotFoundError):
+    """Raised when a sucursal is not found in SerieSucursal."""
+

@@ -676,3 +676,129 @@ def movsynerpos_delete(
     except Exception:
         logger.exception("MovSynerPos delete unexpected failure")
         raise HTTPException(500, "No se pudo eliminar el comprobante.")
+
+
+# --- SerieSucursal (gestión de series por sucursal en PU_SynerPOS) --------
+
+
+def _serie_sucursal_repo():
+    from syner_check import config as cfg
+    from src.infrastructure.series_sucursales import (
+        SerieSucursalRepositoryAdapter,
+    )
+
+    if not cfg.is_serie_sucursal_configured():
+        raise HTTPException(
+            503, "La base de datos de SerieSucursal no está configurada."
+        )
+    return SerieSucursalRepositoryAdapter()
+
+
+def serie_sucursal_list(q: str | None = None) -> list[dict]:
+    from src.application.series_sucursales import listar_series_sucursales
+
+    repo = _serie_sucursal_repo()
+    try:
+        return listar_series_sucursales(repo, search=q)
+    except UpstreamError:
+        logger.exception("SerieSucursal list upstream failure")
+        raise HTTPException(502, "No fue posible consultar las sucursales.")
+
+
+def serie_sucursal_get(sucursal: int) -> dict:
+    from src.application.series_sucursales import obtener_serie_sucursal
+    from src.domain.errors import (
+        SerieSucursalNotFoundError,
+        SerieSucursalValidationError,
+    )
+
+    repo = _serie_sucursal_repo()
+    try:
+        return obtener_serie_sucursal(repo, sucursal)
+    except SerieSucursalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SerieSucursalValidationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except UpstreamError:
+        logger.exception("SerieSucursal get upstream failure")
+        raise HTTPException(502, "No fue posible consultar la sucursal.")
+
+
+def serie_sucursal_create(
+    payload: dict, actor: str, correlation_id: str = ""
+) -> dict:
+    from src.application.series_sucursales import crear_serie_sucursal
+    from src.domain.errors import (
+        SerieSucursalDuplicateError,
+        SerieSucursalValidationError,
+    )
+
+    repo = _serie_sucursal_repo()
+    try:
+        return crear_serie_sucursal(
+            repo, payload, actor=actor, correlation_id=correlation_id
+        )
+    except SerieSucursalDuplicateError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except SerieSucursalValidationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except UpstreamError:
+        logger.exception("SerieSucursal create upstream failure")
+        raise HTTPException(502, "No fue posible registrar la sucursal.")
+
+
+def serie_sucursal_update(
+    sucursal: int, payload: dict, actor: str, correlation_id: str = ""
+) -> dict:
+    from src.application.series_sucursales import actualizar_serie_sucursal
+    from src.domain.errors import (
+        SerieSucursalDuplicateError,
+        SerieSucursalNotFoundError,
+        SerieSucursalValidationError,
+    )
+
+    repo = _serie_sucursal_repo()
+    try:
+        return actualizar_serie_sucursal(
+            repo,
+            sucursal_id=sucursal,
+            payload=payload,
+            actor=actor,
+            correlation_id=correlation_id,
+        )
+    except SerieSucursalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SerieSucursalDuplicateError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except SerieSucursalValidationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except UpstreamError:
+        logger.exception("SerieSucursal update upstream failure")
+        raise HTTPException(502, "No fue posible actualizar la sucursal.")
+
+
+def serie_sucursal_delete(
+    sucursal: int, actor: str, correlation_id: str = ""
+) -> dict:
+    from src.application.series_sucursales import eliminar_serie_sucursal
+    from src.domain.errors import (
+        SerieSucursalNotFoundError,
+        SerieSucursalValidationError,
+    )
+
+    repo = _serie_sucursal_repo()
+    try:
+        return eliminar_serie_sucursal(
+            repo,
+            sucursal_id=sucursal,
+            actor=actor,
+            correlation_id=correlation_id,
+        )
+    except SerieSucursalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SerieSucursalValidationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except UpstreamError:
+        logger.exception("SerieSucursal delete upstream failure")
+        raise HTTPException(502, "No fue posible eliminar la sucursal.")
+

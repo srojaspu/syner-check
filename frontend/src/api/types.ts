@@ -629,3 +629,26 @@ export interface IntelisisReenvioResolucion {
   estado: IntelisisReenvioEstado;
   mensaje: string;
 }
+
+/* --- SerieSucursal (catálogo de series por sucursal en PU_SynerPOS) ----- */
+
+export interface SerieSucursal {
+  sucursal: number;
+  nombre: string;
+  prefijo: string;
+  seriesynerpos: string | null;
+}
+
+export interface SerieSucursalCreateRequest {
+  sucursal: number;
+  nombre: string;
+  prefijo?: string;
+  seriesynerpos?: string | null;
+}
+
+export interface SerieSucursalUpdateRequest {
+  nombre: string;
+  prefijo?: string;
+  seriesynerpos?: string | null;
+}
+

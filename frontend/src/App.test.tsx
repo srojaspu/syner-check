@@ -105,6 +105,10 @@ vi.mock("./pages/IntelisisUfePage", () => ({
   },
 }));
 
+vi.mock("./pages/SerieSucursalPage", () => ({
+  default: () => <div>Pantalla Series Sucursal</div>,
+}));
+
 import App from "./App";
 
 afterEach(cleanup);
@@ -237,7 +241,7 @@ describe("App", () => {
 
     goTo("#/intelisis-ufe");
     expect(await screen.findByText("Pantalla UFE")).toBeTruthy();
-    expect(mocks.ufeMounts).toBe(1);
+    await waitFor(() => expect(mocks.ufeMounts).toBe(1));
 
     goTo("#/comprobantes");
     await waitFor(() => expect(screen.getByText("Resultados")).toBeTruthy());
@@ -245,6 +249,6 @@ describe("App", () => {
     // La pantalla UFE sigue montada (oculta): volver no reinicia su estado ni
     // aborta una operación en curso.
     expect(screen.getByText("Pantalla UFE")).toBeTruthy();
-    expect(mocks.ufeMounts).toBe(1);
+    await waitFor(() => expect(mocks.ufeMounts).toBe(1));
   });
 });

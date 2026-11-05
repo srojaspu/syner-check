@@ -283,6 +283,49 @@ def get_movsynerpos_target() -> str | None:
         return None
 
 
+# --- SerieSucursal (catálogo de series por sucursal en PU_SynerPOS) --------
+
+
+def get_serie_sucursal_table() -> str:
+    """Nombre de la tabla de series por sucursal en PU_SynerPOS.
+
+    Configurable por SERIE_SUCURSAL_TABLE_NAME (default: 'SerieSucursal').
+    En QA se puede configurar 'SerieSucursalQA' para aislar pruebas sin tocar
+    producción.
+    """
+    import os
+
+    return (
+        os.getenv("SERIE_SUCURSAL_TABLE_NAME", "SerieSucursal") or ""
+    ).strip() or "SerieSucursal"
+
+
+def get_serie_sucursal_config() -> dict:
+    """Configuración para SerieSucursal derivada de ``get_db_config()``.
+
+    Reutiliza la conexión de PU_SynerPOS y sobreescribe la tabla con
+    ``get_serie_sucursal_table()``, sin ApplicationIntent=ReadOnly para permitir
+    escritura.
+    """
+    return {
+        **get_db_config(),
+        "table": get_serie_sucursal_table(),
+        "application_intent_read_only": False,
+    }
+
+
+def is_serie_sucursal_configured() -> bool:
+    """True cuando SerieSucursal tiene config, tabla válida y password."""
+    from syner_check.db_client import qualified_table_name
+
+    try:
+        config = get_serie_sucursal_config()
+        qualified_table_name(str(config.get("table", "")))
+    except (RuntimeError, ValueError):
+        return False
+    return bool(get_db_password())
+
+
 def is_intelisis_configured() -> bool:
     """True when the Punidas/Intelisis connection is fully configured.
 

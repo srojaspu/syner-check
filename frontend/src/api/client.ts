@@ -13,6 +13,9 @@ import type {
   MovSynerPosDeleteRequest,
   MovSynerPosDeleteResponse,
   SearchResponse,
+  SerieSucursal,
+  SerieSucursalCreateRequest,
+  SerieSucursalUpdateRequest,
   SessionUser,
   SummaryResponse,
   SunatDocumentInput,
@@ -453,3 +456,56 @@ export function deleteMovSynerPos(
     MOVSYNERPOS_DELETE_TIMEOUT_MS,
   );
 }
+
+/* --- SerieSucursal (catálogo de series por sucursal en PU_SynerPOS) ----- */
+
+export function getSeriesSucursales(
+  q?: string,
+  signal?: AbortSignal,
+): Promise<SerieSucursal[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return api(`/api/series-sucursales${query}`, { signal });
+}
+
+export function getSerieSucursal(
+  sucursal: number,
+  signal?: AbortSignal,
+): Promise<SerieSucursal> {
+  return api(`/api/series-sucursales/${sucursal}`, { signal });
+}
+
+export function createSerieSucursal(
+  payload: SerieSucursalCreateRequest,
+  signal?: AbortSignal,
+): Promise<SerieSucursal> {
+  return api(`/api/series-sucursales`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
+export function updateSerieSucursal(
+  sucursal: number,
+  payload: SerieSucursalUpdateRequest,
+  signal?: AbortSignal,
+): Promise<SerieSucursal> {
+  return api(`/api/series-sucursales/${sucursal}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
+export function deleteSerieSucursal(
+  sucursal: number,
+  signal?: AbortSignal,
+): Promise<{ mensaje: string }> {
+  return api(`/api/series-sucursales/${sucursal}`, {
+    method: "DELETE",
+    signal,
+  });
+}
+

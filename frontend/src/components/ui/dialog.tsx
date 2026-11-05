@@ -9,25 +9,27 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
 
 function Dialog({
-  disablePointerDismissal = true,
+  preventOutsideDismiss = false,
+  preventEscapeDismiss = false,
   onOpenChange,
   ...props
-}: DialogPrimitive.Root.Props) {
+}: DialogPrimitive.Root.Props & {
+  preventOutsideDismiss?: boolean
+  preventEscapeDismiss?: boolean
+}) {
   return (
     <DialogPrimitive.Root
       data-slot="dialog"
-      disablePointerDismissal={disablePointerDismissal}
       onOpenChange={(nextOpen, eventDetails) => {
-        // Los modales solo se cierran desde el botón Cancelar o la X: un clic
-        // fuera o Escape no deben descartar formularios ni confirmaciones.
-        if (
-          !nextOpen &&
-          eventDetails &&
-          (eventDetails.reason === "outside-press" ||
-            eventDetails.reason === "escape-key" ||
-            eventDetails.reason === "focus-out")
-        ) {
-          return
+        if (!nextOpen && eventDetails) {
+          if (
+            (preventOutsideDismiss &&
+              (eventDetails.reason === "outside-press" ||
+                eventDetails.reason === "focus-out")) ||
+            (preventEscapeDismiss && eventDetails.reason === "escape-key")
+          ) {
+            return
+          }
         }
         onOpenChange?.(nextOpen, eventDetails)
       }}

@@ -67,6 +67,8 @@ export function MovSynerPosConflictDialog({
   return (
     <Dialog
       open={open}
+      preventOutsideDismiss
+      preventEscapeDismiss
       onOpenChange={(value) => {
         if (busy) return;
         onOpenChange(value);

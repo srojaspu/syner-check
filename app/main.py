@@ -44,6 +44,11 @@ from src.interfaces.wiring import (
     movsynerpos_delete as clean_movsynerpos_delete,
     movsynerpos_send as clean_movsynerpos_send,
     search as clean_search,
+    serie_sucursal_create as clean_serie_sucursal_create,
+    serie_sucursal_delete as clean_serie_sucursal_delete,
+    serie_sucursal_get as clean_serie_sucursal_get,
+    serie_sucursal_list as clean_serie_sucursal_list,
+    serie_sucursal_update as clean_serie_sucursal_update,
     summary as clean_summary,
     sunat_reconcile as clean_sunat_reconcile,
     sunat_single as clean_sunat_single,
@@ -684,3 +689,64 @@ async def api_sunat_revalidate(request: Request):
     except Exception as exc:
         logger.exception("Sunat revalidate failed")
         raise HTTPException(502, "No fue posible validar en SUNAT.") from exc
+
+
+# --- SerieSucursal (catálogo y gestión de series por sucursal) -------------
+
+
+@app.get("/api/series-sucursales")
+async def api_series_sucursales_list(request: Request, q: str | None = None):
+    """Lista las sucursales con soporte de búsqueda."""
+    protected(request)
+    return await run_blocking(clean_serie_sucursal_list, q)
+
+
+@app.get("/api/series-sucursales/{sucursal}")
+async def api_series_sucursales_get(request: Request, sucursal: int):
+    """Detalle de una sucursal específica."""
+    protected(request)
+    return await run_blocking(clean_serie_sucursal_get, sucursal)
+
+
+@app.post("/api/series-sucursales", status_code=201)
+async def api_series_sucursales_create(request: Request):
+    """Crea una nueva sucursal y asigna su serie."""
+    protected(request)
+    body = await read_json_limited(request, MAX_REQUEST_BYTES)
+    if not isinstance(body, dict):
+        raise HTTPException(400, "El cuerpo debe ser un objeto JSON.")
+    return await run_blocking(
+        clean_serie_sucursal_create,
+        body,
+        _actor_email(request),
+        request_id_var.get(),
+    )
+
+
+@app.put("/api/series-sucursales/{sucursal}")
+async def api_series_sucursales_update(request: Request, sucursal: int):
+    """Actualiza los datos de una sucursal existente."""
+    protected(request)
+    body = await read_json_limited(request, MAX_REQUEST_BYTES)
+    if not isinstance(body, dict):
+        raise HTTPException(400, "El cuerpo debe ser un objeto JSON.")
+    return await run_blocking(
+        clean_serie_sucursal_update,
+        sucursal,
+        body,
+        _actor_email(request),
+        request_id_var.get(),
+    )
+
+
+@app.delete("/api/series-sucursales/{sucursal}")
+async def api_series_sucursales_delete(request: Request, sucursal: int):
+    """Elimina una sucursal."""
+    protected(request)
+    return await run_blocking(
+        clean_serie_sucursal_delete,
+        sucursal,
+        _actor_email(request),
+        request_id_var.get(),
+    )
+

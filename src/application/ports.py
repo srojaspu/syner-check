@@ -209,6 +209,35 @@ class GraphqlGateway(Protocol):
     ) -> dict[str, list[dict]]:
         ...
 
+
+class SerieSucursalRepository(Protocol):
+    """Acceso y mutación a la tabla dbo.SerieSucursal."""
+
+    def list_all(self) -> list[dict]:
+        """Devuelve todas las sucursales ordenadas por Sucursal."""
+        ...
+
+    def get_by_sucursal(self, sucursal: int) -> dict | None:
+        """Busca una sucursal por su ID numérico."""
+        ...
+
+    def get_by_serie(self, serie: str) -> dict | None:
+        """Busca si una serie ya está asignada a alguna sucursal."""
+        ...
+
+    def create(self, item: dict) -> dict:
+        """Inserta una nueva sucursal y devuelve el registro insertado."""
+        ...
+
+    def update(self, sucursal: int, item: dict) -> dict:
+        """Actualiza una sucursal existente y devuelve el registro actualizado."""
+        ...
+
+    def delete(self, sucursal: int) -> bool:
+        """Elimina una sucursal por su ID. Devuelve True si se eliminó."""
+        ...
+
+
     def search_by_serie(self, tipo: str, number: str) -> list[dict]:
         """Light docs filtered server-side by `serie` (<number>%).
 
