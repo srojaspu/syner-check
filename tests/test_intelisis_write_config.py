@@ -17,6 +17,7 @@ def _lectura(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("INTELISIS_DB", "Punidas")
     monkeypatch.setenv("INTELISIS_USER", "syner_fe")
     monkeypatch.setenv("INTELISIS_PASSWORD", "secreto")
+    monkeypatch.setenv("INTELISIS_TRUST_SERVER_CERTIFICATE", "yes")
 
 
 def test_deriva_del_login_de_lectura(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,8 +96,33 @@ def test_sin_intelisis_el_error_nombra_la_variable_de_lectura(
         "INTELISIS_DB",
         "INTELISIS_USER",
         "INTELISIS_PASSWORD",
+        "INTELISIS_TRUST_SERVER_CERTIFICATE",
     ):
         monkeypatch.delenv(nombre, raising=False)
 
     with pytest.raises(RuntimeError, match="INTELISIS_HOST"):
         cfg.get_intelisis_write_config()
+
+
+def test_trust_certificate_es_obligatorio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cada instancia tiene su certificado: no se hereda de DB_* ni se asume."""
+    _lectura(monkeypatch)
+    monkeypatch.delenv("INTELISIS_TRUST_SERVER_CERTIFICATE")
+
+    assert cfg.is_intelisis_configured() is False
+    with pytest.raises(
+        RuntimeError, match="INTELISIS_TRUST_SERVER_CERTIFICATE"
+    ):
+        cfg.get_intelisis_write_config()
+
+
+def test_trust_certificate_no_se_hereda_de_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _lectura(monkeypatch)
+    monkeypatch.setenv("DB_TRUST_SERVER_CERTIFICATE", "yes")
+    monkeypatch.setenv("INTELISIS_TRUST_SERVER_CERTIFICATE", "no")
+
+    assert cfg.get_intelisis_config()["trust_server_certificate"] == "no"

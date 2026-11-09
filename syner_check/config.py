@@ -307,8 +307,11 @@ def is_intelisis_configured() -> bool:
 
     Intelisis lives on a different server/DB than MovSynerPos
     (Punidas 172.0.1.156 vs Pu_synerpos 172.0.2.162), so it gets its own
-    INTELISIS_* variables. Missing config means "degraded mode":
-    callers return intelisis_enabled=False instead of failing.
+    INTELISIS_* variables, including its own certificate decision
+    (``INTELISIS_TRUST_SERVER_CERTIFICATE``, never inherited from ``DB_*``).
+    Missing config means "degraded mode" (callers return intelisis_enabled=
+    False instead of failing); once the host is set, the trust decision is
+    required so a self-signed instance cannot fail silently at query time.
     """
     import os
 
@@ -317,6 +320,7 @@ def is_intelisis_configured() -> bool:
         and os.getenv("INTELISIS_DB", "").strip()
         and os.getenv("INTELISIS_USER", "").strip()
         and os.getenv("INTELISIS_PASSWORD", "")
+        and os.getenv("INTELISIS_TRUST_SERVER_CERTIFICATE", "").strip()
     )
 
 
@@ -332,6 +336,9 @@ def get_intelisis_config() -> dict:
     database = os.getenv("INTELISIS_DB", "").strip()
     uid = os.getenv("INTELISIS_USER", "").strip()
     pwd = os.getenv("INTELISIS_PASSWORD", "")
+    trust_server_certificate = os.getenv(
+        "INTELISIS_TRUST_SERVER_CERTIFICATE", ""
+    ).strip()
     if not server:
         raise RuntimeError("Missing required DB env var: INTELISIS_HOST.")
     if not database:
@@ -340,6 +347,10 @@ def get_intelisis_config() -> dict:
         raise RuntimeError("Missing required DB env var: INTELISIS_USER.")
     if not pwd:
         raise RuntimeError("Missing required DB env var: INTELISIS_PASSWORD.")
+    if not trust_server_certificate:
+        raise RuntimeError(
+            "Missing required DB env var: INTELISIS_TRUST_SERVER_CERTIFICATE."
+        )
     try:
         timeout = int(os.getenv("INTELISIS_TIMEOUT", str(DB_TIMEOUT_DEFAULT)))
     except ValueError:
@@ -355,9 +366,7 @@ def get_intelisis_config() -> dict:
         "instance": os.getenv("INTELISIS_INSTANCE", "").strip(),
         "timeout": timeout,
         "encrypt": os.getenv("INTELISIS_ENCRYPT", "yes"),
-        "trust_server_certificate": os.getenv(
-            "INTELISIS_TRUST_SERVER_CERTIFICATE", "no"
-        ),
+        "trust_server_certificate": trust_server_certificate,
     }
 
 

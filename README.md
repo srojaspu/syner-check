@@ -81,6 +81,7 @@ Completa al menos en producción:
 - `DB_NAME`
 - `DB_USER`
 - `DB_USER_PASSWORD`
+- `INTELISIS_HOST`, `INTELISIS_DB`, `INTELISIS_USER`, `INTELISIS_PASSWORD` y `INTELISIS_TRUST_SERVER_CERTIFICATE` si se usa la pantalla Intelisis (es otra instancia).
 
 Para producción se recomienda:
 
@@ -92,6 +93,8 @@ DB_TRUST_SERVER_CERTIFICATE=no
 ```
 
 Si el SQL Server utiliza un certificado interno/autofirmado, `DB_TRUST_SERVER_CERTIFICATE=yes` puede ser necesario, pero es preferible instalar y validar el certificado correctamente.
+
+MovSynerPOS (172.0.2.162) e Intelisis (172.0.1.156) son instancias distintas: `INTELISIS_TRUST_SERVER_CERTIFICATE` es obligatorio cuando `INTELISIS_HOST` está configurado y **nunca** se hereda de `DB_TRUST_SERVER_CERTIFICATE`.
 
 ### Endurecimiento HTTP
 
