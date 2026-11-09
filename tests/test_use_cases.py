@@ -568,6 +568,42 @@ class TripleFlowTests(unittest.TestCase):
         self.assertEqual(flow_bo["missing_in_intelisis"], 0)
         self.assertEqual(res["flow"]["totals"]["pending_in_intelisis"], 1)
 
+    def test_nc_f_prefix_factura_reconciliation(self):
+        # Caso real 2026-11-08: NC de factura (F004-00000043, MovID 104-F00000043)
+        # debe conciliar con prefijo F y quedar en estado CONCLUIDO en Intelisis.
+        res = summarize(
+            self._reader([
+                {"IDSynerPos": "14140.643865", "TipoDocumento": "NOTA DE CREDITO",
+                 "FechaDocumento": "2026-11-08"},
+            ]),
+            self._gateway({
+                "NOTA DE CREDITO": [
+                    {"oid": "14140.643865", "number": "F004-00000043",
+                     "date": "2026-11-08T12:00:00"},
+                ],
+            }),
+            start_iso="2026-11-08",
+            end_iso="2026-11-08",
+            tipos=[TipoDocumento.NOTA_DE_CREDITO],
+            max_range_days=93,
+            intelisis=self._intelisis([
+                {"IntelisisID": "7500050", "Mov": "SE-Nota Credito",
+                 "MovID": "104-F00000043", "StoreName": "Tienda Jockey Plaza",
+                 "TransactionType": "nota_credito",
+                 "ReceiptNumber": "F004-00000043",
+                 "FechaEmision": "2026-11-08",
+                 "EstatusIntelisis": "CONCLUIDO",
+                 "SerieSUNAT": "", "TipoDocSUNAT": "07"},
+            ]),
+        )
+        nc = res["documents"]["NOTA DE CREDITO"][0]
+        self.assertTrue(nc["in_intelisis"])
+        self.assertEqual(nc["intelisis"]["ReceiptNumber"], "F004-00000043")
+        self.assertEqual(nc["intelisis"]["EstatusIntelisis"], "CONCLUIDO")
+        flow = res["flow"]["per_tipo"]["NOTA DE CREDITO"]
+        self.assertEqual(flow["full"], 1)
+        self.assertEqual(flow["missing_in_intelisis"], 0)
+
     def test_degraded_on_failure(self):
         res = summarize(
             self._reader([]),

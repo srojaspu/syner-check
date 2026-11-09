@@ -85,3 +85,13 @@ def test_qualified_table_name_defaults_to_dbo() -> None:
 def test_qualified_table_name_still_rejects_injection() -> None:
     with pytest.raises(ValueError):
         qualified_table_name("MovSynerPos; DROP TABLE x--")
+
+
+def test_intelisis_headers_query_distinguishes_nc_factura_and_boleta() -> None:
+    from syner_check.db_client import INTELISIS_HEADERS_QUERY
+
+    # Verifica que la consulta SQL reconozca tanto NC de factura (F) como de boleta (B)
+    assert "WHEN V.Mov = 'SE-Factura' THEN 'F'" in INTELISIS_HEADERS_QUERY
+    assert "WHEN V.Mov = 'SE-Nota Credito'" in INTELISIS_HEADERS_QUERY
+    assert "LIKE 'F%' THEN 'F'" in INTELISIS_HEADERS_QUERY
+    assert "ELSE 'B'" in INTELISIS_HEADERS_QUERY

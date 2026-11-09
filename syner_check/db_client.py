@@ -211,11 +211,11 @@ def fetch_sql_documents(
 # queda como fase 2.
 # StoreName usa S.Nombre directo (sin dbo.fn_LimpiaTexto: la cuenta
 # read-only no tiene EXECUTE sobre la funcion, verificado 2026-10-16).
-# ReceiptNumber: F-factura, B-resto (las NC de SynerPOS usan prefijo B en
-# MovSynerPos/GraphQL, y su MovID trae forma '<suc>-B<correlativo>':
-# se recortan los no-digitos iniciales). Sin filtro de Estatus: se trae
-# PENDIENTE/SINAFECTAR tambien y se expone EstatusIntelisis para distinguir
-# "llego pendiente de conclusion" de "no llego" (verificado 2026-10-17).
+# ReceiptNumber: F para facturas y notas de crédito de facturas (MovID con
+# 'F...'), B para boletas y notas de crédito de boletas (MovID con 'B...').
+# Sin filtro de Estatus: se trae PENDIENTE/SINAFECTAR también y se expone
+# EstatusIntelisis para distinguir "llegó pendiente de conclusión" de "no llegó"
+# (verificado 2026-10-17).
 
 INTELISIS_MOVS = ("SE-Boleta", "SE-Factura", "SE-Nota Credito")
 
@@ -230,7 +230,12 @@ SELECT
          WHEN V.Mov = 'SE-Nota Credito' THEN 'nota_credito'
          ELSE 'boleta' END,
   ReceiptNumber =
-    CASE WHEN V.Mov = 'SE-Factura' THEN 'F' ELSE 'B' END
+    CASE
+      WHEN V.Mov = 'SE-Factura' THEN 'F'
+      WHEN V.Mov = 'SE-Nota Credito'
+           AND STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), '') LIKE 'F%' THEN 'F'
+      ELSE 'B'
+    END
     + COALESCE(S.MapaUbicacion, CAST(S.Sucursal AS VARCHAR(10)))
     + '-' + RIGHT('00000000' + STUFF(
         STUFF(V.MovID, 1, NULLIF(CHARINDEX('-', V.MovID), 0), ''),
