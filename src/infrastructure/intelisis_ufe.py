@@ -1,7 +1,6 @@
 """Adaptador de lectura de Intelisis para el universo UFE.
 
-Solo lectura: la conexion usa ``ApplicationIntent=ReadOnly`` y el login no
-tiene ``EXECUTE`` sobre ningun procedimiento (D22).
+Solo lectura: el login no tiene ``EXECUTE`` sobre ningun procedimiento (D22).
 """
 
 from __future__ import annotations

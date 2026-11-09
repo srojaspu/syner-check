@@ -19,7 +19,7 @@ Aplicación web responsive para consulta segura de comprobantes de SynerCOM desd
 - Copiar número e imprimir detalle.
 - Diseño responsive para celular y escritorio.
 - Tema claro/oscuro con preferencia persistente y detección del tema del sistema.
-- SQL Server usado en modo de consulta; `ApplicationIntent=ReadOnly` configurable.
+- SQL Server con un solo login para lectura y escritura (sin `ApplicationIntent`: la instancia no tiene AG ni réplica).
 - Validación estricta de tipos, fechas, identificadores SQL y límites de búsqueda.
 - No se exponen tokens GraphQL, credenciales SQL ni errores internos al navegador.
 - Headers de seguridad, `Cache-Control` por tipo de recurso (assets inmutables, API `no-store`, HTML revalidado) y request IDs para trazabilidad.
@@ -38,7 +38,7 @@ FastAPI ── Google Workspace OAuth
    │
    ├── GraphQLClient ── Keycloak ── SynerCOM GraphQL
    │
-   └── pyodbc ── SQL Server (read-only)
+   └── pyodbc ── SQL Server
 ```
 
 ## Google OAuth
@@ -89,7 +89,6 @@ APP_ENV=production
 SESSION_HTTPS_ONLY=true
 DB_ENCRYPT=yes
 DB_TRUST_SERVER_CERTIFICATE=no
-DB_APPLICATION_INTENT_READ_ONLY=true
 ```
 
 Si el SQL Server utiliza un certificado interno/autofirmado, `DB_TRUST_SERVER_CERTIFICATE=yes` puede ser necesario, pero es preferible instalar y validar el certificado correctamente.

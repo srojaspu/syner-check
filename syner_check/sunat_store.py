@@ -1,7 +1,7 @@
 """Read/write access to dbo.SunatValidacion (Pu_synerpos, writer account).
 
-The writer connection never uses ApplicationIntent=ReadOnly and its login
-holds only SELECT+INSERT+UPDATE on this table (least privilege).
+The login holds SELECT+INSERT+UPDATE on this table (least privilege) and the
+same connection covers reads and writes: the instance has no AG or replica.
 Secrets policy: nothing here logs credentials or the API key.
 """
 

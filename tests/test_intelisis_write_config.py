@@ -17,7 +17,6 @@ def _lectura(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("INTELISIS_DB", "Punidas")
     monkeypatch.setenv("INTELISIS_USER", "syner_fe")
     monkeypatch.setenv("INTELISIS_PASSWORD", "secreto")
-    monkeypatch.setenv("INTELISIS_READ_ONLY", "true")
 
 
 def test_deriva_del_login_de_lectura(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,15 +32,17 @@ def test_deriva_del_login_de_lectura(monkeypatch: pytest.MonkeyPatch) -> None:
     assert escritura["table"] == cfg.FE_REENVIO_TABLE
 
 
-def test_escritura_nunca_es_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    _lectura(monkeypatch)
-    monkeypatch.setenv("INTELISIS_READ_ONLY", "true")
+def test_sin_application_intent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sin AG ni réplica no hay a qué enrutar: no se emite ApplicationIntent."""
+    from syner_check.db_client import build_connection_string
 
+    _lectura(monkeypatch)
+    lectura = cfg.get_intelisis_config()
     escritura = cfg.get_intelisis_write_config()
 
-    assert escritura["application_intent_read_only"] is False
-    # La lectura conserva el intent (inerte hoy, pero correcto si aparece un AG).
-    assert cfg.get_intelisis_config()["application_intent_read_only"] is True
+    assert "application_intent_read_only" not in lectura
+    assert "application_intent_read_only" not in escritura
+    assert "ApplicationIntent" not in build_connection_string(escritura, "x")
 
 
 def test_app_name_para_auditar_la_escritura(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -28,7 +28,6 @@ DB_CONFIG = {
     "table": "MovSynerPos",
     "uid": "writer",
     "password": "x",
-    "application_intent_read_only": False,
 }
 
 OID = "14257.639095"

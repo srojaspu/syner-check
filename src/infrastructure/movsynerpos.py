@@ -2,9 +2,10 @@
 (SELECT + INSERT + DELETE). En producción es ``dbo.MovSynerPos``; para probar
 sin tocar producción basta ``TABLE_NAME=MovSynerPosQA`` (misma base).
 
-Fuente de la conexión: ``get_movsynerpos_config()`` (deriva de DB_* y fuerza
-``application_intent_read_only=False``). Nunca se reutiliza el pool de lectura:
-una escritura no debe compartir sesión con una conexión marcada ReadOnly.
+Fuente de la conexión: ``get_movsynerpos_config()`` (deriva de DB_*; un solo
+login y una sola conexión para lectura y escritura). La escritura usa su
+propia conexión, no la del pool de lectura, porque comparte la misma config
+pero el cursor y la transacción son distintos.
 
 Seguridad:
 - Nombres de tabla validados/entrecomillados (``quote_table_name``).

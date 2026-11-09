@@ -23,7 +23,6 @@ DB_CONFIG = {
     "table": "MovSynerPos",
     "user": "reader",
     "uid": "reader",
-    "application_intent_read_only": True,
 }
 
 
@@ -107,11 +106,11 @@ class ConfigTest(unittest.TestCase):
         with patch.dict("os.environ", {"MOVSYNERPOS_WRITE_ENABLED": "true"}):
             self.assertTrue(cfg.movsynerpos_enabled())
 
-    def test_config_forces_write_connection(self) -> None:
+    def test_config_is_the_same_db_config(self) -> None:
         with patch.object(cfg, "get_db_config", return_value=dict(DB_CONFIG)):
             result = cfg.get_movsynerpos_config()
+        self.assertEqual(result, DB_CONFIG)
         self.assertEqual(result["table"], "MovSynerPos")
-        self.assertFalse(result["application_intent_read_only"])
 
     def test_config_uses_configured_table(self) -> None:
         with patch.object(
@@ -122,15 +121,16 @@ class ConfigTest(unittest.TestCase):
             result = cfg.get_movsynerpos_config()
         self.assertEqual(result["table"], "MovSynerPosQA")
 
-    def test_writer_connection_is_not_read_only(self) -> None:
+    def test_connections_have_no_application_intent(self) -> None:
         from syner_check.db_client import build_connection_string
 
         with patch.object(cfg, "get_db_config", return_value=dict(DB_CONFIG)):
             writer = build_connection_string(cfg.get_movsynerpos_config(), "x")
             reader = build_connection_string(cfg.get_db_config(), "x")
 
-        self.assertNotIn("ApplicationIntent=ReadOnly", writer)
-        self.assertIn("ApplicationIntent=ReadOnly", reader)
+        self.assertNotIn("ApplicationIntent", writer)
+        self.assertNotIn("ApplicationIntent", reader)
+        self.assertEqual(writer, reader)
 
     def test_configured_requires_password(self) -> None:
         with patch.object(cfg, "get_db_config", return_value=dict(DB_CONFIG)), patch.object(
@@ -158,7 +158,6 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(config["host"], DB_CONFIG["host"])
             self.assertEqual(config["database"], DB_CONFIG["database"])
             self.assertEqual(config["table"], DB_CONFIG["table"])
-            self.assertFalse(config["application_intent_read_only"])
             self.assertEqual(cfg.get_movsynerpos_login(), DB_CONFIG["uid"])
             self.assertEqual(cfg.get_db_password(), "secret")
 

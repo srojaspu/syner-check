@@ -99,7 +99,6 @@ def _pool_key(db_config: dict[str, Any]) -> tuple:
         db_config.get("database"),
         db_config.get("uid"),
         bool(db_config.get("trusted")),
-        bool(db_config.get("application_intent_read_only", True)),
     )
 
 

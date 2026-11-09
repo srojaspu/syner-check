@@ -76,7 +76,6 @@ def get_db_config() -> dict:
     timeout = int(os.getenv("DB_TIMEOUT", str(DB_TIMEOUT_DEFAULT)))
     encrypt = os.getenv("DB_ENCRYPT", "yes")
     trust_server_certificate = os.getenv("DB_TRUST_SERVER_CERTIFICATE", "no")
-    application_intent_read_only = _is_truthy(os.getenv("DB_APPLICATION_INTENT_READ_ONLY", "true"))
 
     if not server:
         raise RuntimeError("Missing required DB env var: DB_HOST.")
@@ -101,7 +100,6 @@ def get_db_config() -> dict:
         "timeout": timeout,
         "encrypt": encrypt,
         "trust_server_certificate": trust_server_certificate,
-        "application_intent_read_only": application_intent_read_only,
     }
 
 
@@ -121,9 +119,9 @@ def get_intelisis_password() -> str:
 
 # --- SUNAT Validator (microservicio HTTP/JSON, ver docs/) ---
 # Cosas separadas: (a) credenciales del microservicio, (b) RUC emisor,
-# (c) conexión de ESCRITURA a Pu_synerpos para dbo.SunatValidacion.
-# La conexión de escritura NO usa ApplicationIntent=ReadOnly y su cuenta
-# solo tiene SELECT+INSERT+UPDATE sobre esa tabla (mínimo privilegio).
+# (c) conexión a Pu_synerpos para dbo.SunatValidacion.
+# No hay instancia de lectura/escritura: una sola conexión sirve para todo y
+# el login solo necesita SELECT+INSERT+UPDATE sobre esa tabla.
 
 SUNAT_BATCH_MAX = 500
 SUNAT_REQUEST_DOCS_MAX = 2000
@@ -177,15 +175,10 @@ def get_sunat_db_config() -> dict:
     """Conexión de escritura a la misma base que ``DB_*`` (dbo.SunatValidacion).
 
     No hay credenciales propias: ``synercheck_writer`` es el único login de
-    SynerPOS y tiene SELECT+INSERT+UPDATE sobre la tabla del cache SUNAT. Se
-    fuerza escritura (sin ApplicationIntent=ReadOnly) y se fija la tabla, que
-    no se configura por variable.
+    SynerPOS y tiene SELECT+INSERT+UPDATE sobre la tabla del cache SUNAT. Solo
+    se fija la tabla, que no se configura por variable.
     """
-    return {
-        **get_db_config(),
-        "table": "dbo.SunatValidacion",
-        "application_intent_read_only": False,
-    }
+    return {**get_db_config(), "table": "dbo.SunatValidacion"}
 
 
 def get_sunat_db_password() -> str:
@@ -195,10 +188,10 @@ def get_sunat_db_password() -> str:
 
 # --- MovSynerPos (reenvío manual SynerCom -> SynerPOS) --------------------
 # Un solo login para SynerPOS: el writer deriva host/base/login de DB_* y la
-# tabla de TABLE_NAME, igual que las lecturas. En producción DB_USER debe ser
-# synercheck_writer (tiene SELECT + INSERT + DELETE), así que no hace falta una
-# cuenta read-only separada ni variables de conexión duplicadas. El writer solo
-# fuerza application_intent_read_only=False en su propia conexión.
+# tabla de TABLE_NAME, exactamente igual que las lecturas. En producción
+# DB_USER debe ser synercheck_writer (tiene SELECT + INSERT + DELETE), así que
+# no hace falta una cuenta read-only separada ni variables de conexión
+# duplicadas. No hay ApplicationIntent: la instancia no tiene AG ni réplica.
 
 
 def movsynerpos_enabled() -> bool:
@@ -222,12 +215,11 @@ def movsynerpos_delete_enabled() -> bool:
 def get_movsynerpos_config() -> dict:
     """Config del writer derivada de ``get_db_config()``.
 
-    Reutiliza host/base/login de ``DB_*`` y la tabla de ``TABLE_NAME`` (sin
-    reescribirlas) y fuerza la conexión de escritura (sin
-    ApplicationIntent=ReadOnly). El adaptador valida y entrecomilla el
-    identificador antes de usarlo en SQL.
+    Reutiliza host/base/login de ``DB_*`` y la tabla de ``TABLE_NAME`` sin
+    reescribirlas: un solo login y una sola conexión. El adaptador valida y
+    entrecomilla el identificador antes de usarlo en SQL.
     """
-    return {**get_db_config(), "application_intent_read_only": False}
+    return get_db_config()
 
 
 def is_movsynerpos_configured() -> bool:
@@ -292,15 +284,10 @@ def get_serie_sucursal_table() -> str:
 def get_serie_sucursal_config() -> dict:
     """Configuración para SerieSucursal derivada de ``get_db_config()``.
 
-    Reutiliza la conexión de PU_SynerPOS y sobreescribe la tabla con
-    ``get_serie_sucursal_table()``, sin ApplicationIntent=ReadOnly para permitir
-    escritura.
+    Reutiliza la conexión de PU_SynerPOS (mismo login, lectura y escritura) y
+    sobreescribe la tabla con ``get_serie_sucursal_table()``.
     """
-    return {
-        **get_db_config(),
-        "table": get_serie_sucursal_table(),
-        "application_intent_read_only": False,
-    }
+    return {**get_db_config(), "table": get_serie_sucursal_table()}
 
 
 def is_serie_sucursal_configured() -> bool:
@@ -371,9 +358,6 @@ def get_intelisis_config() -> dict:
         "trust_server_certificate": os.getenv(
             "INTELISIS_TRUST_SERVER_CERTIFICATE", "no"
         ),
-        "application_intent_read_only": _is_truthy(
-            os.getenv("INTELISIS_READ_ONLY", "true")
-        ),
     }
 
 
@@ -384,9 +368,9 @@ def get_intelisis_config() -> dict:
 # encola, lee la cola y cierra casos a mano.
 #
 # Un solo login para lectura y reenvio (``INTELISIS_*``): hay una sola
-# instancia (sin AG) y dos credenciales vivirian en el mismo .env, asi que la
-# conexion de escritura se deriva de la de lectura (mismo patron que
-# MovSynerPos): misma config, sin ApplicationIntent=ReadOnly solo aqui. Ese
+# instancia (sin AG ni replica) y dos credenciales vivirian en el mismo .env,
+# asi que la conexion de escritura se deriva de la de lectura (mismo patron que
+# MovSynerPos): misma config. Ese
 # login necesita SELECT sobre Venta/MovTipo/FE_Worker/FE_Reenvio,
 # INSERT/UPDATE sobre FE_Reenvio y EXECUTE de sp_getapplock. NO necesita
 # EXECUTE de los generadores ni permisos de instancia (xp_cmdshell): eso lo
@@ -423,9 +407,8 @@ def get_intelisis_write_config() -> dict:
     """Conexion que escribe en la cola del ERP, derivada del login unico.
 
     Misma instancia, mismo login y mismo password que la lectura: solo cambia
-    la tabla de referencia y que **no** lleva ``ApplicationIntent=ReadOnly``
-    (aqui si se escribe). ``APP=`` permite atribuir en SQL Server las sesiones
-    que encolaron cada fila.
+    la tabla de referencia. ``APP=`` permite atribuir en SQL Server las
+    sesiones que encolaron cada fila.
 
     El login necesita SELECT sobre Venta/MovTipo/FE_Reenvio/FE_Worker,
     INSERT/UPDATE sobre FE_Reenvio y EXECUTE sobre
@@ -435,10 +418,6 @@ def get_intelisis_write_config() -> dict:
     return {
         **get_intelisis_config(),
         "table": FE_REENVIO_TABLE,
-        # Escritura: jamas ReadOnly (es inerte en esta instancia, pero si
-        # algun dia aparece un AG la conexion de escritura sigue siendo la
-        # primaria).
-        "application_intent_read_only": False,
         "app_name": (
             os.getenv("INTELISIS_APP_NAME", "").strip()
             or INTELISIS_APP_NAME_DEFAULT

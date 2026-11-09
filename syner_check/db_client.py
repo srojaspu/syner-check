@@ -99,8 +99,6 @@ def build_connection_string(db_config: dict[str, Any], password: str) -> str:
     # distinguir nuestros reenvios de los jobs del ERP cuando ambos usan 'sa'.
     if db_config.get("app_name"):
         parts.append(f"APP={db_config['app_name']}")
-    if db_config.get("application_intent_read_only", True):
-        parts.append("ApplicationIntent=ReadOnly")
     return ";".join(parts) + ";"
 
 
@@ -262,9 +260,8 @@ def fetch_intelisis_headers(
 ) -> list[dict[str, Any]]:
     """Fetch Intelisis/Venta headers (SynerPOS origin) for [start, end].
 
-    Sargable date range + Mov allowlist (never raw user input), NOLOCK +
-    ApplicationIntent=ReadOnly (see config). Returns dicts with
-    FechaEmision normalized to ISO date string.
+    Sargable date range + Mov allowlist (never raw user input), NOLOCK.
+    Returns dicts with FechaEmision normalized to ISO date string.
     """
     from .config import get_intelisis_config, get_intelisis_password
     from .db_pool import FETCH_BATCH, pooled_connection
