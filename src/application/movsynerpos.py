@@ -94,7 +94,13 @@ def _error_message(exc: Exception) -> str:
     if isinstance(exc, InvalidRangeError):
         return "Fecha del documento inválida."
     if isinstance(exc, UpstreamError):
-        return "No fue posible consultar o escribir en SynerPOS."
+        # El adaptador deja aquí una causa accionable y saneada (permiso,
+        # columna/tabla inexistente, dato inválido). Si no la trae, se mantiene
+        # el mensaje genérico para no filtrar detalles internos.
+        return (
+            getattr(exc, "public_message", None)
+            or "No fue posible consultar o escribir en SynerPOS."
+        )
     return "No se pudo reenviar el documento."
 
 

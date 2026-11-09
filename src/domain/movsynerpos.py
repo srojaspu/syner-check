@@ -70,17 +70,33 @@ COLUMNAS: tuple[str, ...] = (
 )
 
 # Límites declarados en el esquema (D11: fallar, nunca truncar).
+# Cubre TODAS las columnas varchar de dbo.MovSynerPos (verificado 2026-11-09
+# con INFORMATION_SCHEMA sobre PU_SynerPOS): si SynerCom manda un valor más
+# largo, el error es de dominio y accionable, no un truncamiento de SQL Server.
 MAX_LENGTHS: dict[str, int] = {
+    "IDSynerPos": 100,
+    "Sucursal": 10,
+    "SerieNumero": 100,
+    "TipoDocumento": 50,
+    "CodigoCliente": 50,
     "email": 100,
     "NombreCliente": 100,
+    "CodVendedor": 50,
+    "Moneda": 50,
+    "Sku": 100,
+    "CodQR": 150,
+    "CardProvider1": 50,
+    "PanMask1": 100,
+    "CardProvider2": 50,
+    "PanMask2": 100,
+    "CardProvider3": 50,
+    "PanMask3": 100,
+    "CardProvider4": 50,
+    "PanMask4": 100,
+    "PorcentajeDescuento": 10,
+    "RefNC": 100,
     "promotion": 100,
     "nota": 100,
-    "PanMask1": 100,
-    "PanMask2": 100,
-    "PanMask3": 100,
-    "PanMask4": 100,
-    "CodQR": 150,
-    "PorcentajeDescuento": 10,
 }
 
 # --- Helpers con semántica de JavaScript ---------------------------------
@@ -126,6 +142,26 @@ def js_number_str(value: Any) -> str:
 def or_dash(value: Any) -> str:
     """``value || '-'`` de producción (0 y '' también caen al sentinela)."""
     return js_str(value) if js_truthy(value) else SENTINEL
+
+
+def text_or_none(value: Any, field: str) -> str | None:
+    """Texto opcional para columnas varchar que se bindean sin ``or_dash``.
+
+    ``email`` y ``nota`` viajan crudas desde GraphQL. Antes, un objeto/lista en
+    SynerCom llegaba a pyodbc como parámetro y el driver lo rechazaba con un
+    ``ProgrammingError`` genérico (HY105) que el log no explicaba. Un escalar
+    se normaliza a ``str``; un tipo estructurado falla en el dominio con el
+    nombre del campo, antes de abrir la conexión de escritura.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, (int, float, Decimal)):
+        return str(value)
+    raise MovSynerPosValidationError(
+        f"{field} no es texto (tipo {type(value).__name__})."
+    )
 
 
 def to_number(value: Any, default: float = 0.0) -> float:
@@ -582,7 +618,7 @@ def _header(tipo: str, doc: dict) -> dict[str, Any]:
             "TipoDocumento": tipo,
             "FechaDocumento": to_datetime(doc.get("date")),
             "CodigoCliente": or_dash(contact.get("idNumber")),
-            "email": contact.get("email") or None,
+            "email": text_or_none(contact.get("email"), "email"),
             "NombreCliente": or_dash(contact.get("name")),
             "CodVendedor": "0",
             "Moneda": or_dash(currency.get("isoCode")),
@@ -598,14 +634,18 @@ def _header(tipo: str, doc: dict) -> dict[str, Any]:
         "TipoDocumento": tipo,
         "FechaDocumento": to_datetime(doc.get("date")),
         "CodigoCliente": or_dash(contact.get("idNumber")),
-        "email": contact.get("email") or None,
+        "email": text_or_none(contact.get("email"), "email"),
         "NombreCliente": or_dash(contact.get("name")),
         "CodVendedor": or_dash(doc.get("seller")),
         "Moneda": or_dash(currency.get("isoCode")),
         "CrossTotal": to_money(doc.get("crossTotal"), Decimal("0.0000")),
         "RefNC": SENTINEL,
         "createdDate": to_utc_datetime(doc.get("createdDate")),
-        "nota": (doc.get("nota") or None) if tipo == "BOLETA" else None,
+        "nota": (
+            text_or_none(doc.get("nota"), "nota")
+            if tipo == "BOLETA"
+            else None
+        ),
     }
 
 

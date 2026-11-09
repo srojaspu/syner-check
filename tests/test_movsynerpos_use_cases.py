@@ -13,6 +13,7 @@ from src.application.movsynerpos import (
     ESTADO_INSERTADO,
     ESTADO_REPARADO,
     ESTADO_SIN_CAMBIOS,
+    _error_message,
     send_movsynerpos,
 )
 from src.domain.errors import UpstreamError
@@ -474,3 +475,22 @@ def test_document_logs_have_ids_but_no_pii(caplog) -> None:
     assert "estado=insertado" in message
     for forbidden in ("CLIENTE PRUEBA", "cliente@example.test", "120.5"):
         assert forbidden not in message
+
+
+def test_error_message_surfaces_the_safe_public_cause() -> None:
+    exc = UpstreamError(
+        "MovSynerPos insert failed: ProgrammingError.",
+        code="permission",
+        public_message=(
+            "El login de escritura no tiene permiso INSERT sobre la tabla."
+        ),
+    )
+    assert _error_message(exc) == (
+        "El login de escritura no tiene permiso INSERT sobre la tabla."
+    )
+
+
+def test_error_message_keeps_generic_text_when_no_public_cause() -> None:
+    assert _error_message(UpstreamError("socket cerrado")) == (
+        "No fue posible consultar o escribir en SynerPOS."
+    )

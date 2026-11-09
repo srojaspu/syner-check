@@ -53,10 +53,15 @@ class UpstreamError(RuntimeError):
         *,
         code: str | None = None,
         http_status: int | None = None,
+        public_message: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.http_status = http_status
+        # Safe, actionable text for the operator (never a stack trace, SQL,
+        # connection string or raw row values). The technical ``message``
+        # stays in the logs; this is what the UI may show per document.
+        self.public_message = public_message
 
 
 class MovSynerPosPermissionError(UpstreamError):

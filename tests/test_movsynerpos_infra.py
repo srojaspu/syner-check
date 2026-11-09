@@ -6,7 +6,12 @@ import unittest
 from unittest.mock import patch
 
 from src.domain.errors import UpstreamError
-from src.infrastructure.movsynerpos import MovSynerPosWriterAdapter
+from src.infrastructure.movsynerpos import (
+    MovSynerPosWriterAdapter,
+    classify_db_error,
+    db_error_detail,
+    db_error_parts,
+)
 from src.domain.movsynerpos import COLUMNAS
 from syner_check import config as cfg
 
@@ -32,6 +37,44 @@ class FakeCursor:
 
     def fetchall(self):
         return list(self.rows)
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+
+class ScriptedCursor(FakeCursor):
+    """Cursor mínimo que responde al catálogo que consulta ``_diagnose``."""
+
+    def __init__(self, *, error, missing=(), exists=True, can_insert=True):
+        super().__init__()
+        self.error = error
+        self.missing = list(missing)
+        self.exists = exists
+        self.can_insert = can_insert
+        self._result: list[tuple] = []
+
+    def execute(self, sql, *params):
+        self.executed.append((sql, params))
+        if sql.lstrip().upper().startswith("INSERT"):
+            raise self.error
+        if "OBJECT_ID" in sql:
+            self._result = [(1 if self.exists else None,)]
+        elif "INFORMATION_SCHEMA.COLUMNS" in sql:
+            # _diagnose resta los presentes del contrato esperado.
+            expected = [*COLUMNAS, "fechaRegistro"]
+            present = [c for c in expected if c not in self.missing]
+            self._result = [(column,) for column in present]
+        elif "HAS_PERMS_BY_NAME" in sql:
+            self._result = [(1 if self.can_insert else 0,)]
+        else:
+            self._result = []
+        return self
+
+    def fetchall(self):
+        return list(self._result)
+
+    def fetchone(self):
+        return self._result[0] if self._result else None
 
 
 class FakeConnection:
@@ -259,3 +302,109 @@ class AdapterTest(unittest.TestCase):
     def test_empty_insert_is_a_noop(self) -> None:
         adapter = MovSynerPosWriterAdapter(config=dict(DB_CONFIG), password="x")
         self.assertEqual(adapter.insert_lines(object(), []), 0)
+
+    def test_insert_failure_logs_sqlstate_category_and_diagnosis(self) -> None:
+        """El log debe explicar el fallo, no solo ``error_class``.
+
+        Regresión 2026-11-09: un ProgrammingError en producción se logueaba
+        sin SQLSTATE ni mensaje del servidor, así que no se sabía si faltaba
+        una columna, la tabla o el permiso INSERT.
+        """
+        programming_error = type("ProgrammingError", (Exception,), {})
+        detail = (
+            "[42S22] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]"
+            "Invalid column name 'nota'. (207) (SQLExecDirectW)"
+        )
+        error = programming_error("42S22", detail)
+        connection = FakeConnection()
+        connection.cursor_obj.execute = lambda *args, **kwargs: (_ for _ in ()).throw(error)
+        adapter = MovSynerPosWriterAdapter(config=dict(DB_CONFIG), password="x")
+
+        with patch("syner_check.db_client.connect", return_value=connection):
+            with self.assertLogs("syner_check.movsynerpos", level="WARNING") as logs:
+                with self.assertRaises(UpstreamError) as excinfo:
+                    adapter.insert_lines(object(), [{"Idx": 1}])
+
+        text = "\n".join(logs.output)
+        assert "MovSynerPos insert failed" in text
+        assert "category=invalid_column" in text
+        assert "sqlstate=42S22" in text
+        assert "Invalid column name 'nota'" in text
+        assert "diagnosis=" in text
+        assert "columna requerida" in (excinfo.exception.public_message or "")
+        self.assertTrue(connection.rolled_back)
+        self.assertFalse(connection.committed)
+
+    def test_diagnosis_names_missing_columns_and_permission(self) -> None:
+        programming_error = type("ProgrammingError", (Exception,), {})
+        error = programming_error(
+            "42S22", "[42S22] Invalid column name 'nota'. (207)"
+        )
+        cursor = ScriptedCursor(error=error, missing=["nota"], can_insert=False)
+        connection = FakeConnection()
+        connection.cursor_obj = cursor
+        adapter = MovSynerPosWriterAdapter(config=dict(DB_CONFIG), password="x")
+
+        with patch("syner_check.db_client.connect", return_value=connection):
+            with self.assertLogs("syner_check.movsynerpos", level="WARNING") as logs:
+                with self.assertRaises(UpstreamError) as excinfo:
+                    adapter.insert_lines(object(), [{"Idx": 1}])
+
+        text = "\n".join(logs.output)
+        assert "'missing_columns': ['nota']" in text
+        assert "'can_insert': 0" in text
+        assert "'exists': True" in text
+        public = excinfo.exception.public_message or ""
+        assert "nota" in public
+        assert "columnas requeridas" in public
+
+    def test_diagnose_wrapper_is_read_only_and_closes_the_connection(self) -> None:
+        cursor = ScriptedCursor(error=Exception("no se usa"))
+        connection = FakeConnection()
+        connection.cursor_obj = cursor
+        adapter = MovSynerPosWriterAdapter(config=dict(DB_CONFIG), password="x")
+
+        with patch("syner_check.db_client.connect", return_value=connection):
+            report = adapter.diagnose()
+
+        self.assertTrue(connection.closed)
+        self.assertEqual(report["target"], "dbo.MovSynerPos")
+        self.assertTrue(report["exists"])
+        self.assertEqual(report["missing_columns"], [])
+        statements = [sql.lstrip().upper() for sql, _ in cursor.executed]
+        self.assertTrue(statements)
+        self.assertFalse(
+            any(
+                statement.startswith(("INSERT", "UPDATE", "DELETE"))
+                for statement in statements
+            )
+        )
+
+    def test_error_helpers_accept_both_pyodbc_arg_orders(self) -> None:
+        server_error = Exception("42S22", "[42S22] Invalid column name 'x'.")
+        client_error = Exception(
+            "Invalid parameter type.  param-index=1 param-type=dict", "HY105"
+        )
+
+        self.assertEqual(
+            db_error_parts(server_error), ("42S22", "[42S22] Invalid column name 'x'.")
+        )
+        self.assertEqual(
+            db_error_parts(client_error)[0], "HY105"
+        )
+        self.assertIn("sqlstate=42S22", db_error_detail(server_error))
+
+    def test_classify_db_error_maps_actionable_categories(self) -> None:
+        cases = {
+            "42S22 Invalid column name 'nota'": "invalid_column",
+            "42S02 Invalid object name 'dbo.MovSynerPos'": "invalid_object",
+            "42000 The INSERT permission was denied on the object": "permission",
+            "22001 String or binary data would be truncated": "truncation",
+            "23000 Cannot insert the value NULL into column 'Sku'": "constraint",
+            "HY105 Invalid parameter type. param-index=1 param-type=dict": "parameter",
+            "HYT00 Query timeout expired": "transient",
+            "algo raro": "unknown",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(classify_db_error(Exception(text)), expected)

@@ -315,6 +315,35 @@ def test_pan_mask_over_100_is_rejected():
         build_documento("BOLETA", doc)
 
 
+def test_sku_over_schema_limit_is_rejected_before_the_insert():
+    doc = load("boleta.json")
+    doc["items"][0]["sku"] = "X" * 101
+    with pytest.raises(MovSynerPosValidationError) as excinfo:
+        build_documento("BOLETA", doc)
+    assert "Sku" in str(excinfo.value)
+
+
+def test_structured_nota_fails_in_the_domain_with_the_field_name():
+    """Un objeto/lista en ``nota`` llegaba crudo a pyodbc (HY105).
+
+    El driver devolvía un ProgrammingError genérico; ahora el dominio dice
+    exactamente qué campo de SynerCom vino con un tipo inesperado.
+    """
+    doc = load("boleta.json")
+    doc["nota"] = {"texto": "PU_LOYALTY_OFF"}
+    with pytest.raises(MovSynerPosValidationError) as excinfo:
+        build_documento("BOLETA", doc)
+    assert "nota" in str(excinfo.value)
+
+
+def test_structured_email_fails_in_the_domain_with_the_field_name():
+    doc = load("boleta.json")
+    doc["contact"]["email"] = ["cliente@example.com"]
+    with pytest.raises(MovSynerPosValidationError) as excinfo:
+        build_documento("BOLETA", doc)
+    assert "email" in str(excinfo.value)
+
+
 def test_domain_module_has_no_infrastructure_imports():
     source = (
         Path(__file__).parents[1] / "src" / "domain" / "movsynerpos.py"
