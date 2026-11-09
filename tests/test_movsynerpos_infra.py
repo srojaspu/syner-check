@@ -148,6 +148,20 @@ class ConfigTest(unittest.TestCase):
         ), patch.object(cfg, "get_db_password", return_value="secret"):
             self.assertFalse(cfg.is_movsynerpos_configured())
 
+    def test_writer_uses_the_same_db_login_and_password(self) -> None:
+        """Un solo login SynerPOS: DB_USER es el de lectura y escritura."""
+        with patch.object(
+            cfg, "get_db_config", return_value=dict(DB_CONFIG)
+        ), patch.object(cfg, "get_db_password", return_value="secret"):
+            config = cfg.get_movsynerpos_config()
+            self.assertEqual(config["uid"], DB_CONFIG["uid"])
+            self.assertEqual(config["host"], DB_CONFIG["host"])
+            self.assertEqual(config["database"], DB_CONFIG["database"])
+            self.assertEqual(config["table"], DB_CONFIG["table"])
+            self.assertFalse(config["application_intent_read_only"])
+            self.assertEqual(cfg.get_movsynerpos_login(), DB_CONFIG["uid"])
+            self.assertEqual(cfg.get_db_password(), "secret")
+
     def test_target_helper_shows_configured_table(self) -> None:
         with patch.object(
             cfg,
@@ -357,6 +371,15 @@ class AdapterTest(unittest.TestCase):
         public = excinfo.exception.public_message or ""
         assert "nota" in public
         assert "columnas requeridas" in public
+
+    def test_settings_use_the_db_password(self) -> None:
+        with patch.object(
+            cfg, "get_movsynerpos_config", return_value=dict(DB_CONFIG)
+        ), patch.object(cfg, "get_db_password", return_value="secret"):
+            config, password = MovSynerPosWriterAdapter()._settings()
+
+        self.assertEqual(config["uid"], "reader")
+        self.assertEqual(password, "secret")
 
     def test_diagnose_wrapper_is_read_only_and_closes_the_connection(self) -> None:
         cursor = ScriptedCursor(error=Exception("no se usa"))

@@ -174,54 +174,31 @@ def get_sunat_validator_config() -> dict:
 
 
 def get_sunat_db_config() -> dict:
-    """Conexión de escritura a Pu_synerpos (dbo.SunatValidacion).
+    """Conexión de escritura a la misma base que ``DB_*`` (dbo.SunatValidacion).
 
-    Sin ApplicationIntent=ReadOnly: con ese flag los writes fallan.
+    No hay credenciales propias: ``synercheck_writer`` es el único login de
+    SynerPOS y tiene SELECT+INSERT+UPDATE sobre la tabla del cache SUNAT. Se
+    fuerza escritura (sin ApplicationIntent=ReadOnly) y se fija la tabla, que
+    no se configura por variable.
     """
-    import os
-
-    server = os.getenv("SUNAT_DB_HOST", "").strip()
-    database = os.getenv("SUNAT_DB_NAME", "Pu_synerpos").strip() or "Pu_synerpos"
-    uid = os.getenv("SUNAT_DB_USER", "").strip()
-    pwd = os.getenv("SUNAT_DB_PASSWORD", "")
-    if not server:
-        raise RuntimeError("Missing required env var: SUNAT_DB_HOST.")
-    if not uid:
-        raise RuntimeError("Missing required env var: SUNAT_DB_USER.")
-    if not pwd:
-        raise RuntimeError("Missing required env var: SUNAT_DB_PASSWORD.")
     return {
-        "driver": DB_DRIVER_DEFAULT,
-        "server": server,
-        "database": database,
+        **get_db_config(),
         "table": "dbo.SunatValidacion",
-        "uid": uid,
-        "trusted": False,
-        "port": "",
-        "instance": "",
-        "timeout": int(os.getenv("SUNAT_DB_TIMEOUT", str(DB_TIMEOUT_DEFAULT))),
-        "encrypt": os.getenv("SUNAT_DB_ENCRYPT", "yes"),
-        "trust_server_certificate": os.getenv(
-            "SUNAT_DB_TRUST_SERVER_CERTIFICATE", "no"
-        ),
-        # Escritura: jamás ReadOnly.
         "application_intent_read_only": False,
     }
 
 
 def get_sunat_db_password() -> str:
-    """Return the SunatValidacion writer password (never log or print it)."""
-    import os
-
-    return os.getenv("SUNAT_DB_PASSWORD", "")
+    """Password del writer SUNAT (la misma de ``DB_USER``; nunca se registra)."""
+    return get_db_password()
 
 
 # --- MovSynerPos (reenvío manual SynerCom -> SynerPOS) --------------------
-# No hay variables de conexión nuevas: el writer deriva su conexión de DB_*
-# (misma host/base/login que las lecturas) y fuerza application_intent_read_only
-# a False solo en su propia conexión. La tabla destino sale de TABLE_NAME, igual
-# que en las lecturas: cambiar de ambiente es cambiar esa variable, sin nombres
-# hardcodeados ni variables duplicadas.
+# Un solo login para SynerPOS: el writer deriva host/base/login de DB_* y la
+# tabla de TABLE_NAME, igual que las lecturas. En producción DB_USER debe ser
+# synercheck_writer (tiene SELECT + INSERT + DELETE), así que no hace falta una
+# cuenta read-only separada ni variables de conexión duplicadas. El writer solo
+# fuerza application_intent_read_only=False en su propia conexión.
 
 
 def movsynerpos_enabled() -> bool:
@@ -245,9 +222,10 @@ def movsynerpos_delete_enabled() -> bool:
 def get_movsynerpos_config() -> dict:
     """Config del writer derivada de ``get_db_config()``.
 
-    Reutiliza la tabla configurada en ``TABLE_NAME`` (sin reescribirla) y fuerza
-    la conexión de escritura (sin ApplicationIntent=ReadOnly). El adaptador
-    valida y entrecomilla el identificador antes de usarlo en SQL.
+    Reutiliza host/base/login de ``DB_*`` y la tabla de ``TABLE_NAME`` (sin
+    reescribirlas) y fuerza la conexión de escritura (sin
+    ApplicationIntent=ReadOnly). El adaptador valida y entrecomilla el
+    identificador antes de usarlo en SQL.
     """
     return {**get_db_config(), "application_intent_read_only": False}
 
@@ -266,6 +244,17 @@ def is_movsynerpos_configured() -> bool:
     except (RuntimeError, ValueError):
         return False
     return bool(get_db_password())
+
+
+def get_movsynerpos_login() -> str | None:
+    """Login efectivo del writer (``DB_USER``), para el log de arranque.
+
+    Nunca devuelve ni registra la password.
+    """
+    try:
+        return str(get_db_config().get("uid") or "") or None
+    except (RuntimeError, ValueError):
+        return None
 
 
 def get_movsynerpos_target() -> str | None:

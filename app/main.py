@@ -190,8 +190,9 @@ async def lifespan(_app: FastAPI):
 
     if cfg.movsynerpos_enabled():
         logger.info(
-            "MovSynerPos writer enabled target=%s",
+            "MovSynerPos writer enabled target=%s login=%s",
             cfg.get_movsynerpos_target() or "<unconfigured>",
+            cfg.get_movsynerpos_login() or "<unconfigured>",
         )
     else:
         logger.info("MovSynerPos writer disabled (MOVSYNERPOS_WRITE_ENABLED=false)")
