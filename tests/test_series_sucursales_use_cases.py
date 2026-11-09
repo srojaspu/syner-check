@@ -4,7 +4,6 @@ import unittest
 from src.domain.errors import (
     SerieSucursalDuplicateError,
     SerieSucursalNotFoundError,
-    SerieSucursalValidationError,
 )
 from src.application.series_sucursales import (
     actualizar_serie_sucursal,

@@ -35,7 +35,11 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "sucursal": int(row[0]),
         "nombre": str(row[1] or "").strip(),
         "prefijo": str(row[2] or "").strip(),
-        "seriesynerpos": str(row[3]).strip().upper() if row[3] is not None and str(row[3]).strip() else None,
+        "seriesynerpos": (
+            str(row[3]).strip().upper()
+            if row[3] is not None and str(row[3]).strip()
+            else None
+        ),
     }
 
 
@@ -171,7 +175,10 @@ class SerieSucursalRepositoryAdapter:
                 pass
             if _is_duplicate_key_error(exc):
                 raise SerieSucursalDuplicateError(
-                    f"Conflicto de clave duplicada en sucursal {sucursal} o serie {seriesynerpos_val}."
+                    (
+                        "Conflicto de clave duplicada en sucursal "
+                        f"{sucursal} o serie {seriesynerpos_val}."
+                    )
                 ) from exc
             logger.exception(
                 "SerieSucursal insert failed sucursal=%d on %s",
