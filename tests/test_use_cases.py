@@ -832,6 +832,103 @@ class DetailTests(unittest.TestCase):
                 number="B009",
             )
 
+    def test_duplicate_number_selects_the_requested_oid(self):
+        """B004-00000696/697: dos copias con oid distinto; manda el oid."""
+        older = {
+            "oid": "14257.10649",
+            "number": "B004-00000696",
+            "date": "2025-05-13",
+            "items": [{"idx": 1}],
+        }
+        newer = {
+            "oid": "14257.53162",
+            "number": "B004-00000696",
+            "date": "2026-09-17",
+            "items": [{"idx": 1}, {"idx": 2}],
+        }
+
+        class DuplicateGateway(FakeGateway):
+            def detail_by_serie(self, tipo, number):
+                self.detail_serie_calls.append((tipo, number))
+                return [newer, older]
+
+            def detail(self, tipo, start_iso, end_iso, number=None):
+                return [newer, older]
+
+        gw = DuplicateGateway({})
+        doc = get_detail(
+            gw,
+            tipo=TipoDocumento.BOLETA,
+            oid="14257.10649",
+            doc_date_iso="2025-05-13",
+            number="B004-00000696",
+        )
+        self.assertEqual(doc["document"]["oid"], "14257.10649")
+        self.assertEqual(doc["document"]["date"], "2025-05-13")
+
+    def test_oid_is_resolved_by_date_when_serie_filter_omits_it(self):
+        """Si el filtro `serie` no trae la copia elegida, se busca por fecha."""
+        selected = {
+            "oid": "14257.10649",
+            "number": "B004-00000696",
+            "date": "2025-05-13",
+            "items": [{"idx": 1}],
+        }
+        other = {
+            "oid": "14257.53162",
+            "number": "B004-00000696",
+            "date": "2026-09-17",
+            "items": [{"idx": 1}],
+        }
+
+        class PartialGateway(FakeGateway):
+            def detail_by_serie(self, tipo, number):
+                self.detail_serie_calls.append((tipo, number))
+                return [other]
+
+            def detail(self, tipo, start_iso, end_iso, number=None):
+                self.calls.append((tipo, start_iso, end_iso))
+                return [other, selected]
+
+        gw = PartialGateway({})
+        doc = get_detail(
+            gw,
+            tipo=TipoDocumento.BOLETA,
+            oid="14257.10649",
+            doc_date_iso="2025-05-13",
+            number="B004-00000696",
+        )
+        self.assertEqual(doc["document"]["oid"], "14257.10649")
+        self.assertIn(("BOLETA", "2025-05-13", "2025-05-13"), gw.calls)
+
+    def test_ambiguous_same_oid_prefers_the_complete_document(self):
+        broken = {
+            "oid": "B9",
+            "number": "B004-00000009",
+            "date": "2026-09-02",
+            "items": [{"idx": 1}],
+            "_graphql_errors": ["items/0/lote"],
+        }
+        complete = {
+            "oid": "B9",
+            "number": "B004-00000009",
+            "date": "2026-09-02",
+            "items": [{"idx": 1}, {"idx": 2}],
+        }
+
+        class AmbiguousGateway(FakeGateway):
+            def detail_by_serie(self, tipo, number):
+                return [broken, complete]
+
+        doc = get_detail(
+            AmbiguousGateway({}),
+            tipo=TipoDocumento.BOLETA,
+            oid="B9",
+            doc_date_iso="2026-09-02",
+            number="B004-00000009",
+        )
+        self.assertNotIn("_graphql_errors", doc["document"])
+
 
 class IntelisisIndexTests(unittest.TestCase):
     """SynerPos: el badge del ERP debe mostrar la fila mas avanzada."""

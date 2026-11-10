@@ -8,7 +8,6 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
-from hmac import compare_digest
 from typing import Any, Sequence
 
 from src.domain.entities import FechaRango, TipoDocumento
@@ -445,6 +444,69 @@ def _matches_number(doc: dict, target: str) -> bool:
     return str(doc.get("number", "")).strip().upper() == target
 
 
+def _normalize_oid(raw: object) -> str:
+    """El oid es un identificador opaco: se compara exacto, solo sin espacios."""
+    return str(raw or "").strip()
+
+
+def _normalize_number(raw: object) -> str:
+    """El número de comprobante no distingue mayúsculas/minúsculas."""
+    return str(raw or "").strip().upper()
+
+
+def _pick_detail_document(
+    docs: Sequence[dict],
+    *,
+    oid: str,
+    number: str | None,
+    doc_date_iso: str,
+) -> dict | None:
+    """Selecciona el documento por ``oid``; número/fecha solo desempatan.
+
+    SynerCom puede devolver varias copias del mismo número (borradores
+    duplicados con oid distinto). El ``oid`` es la identidad real: si aparece
+    uno, se devuelve ese aunque el filtro ``serie`` haya traído más de uno.
+    """
+    target_oid = _normalize_oid(oid)
+    matches = [
+        doc
+        for doc in docs or []
+        if isinstance(doc, dict)
+        and _normalize_oid(doc.get("oid")) == target_oid
+    ]
+    if not matches:
+        return None
+
+    target_number = _normalize_number(number)
+    if target_number:
+        same_number = [
+            doc
+            for doc in matches
+            if _normalize_number(doc.get("number")) == target_number
+        ]
+        if same_number:
+            matches = same_number
+
+    if len(matches) > 1:
+        same_date = [
+            doc
+            for doc in matches
+            if str(doc.get("date", ""))[:10] == str(doc_date_iso)[:10]
+        ]
+        if same_date:
+            matches = same_date
+        complete = [doc for doc in matches if not doc.get("_graphql_errors")]
+        if complete:
+            matches = complete
+        logger.warning(
+            "Detail identity is ambiguous oid=%s matches=%d; using the first "
+            "complete document",
+            target_oid,
+            len(matches),
+        )
+    return matches[0]
+
+
 def _credit_notes_for_dates(
     gateway: GraphqlGateway, dates: set[str], target: str
 ) -> list[dict]:
@@ -700,18 +762,53 @@ def get_detail(
 ) -> dict:
     FechaRango.from_iso(doc_date_iso, doc_date_iso, 1_000_000)
     cleaned_number = (number or "").strip()
-    if cleaned_number and tipo.value in ("FACTURA", "BOLETA"):
+    series_lookup = bool(cleaned_number) and tipo.value in ("FACTURA", "BOLETA")
+    if series_lookup:
         docs = gateway.detail_by_serie(tipo.value, cleaned_number)
     else:
         docs = gateway.detail(tipo.value, doc_date_iso, doc_date_iso)
-    target_number = cleaned_number.upper()
-    for doc in docs:
-        if not compare_digest(str(doc.get("oid", "")), oid):
-            continue
-        if target_number and str(doc.get("number", "")).strip().upper() != target_number:
-            continue
-        return {"document": {**doc, "tipo": tipo.value}}
-    raise NotFoundError("Document not found.")
+
+    doc = _pick_detail_document(
+        docs,
+        oid=oid,
+        number=cleaned_number or None,
+        doc_date_iso=doc_date_iso,
+    )
+
+    # El filtro `serie` es un prefijo del proveedor y puede no devolver una
+    # copia concreta (o cambiar de comportamiento entre versiones). El oid
+    # sigue siendo la identidad: se reintenta con el rango exacto del día.
+    if doc is None and series_lookup:
+        docs = gateway.detail(tipo.value, doc_date_iso, doc_date_iso)
+        doc = _pick_detail_document(
+            docs,
+            oid=oid,
+            number=cleaned_number or None,
+            doc_date_iso=doc_date_iso,
+        )
+        if doc is not None:
+            logger.warning(
+                "Detail oid=%s was not returned by the serie filter for "
+                "number=%s; resolved by date range instead",
+                _normalize_oid(oid),
+                cleaned_number,
+            )
+
+    if doc is None:
+        raise NotFoundError("Document not found.")
+
+    target_number = _normalize_number(cleaned_number)
+    found_number = _normalize_number(doc.get("number"))
+    if target_number and found_number != target_number:
+        # El número pedido no coincide, pero el oid sí existe. Se prioriza la
+        # identidad del proveedor y se deja rastro para diagnosticar la UI.
+        logger.warning(
+            "Detail oid=%s number mismatch requested=%s found=%s",
+            _normalize_oid(oid),
+            cleaned_number,
+            doc.get("number"),
+        )
+    return {"document": {**doc, "tipo": tipo.value}}
 
 
 # --- SUNAT validation (4th stage, on-demand only) ---

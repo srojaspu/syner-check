@@ -103,6 +103,39 @@ def test_new_document_is_inserted_with_all_lines() -> None:
     assert writer.inserted[0]["CrossTotal"].__str__().startswith("120.5")
 
 
+def test_duplicate_number_inserts_the_selected_oid() -> None:
+    """B004-00000696: dos copias con oid distinto; se inserta la elegida."""
+    older = {
+        **BOLETA,
+        "oid": "14257.10649",
+        "number": "B004-00000696",
+        "date": "2025-05-13",
+    }
+    newer = {
+        **BOLETA,
+        "oid": "14257.53162",
+        "number": "B004-00000696",
+        "date": "2026-09-17",
+    }
+    writer = FakeWriter()
+    result = send_movsynerpos(
+        gateway_with(older, newer),
+        writer,
+        documentos=[
+            {
+                "tipo": "BOLETA",
+                "oid": "14257.10649",
+                "number": "B004-00000696",
+                "date": "2025-05-13",
+            }
+        ],
+    )
+
+    assert result["insertados"] == 1
+    assert all(line["IDSynerPos"] == "14257.10649" for line in writer.inserted)
+    assert all(line["SerieNumero"] == "B004-00000696" for line in writer.inserted)
+
+
 def test_client_amounts_and_lines_are_ignored() -> None:
     """El backend re-consulta: nada de lo que mande el navegador se escribe."""
     writer = FakeWriter()

@@ -9,6 +9,20 @@ import requests
 logger = logging.getLogger("syner_check.graphql")
 
 
+class GraphQLQueryError(RuntimeError):
+    """GraphQL respondió con errores y sin datos utilizables.
+
+    Conserva la lista ``errors`` del proveedor para que la capa que conoce
+    los campos opcionales (``app.graphql``) pueda distinguir un error de
+    validación de esquema (campo inexistente en esta instancia) de un fallo
+    real de la consulta.
+    """
+
+    def __init__(self, message: str, errors: list[dict] | None = None):
+        super().__init__(message)
+        self.errors = list(errors or [])
+
+
 class GraphQLClient:
     def __init__(
         self,
@@ -149,8 +163,9 @@ class GraphQLClient:
                     v is not None for v in data.values()
                 )
                 if not has_data:
-                    raise RuntimeError(
-                        "GraphQL devolvió un error en la consulta."
+                    raise GraphQLQueryError(
+                        "GraphQL devolvió un error en la consulta.",
+                        result.get("errors"),
                     )
                 logger.warning(
                     "GraphQL partial errors returned alongside data (count=%d)",

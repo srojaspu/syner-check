@@ -209,6 +209,20 @@ class GraphqlGateway(Protocol):
     ) -> dict[str, list[dict]]:
         ...
 
+    def search_by_serie(self, tipo: str, number: str) -> list[dict]:
+        """Light docs filtered server-side by `serie` (<number>%).
+
+        Only FACTURA and BOLETA support it.
+        """
+        ...
+
+    def detail_by_serie(self, tipo: str, number: str) -> list[dict]:
+        """Full detail docs filtered server-side by `serie` (<number>%).
+
+        Only FACTURA and BOLETA support it.
+        """
+        ...
+
 
 class SerieSucursalRepository(Protocol):
     """Acceso y mutación a la tabla dbo.SerieSucursal."""
@@ -235,19 +249,4 @@ class SerieSucursalRepository(Protocol):
 
     def delete(self, sucursal: int) -> bool:
         """Elimina una sucursal por su ID. Devuelve True si se eliminó."""
-        ...
-
-
-    def search_by_serie(self, tipo: str, number: str) -> list[dict]:
-        """Light docs filtered server-side by `serie` (<number>%).
-
-        Only FACTURA and BOLETA support it.
-        """
-        ...
-
-    def detail_by_serie(self, tipo: str, number: str) -> list[dict]:
-        """Full detail docs filtered server-side by `serie` (<number>%).
-
-        Only FACTURA and BOLETA support it.
-        """
         ...

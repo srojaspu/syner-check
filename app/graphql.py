@@ -1,7 +1,9 @@
 from __future__ import annotations
+import logging
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from syner_check.graphql_client import GraphQLClient
+from syner_check.graphql_client import GraphQLClient, GraphQLQueryError
 from syner_check import auth as keycloak_auth
 from syner_check.config import (
     get_graphql_company_id,
@@ -47,11 +49,84 @@ payments{pointsAmount pointsPaymentTypeValue pointsPaymentTypeDesc pointsPayment
 }}"""
 }
 
+logger = logging.getLogger("syner_check.graphql")
+
+# SynerCom no expone el mismo esquema en todas las empresas/versiones. Estos
+# campos son opcionales para la app: si la instancia no los define, se
+# reintenta la consulta sin ellos en vez de tumbar el detalle completo.
+_OPTIONAL_FIELDS = frozenset({"creditNote"})
+_unsupported_options: set[str] = set()
+_unsupported_lock = threading.Lock()
+# Cubre el mensaje de SynerCom ("Field 'x' in type 'Y' is undefined") y el
+# estándar de GraphQL ("Cannot query field 'x' on type 'Y'").
+_FIELD_UNDEFINED_RE = re.compile(
+    r"(?:Field|Cannot query field)\s+['\"](?P<field>[^'\"]+)['\"]\s+"
+    r"(?:in|on)\s+type",
+    re.IGNORECASE,
+)
+
+
 def _reauth() -> str:
     try:
         return keycloak_auth.refresh()["access_token"]
     except RuntimeError:
         return keycloak_auth.get_token()["access_token"]
+
+
+def _strip_optional_fields(query: str, fields: set[str]) -> str:
+    """Quita identificadores completos sin tocar nombres que los contienen.
+
+    ``creditNote`` no debe eliminar ``creditNotes`` (raíz de NC): se exige
+    que no haya caracteres de identificador alrededor.
+    """
+    cleaned = query
+    for field in fields:
+        cleaned = re.sub(
+            rf"(?<![A-Za-z0-9_]){re.escape(field)}(?![A-Za-z0-9_])\s*",
+            "",
+            cleaned,
+        )
+    return cleaned
+
+
+def _undefined_optional_fields(errors: object) -> set[str]:
+    """Campos opcionales rechazados por validación de esquema."""
+    found: set[str] = set()
+    for error in errors or []:
+        if not isinstance(error, dict):
+            continue
+        match = _FIELD_UNDEFINED_RE.search(str(error.get("message", "")))
+        if match and match.group("field") in _OPTIONAL_FIELDS:
+            found.add(match.group("field"))
+    return found
+
+
+def _execute_query(query: str, variables: dict | None = None) -> dict:
+    """Ejecuta GraphQL degradando solo campos opcionales no soportados.
+
+    El error de validación de un campo opcional (p. ej. ``Payment.creditNote``
+    ausente en QA) se resuelve reintentando sin ese campo y recordando el
+    hallazgo durante el proceso. Cualquier otro error se propaga intacto.
+    """
+    attempts = len(_OPTIONAL_FIELDS) + 1
+    unsupported = set(_unsupported_options)
+    current = _strip_optional_fields(query, unsupported)
+    for attempt in range(attempts):
+        try:
+            return _client().execute(current, variables)
+        except GraphQLQueryError as exc:
+            missing = _undefined_optional_fields(exc.errors) - unsupported
+            if not missing or attempt == attempts - 1:
+                raise
+            with _unsupported_lock:
+                _unsupported_options.update(missing)
+            unsupported |= missing
+            logger.warning(
+                "GraphQL schema lacks optional field(s) %s; retrying without them",
+                ", ".join(sorted(missing)),
+            )
+            current = _strip_optional_fields(query, unsupported)
+    raise AssertionError("unreachable")
 
 
 _client_instance: GraphQLClient | None = None
@@ -140,7 +215,7 @@ def _filter_partial_errors(result: dict, key: str) -> list:
 
 
 def _execute(tipo, query, start_date, end_date):
-    result = _client().execute(
+    result = _execute_query(
         query, {"startDate": start_date, "endDate": end_date}
     )
     key = {
@@ -167,7 +242,7 @@ def search_by_serie(tipo, number):
     lets the caller filter for the exact number. Only FACTURA and BOLETA
     support `serie` (integration manual §5-6).
     """
-    data = _client().execute(
+    data = _execute_query(
         SERIE_QUERIES[tipo], {"serie": f"{number.strip()}%"}
     ).get("data", {})
     key = {"BOLETA": "receipts", "FACTURA": "invoices"}[tipo]
@@ -204,7 +279,7 @@ def detail_by_serie(tipo, number):
     (normally one). Callers filter for the exact oid/number. Only FACTURA and
     BOLETA support `serie`.
     """
-    result = _client().execute(
+    result = _execute_query(
         DETAIL_BY_SERIE_QUERIES[tipo], {"serie": f"{number.strip()}%"}
     )
     key = {"BOLETA": "receipts", "FACTURA": "invoices"}[tipo]
