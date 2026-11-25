@@ -50,7 +50,7 @@ export function TerminalesTable({
         <div className="flex flex-col gap-1">
           <CardTitle>Instancias / terminales</CardTitle>
           <CardDescription>
-            Cabecera fija. Haz clic en una fila para ver sus eventos.
+            Haz clic en una fila para ver sus eventos.
           </CardDescription>
         </div>
         <div className="relative w-full sm:w-72">
