@@ -15,6 +15,14 @@ class InvalidDocumentTypeError(DomainError):
     """Raised when a document type literal is unknown."""
 
 
+class InvalidPosLogError(DomainError):
+    """Raised when a POS log row lacks the minimum identity (oid/date)."""
+
+
+class InvalidPosFilterError(DomainError):
+    """Raised when a POS log filter (level, key, text, page) is invalid."""
+
+
 class UnauthorizedError(PermissionError):
     """Raised when an identity is not allowed."""
 

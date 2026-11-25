@@ -8,11 +8,13 @@ from .adapters import (
     SunatValidatorAdapter,
 )
 from .movsynerpos import MovSynerPosWriterAdapter
+from .pos_logs import PosLogSourceAdapter
 
 __all__ = [
     "GraphqlGatewayAdapter",
     "IntelisisReaderAdapter",
     "MovSynerPosWriterAdapter",
+    "PosLogSourceAdapter",
     "SqlReaderAdapter",
     "SunatCacheStoreAdapter",
     "SunatValidatorAdapter",

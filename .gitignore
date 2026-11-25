@@ -13,3 +13,5 @@ app/static/frontend/
 opencode.json
 docs/
 odd/
+.playwright-mcp/
+.codegraph/

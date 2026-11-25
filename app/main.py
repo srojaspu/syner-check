@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import threading
 import time
 from contextlib import asynccontextmanager, suppress
 from datetime import date
@@ -57,6 +58,7 @@ from src.interfaces.wiring import (
     sunat_worker_pair,
 )
 from .routers.intelisis_ufe import router as intelisis_ufe_router
+from .routers.pos_logs import router as pos_logs_router
 from .config import (
     ALLOWED_ORIGINS,
     BASE_DIR,
@@ -205,6 +207,17 @@ async def lifespan(_app: FastAPI):
     else:
         logger.info("Intelisis resend disabled (INTELISIS_RESEND_ENABLED=false)")
 
+    # La primera consulta a SynerCOM tras un arranque puede tardar >10 s por
+    # DNS/TLS. Se calienta en segundo plano con una query trivial (sin logs)
+    # para que el primer usuario no pague ese costo.
+    from src.interfaces.pos_logs_wiring import precalentar as precalentar_pos_logs
+
+    threading.Thread(
+        target=precalentar_pos_logs,
+        name="pos-logs-warmup",
+        daemon=True,
+    ).start()
+
     stop = asyncio.Event()
     task: asyncio.Task | None = None
     try:
@@ -257,6 +270,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 app.include_router(intelisis_ufe_router)
+app.include_router(pos_logs_router)
 
 
 @app.middleware("http")

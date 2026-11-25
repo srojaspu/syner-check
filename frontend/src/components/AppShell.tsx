@@ -56,7 +56,7 @@ export function Account({ user }: { user: SessionUser }) {
       </span>
       <Button type="button" variant="ghost" size="sm" onClick={logout} title="Salir">
         <HugeiconsIcon icon={Logout01Icon} size={15} strokeWidth={2} aria-hidden />
-        <span>Salir</span>
+        <span className="hidden sm:inline">Salir</span>
       </Button>
     </div>
   );
@@ -78,7 +78,7 @@ export function TopBar({
             <div className="flex size-9 items-center justify-center rounded-lg bg-primary font-semibold text-primary-foreground">
               S
             </div>
-            <div className="flex flex-col leading-tight">
+            <div className="hidden flex-col leading-tight sm:flex">
               <b className="text-sm">Syner Check</b>
               <span className="hidden text-xs text-muted-foreground sm:block">
                 Consulta de comprobantes

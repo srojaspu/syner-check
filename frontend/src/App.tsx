@@ -15,6 +15,7 @@ import { ThemeProvider } from "./theme/ThemeContext";
 // y, si el backend de Intelisis falla, la pantalla 1 ni se entera (D4).
 const IntelisisUfePage = lazy(() => import("./pages/IntelisisUfePage"));
 const SerieSucursalPage = lazy(() => import("./pages/SerieSucursalPage"));
+const TerminalesPage = lazy(() => import("./pages/TerminalesPage"));
 
 function PageSkeleton() {
   return (
@@ -45,9 +46,13 @@ function Workspace() {
   const [visitedSeries, setVisitedSeries] = useState(
     ruta === "series-sucursal",
   );
+  const [visitedTerminales, setVisitedTerminales] = useState(
+    ruta === "terminales",
+  );
   useEffect(() => {
     if (ruta === "intelisis-ufe") setVisitedUfe(true);
     if (ruta === "series-sucursal") setVisitedSeries(true);
+    if (ruta === "terminales") setVisitedTerminales(true);
   }, [ruta]);
 
   if (!ready) {
@@ -69,6 +74,7 @@ function Workspace() {
   const enComprobantes = ruta === "comprobantes";
   const enUfe = ruta === "intelisis-ufe";
   const enSeries = ruta === "series-sucursal";
+  const enTerminales = ruta === "terminales";
 
   return (
     <OperationsProvider onAuthFailure={onAuthFailure}>
@@ -100,6 +106,14 @@ function Workspace() {
           <div hidden={!enSeries} aria-hidden={!enSeries || undefined}>
             <Suspense fallback={<PageSkeleton />}>
               <SerieSucursalPage onAuthFailure={onAuthFailure} />
+            </Suspense>
+          </div>
+        ) : null}
+
+        {visitedTerminales ? (
+          <div hidden={!enTerminales} aria-hidden={!enTerminales || undefined}>
+            <Suspense fallback={<PageSkeleton />}>
+              <TerminalesPage onAuthFailure={onAuthFailure} />
             </Suspense>
           </div>
         ) : null}

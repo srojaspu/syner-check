@@ -220,3 +220,23 @@
     text-shadow: none !important;
   }
 }
+
+/* Tabla de terminales/eventos: cabecera fija dentro de un scroll con fade. */
+.pos-table-scroll {
+  --pos-table-bg: var(--card);
+}
+
+.pos-table-scroll--popover {
+  --pos-table-bg: var(--popover);
+}
+
+.pos-table-scroll [data-slot="table-container"] {
+  overflow: visible;
+}
+
+.pos-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--pos-table-bg);
+}

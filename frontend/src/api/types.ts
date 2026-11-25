@@ -652,3 +652,150 @@ export interface SerieSucursalUpdateRequest {
   seriesynerpos?: string | null;
 }
 
+/* --- Terminales / logs POS (API /api/pos) ------------------------------- */
+
+export type PosNivel = "INFO" | "WARN" | "ERROR" | "UNKNOWN";
+export type PosSalud = "OK" | "DEGRADED" | "CRITICAL" | "NO_DATA";
+
+export interface PosVentana {
+  desde: string;
+  hasta: string;
+  tz: string;
+  dias: number;
+}
+
+export interface PosFuente {
+  cache: "hit" | "miss";
+  latenciaMs?: number;
+  upstreamMs?: number;
+  parcial: boolean;
+}
+
+export interface PosKpis {
+  eventos: number;
+  info: number;
+  warn: number;
+  error: number;
+  desconocidos: number;
+  terminales: number;
+  terminalesSinSerial: number | null;
+  instancias: number;
+  cobrosTarjeta: number;
+  emisionesOk: number;
+  emisionesInconclusas: number;
+  montoEnRiesgo: string | null;
+  cajasConFalla: number;
+  ultimoEvento: string | null;
+}
+
+export interface PosSerie {
+  bucket: string;
+  info: number;
+  warn: number;
+  error: number;
+  unknown: number;
+}
+
+export interface PosTerminal {
+  instancia: string;
+  serial: string | null;
+  salud: PosSalud;
+  eventos: number;
+  errores: number;
+  advertencias: number;
+  ultimaActividad: string;
+  version: string | null;
+  ultimaClave: string;
+  ultimaFalla: string | null;
+  ultimaFallaFecha: string | null;
+}
+
+export interface PosFalla {
+  clave: string;
+  instancia: string;
+  nivel: PosNivel;
+  conteo: number;
+  primera: string;
+  ultima: string;
+  oidMuestra: string;
+}
+
+export interface PosClave {
+  clave: string;
+  nivel: PosNivel;
+  conteo: number;
+  ultima: string;
+}
+
+export interface PosVersion {
+  version: string;
+  conteo: number;
+}
+
+export interface PosEvento {
+  oid: string;
+  fecha: string;
+  nivel: PosNivel;
+  clave: string;
+  instancia: string;
+  mensaje: string;
+  pedido: string | null;
+  importe: string | null;
+  moneda: string | null;
+  serial: string | null;
+  version: string | null;
+}
+
+export interface PosEventoValor {
+  version: string | null;
+  serial: string | null;
+  pedido: string | null;
+  importe: string | null;
+  moneda: string | null;
+  elapsedMs: number | null;
+  tipoDocumento: string | null;
+  documento: string | null;
+  pasarela: string | null;
+  panEnmascarado: string | null;
+}
+
+export interface PosEventoDetalle extends PosEvento {
+  valor: PosEventoValor | null;
+}
+
+export interface PosEventosPage {
+  items: PosEvento[];
+  total: number;
+  page: number;
+  limit: number;
+  hayMas: boolean;
+}
+
+export interface PosAnalysis {
+  ventana: PosVentana;
+  generadoEn: string;
+  fuente: PosFuente;
+  kpis: PosKpis;
+  series: PosSerie[];
+  terminales: PosTerminal[];
+  fallas: PosFalla[];
+  claves: PosClave[];
+  versiones: PosVersion[];
+  eventos: PosEventosPage;
+  aviso: string;
+}
+
+export interface PosEventoResponse {
+  evento: PosEventoDetalle;
+  fuente: PosFuente;
+}
+
+export interface PosPedidoResponse {
+  numero: string;
+  ventana: PosVentana;
+  eventos: PosEvento[];
+  total: number;
+  fuente: PosFuente;
+  aviso: string;
+}
+

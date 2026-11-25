@@ -75,7 +75,7 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-async function api<T>(
+export async function api<T>(
   url: string,
   options: RequestInit = {},
   timeoutMs = TIMEOUT_MS,

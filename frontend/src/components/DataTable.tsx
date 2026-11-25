@@ -89,6 +89,8 @@ interface RootProps<T> {
   children: ReactNode;
   initialPageSize?: number;
   onRowClick?: (row: T) => void;
+  /** Texto accesible de la fila clicable (por defecto, "Ver detalle..."). */
+  rowActionLabel?: (row: T) => string;
   /** Reports filtered (all pages) originals upward; stable unless filters/data change. */
   onFilteredRowsChange?: (rows: T[]) => void;
   /**
@@ -211,6 +213,7 @@ function Root<T>({
   children,
   initialPageSize = 25,
   onRowClick,
+  rowActionLabel,
   onFilteredRowsChange,
   showFilters = true,
   renderFilter,
@@ -256,7 +259,7 @@ function Root<T>({
     getFacetedUniqueValues: getFacetedUniqueValues(),
     autoResetPageIndex: resetPageOnDataChange,
     // Rows are data-only; clicks open the detail drawer.
-    meta: { onRowClick },
+    meta: { onRowClick, rowActionLabel },
   });
 
   useResetPageOnDataChange(data, setPagination, resetPageOnDataChange);
@@ -474,7 +477,7 @@ function headerLabel<T>(header: Header<T, unknown>): string {
   return typeof value === "string" ? value : header.column.id;
 }
 
-function rowActionLabel<T>(row: T): string {
+function defaultRowActionLabel<T>(row: T): string {
   const number = (row as { number?: string }).number;
   return number
     ? `Ver detalle del comprobante ${number}`
@@ -500,6 +503,9 @@ function View<T>({
   const rows = table.getRowModel().rows;
   const onRowClick = (table.options.meta as { onRowClick?: (row: T) => void })
     ?.onRowClick;
+  const actionLabel = (
+    table.options.meta as { rowActionLabel?: (row: T) => string }
+  )?.rowActionLabel;
   return (
     <UiTable aria-label={label}>
       <TableHeader>
@@ -583,7 +589,12 @@ function View<T>({
                   : undefined
               }
               tabIndex={onRowClick ? 0 : undefined}
-              aria-label={onRowClick ? rowActionLabel(row.original) : undefined}
+              aria-label={
+                onRowClick
+                  ? (actionLabel?.(row.original) ??
+                    defaultRowActionLabel(row.original))
+                  : undefined
+              }
               className={
                 onRowClick
                   ? "cursor-pointer outline-none focus-visible:bg-muted/60"

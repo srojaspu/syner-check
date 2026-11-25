@@ -1,8 +1,10 @@
-"""Application ports. Stdlib only; infrastructure implements these."""
+"""Application ports. Depends only on the domain and the stdlib."""
 
 from __future__ import annotations
 
 from typing import Protocol, Sequence
+
+from src.domain.pos_logs import PosLogEvent, TimeWindow
 
 
 class SqlDocumentReader(Protocol):
@@ -249,4 +251,21 @@ class SerieSucursalRepository(Protocol):
 
     def delete(self, sucursal: int) -> bool:
         """Elimina una sucursal por su ID. Devuelve True si se eliminó."""
+        ...
+
+
+class PosLogSource(Protocol):
+    """Fuente de solo lectura de eventos de terminales POS (GraphQL SynerCOM).
+
+    Devuelve eventos ya normalizados, ordenados por fecha y sin ``oid``
+    repetidos. El adaptador decide si incluye ``value`` según la ventana.
+    """
+
+    def fetch(
+        self,
+        window: TimeWindow,
+        *,
+        key: str | None = None,
+        message: str | None = None,
+    ) -> list[PosLogEvent]:
         ...

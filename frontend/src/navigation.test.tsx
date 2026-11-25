@@ -10,6 +10,8 @@ describe("ruteo por hash", () => {
   it("mapea las secciones conocidas", () => {
     expect(rutaDesdeHash("#/comprobantes")).toBe("comprobantes");
     expect(rutaDesdeHash("#/intelisis-ufe")).toBe("intelisis-ufe");
+    expect(rutaDesdeHash("#/series-sucursal")).toBe("series-sucursal");
+    expect(rutaDesdeHash("#/terminales")).toBe("terminales");
   });
 
   it("cae en comprobantes ante un hash desconocido", () => {
@@ -37,5 +39,8 @@ describe("PrimaryNav", () => {
     expect(
       screen.getByRole("link", { name: "Intelisis UFE" }).getAttribute("href"),
     ).toBe("#/intelisis-ufe");
+    expect(
+      screen.getByRole("link", { name: "Terminales" }).getAttribute("href"),
+    ).toBe("#/terminales");
   });
 });
