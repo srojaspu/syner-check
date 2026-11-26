@@ -100,12 +100,12 @@ def test_analisis_shape_y_cache(sesion, monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
 
-    assert set(body) >= {"ventana", "fuente", "kpis", "series", "terminales", "fallas", "eventos"}
+    assert set(body) >= {"ventana", "fuente", "kpis", "series", "eventos"}
+    assert "terminales" not in body
+    assert "fallas" not in body
     assert body["fuente"]["cache"] == "miss"
     assert body["ventana"]["tz"] == "America/Lima"
-    assert body["kpis"]["eventos"] == 1
-    assert body["kpis"]["montoEnRiesgo"] == "0.00"
-    assert body["terminales"][0]["ultimaFalla"] == "SALE_GATEWAY_REGISTER_FAILED"
+    assert body["kpis"]["ultimoEvento"] == EVENT_AT
     assert body["eventos"]["total"] == 1
     item = body["eventos"]["items"][0]
     assert item["pedido"] == "03902"
@@ -158,8 +158,6 @@ def test_ventana_larga_marca_kpis_parciales(sesion, monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["fuente"]["parcial"] is True
-    assert body["kpis"]["montoEnRiesgo"] is None
-    assert body["kpis"]["terminalesSinSerial"] is None
 
 
 def test_filtro_serial_filtra_eventos(sesion, monkeypatch) -> None:
@@ -271,26 +269,4 @@ def test_evento_fecha_invalida_400(sesion, monkeypatch) -> None:
     assert response.status_code == 400
 
 
-def test_pedido_200_y_filtro(sesion, monkeypatch) -> None:
-    source = FakeSource([_event()])
-    _patch(monkeypatch, source)
 
-    response = sesion.get(
-        "/api/pos/pedido/03902",
-        params={"desde": DESDE, "hasta": HASTA},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["numero"] == "03902"
-    assert body["total"] == 1
-    assert source.calls[0][2] == "%Order 03902,%"
-
-
-def test_pedido_invalido_400(sesion, monkeypatch) -> None:
-    _patch(monkeypatch, FakeSource())
-
-    response = sesion.get(
-        "/api/pos/pedido/A123",
-        params={"desde": DESDE, "hasta": HASTA},
-    )
-    assert response.status_code == 400

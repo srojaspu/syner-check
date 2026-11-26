@@ -59,9 +59,9 @@ export function PosTimeline({
   const alto = (value: number) => `${(value / max) * 100}%`;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex h-full flex-col gap-3">
       <div
-        className="flex h-40 items-end gap-1"
+        className="flex min-h-40 flex-1 items-end gap-1"
         role="img"
         aria-label={`Eventos por ${granularity === "hour" ? "hora" : "día"}: ${total} en total`}
       >

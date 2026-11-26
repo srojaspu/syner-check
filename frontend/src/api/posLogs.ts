@@ -1,9 +1,5 @@
 import { api } from "./client";
-import type {
-  PosAnalysis,
-  PosEventoResponse,
-  PosPedidoResponse,
-} from "./types";
+import type { PosAnalysis, PosEventoResponse } from "./types";
 
 export type PosOrden = "reciente" | "antiguo";
 
@@ -49,14 +45,4 @@ export function getPosEvent(
   });
 }
 
-/** Búsqueda puntual por número de pedido. */
-export function searchPosOrder(
-  numero: string,
-  params: { desde: string; hasta: string },
-  signal?: AbortSignal,
-): Promise<PosPedidoResponse> {
-  return api<PosPedidoResponse>(
-    `/api/pos/pedido/${encodeURIComponent(numero)}?${query({ ...params })}`,
-    { signal },
-  );
-}
+

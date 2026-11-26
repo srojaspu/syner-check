@@ -2,7 +2,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Loading02Icon,
   RefreshIcon,
-  Search01Icon,
   Store01Icon,
 } from "@hugeicons/core-free-icons";
 import type { PosAnalysis } from "../../api/types";
@@ -12,12 +11,10 @@ import { fmtHace, numeroFmt } from "./format";
 export function TerminalesHeader({
   data,
   loading,
-  onVerEventos,
   onActualizar,
 }: {
   data: PosAnalysis | null;
   loading: boolean;
-  onVerEventos: () => void;
   onActualizar: () => void;
 }) {
   return (
@@ -59,20 +56,6 @@ export function TerminalesHeader({
             <div>{loading ? "Consultando SynerCOM…" : "Sin datos"}</div>
           )}
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={onVerEventos}
-        >
-          <HugeiconsIcon
-            icon={Search01Icon}
-            size={15}
-            strokeWidth={2}
-            aria-hidden
-          />
-          Ver eventos
-        </Button>
         <Button
           type="button"
           variant="outline"

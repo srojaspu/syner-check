@@ -10,7 +10,6 @@ from src.application.pos_logs import (
     MAX_PAGE_SIZE,
     analizar,
     build_snapshot,
-    buscar_pedido,
     filter_events,
     obtener_evento,
     parse_niveles,
@@ -27,7 +26,6 @@ from src.domain.pos_logs import (
     EventLevel,
     PosLogEvent,
     PosValue,
-    TerminalHealth,
     TimeWindow,
 )
 
@@ -140,53 +138,12 @@ class TestSnapshot(unittest.TestCase):
         snapshot, hit = build_snapshot(self.source, self.cache, window())
 
         self.assertFalse(hit)
-        kpis = snapshot.kpis
-        self.assertEqual(kpis.eventos, 6)
-        self.assertEqual(kpis.info, 2)
-        self.assertEqual(kpis.warn, 1)
-        self.assertEqual(kpis.error, 3)
-        self.assertEqual(kpis.terminales, 4)
-        self.assertEqual(kpis.terminales_sin_serial, 1)
-        self.assertEqual(kpis.instancias, 4)
-        self.assertEqual(kpis.cobros_tarjeta, 1)
-        self.assertEqual(kpis.emisiones_ok, 1)
-        self.assertEqual(kpis.emisiones_inconclusas, 1)
-        self.assertEqual(kpis.monto_en_riesgo, Decimal("53.47"))
-        self.assertEqual(kpis.cajas_con_falla, 2)
-        self.assertEqual(kpis.ultimo_evento, T - timedelta(minutes=30))
+        self.assertEqual(snapshot.kpis.ultimo_evento, T - timedelta(minutes=30))
 
         self.assertEqual(snapshot.versiones[0], ("3.2.3", 2))
         self.assertEqual(snapshot.claves[0].clave, "BALANCE_OPEN_FAILED")
         self.assertEqual(snapshot.claves[0].conteo, 2)
         self.assertIs(snapshot.claves[0].nivel, EventLevel.ERROR)
-
-        self.assertEqual(snapshot.fallas[0].key, "BALANCE_OPEN_FAILED")
-        self.assertEqual(snapshot.fallas[0].count, 1)
-        self.assertIs(snapshot.fallas[0].level, EventLevel.ERROR)
-        self.assertEqual(len(snapshot.fallas), 4)
-        self.assertEqual(
-            {group.key for group in snapshot.fallas},
-            {
-                "BALANCE_OPEN_FAILED",
-                "SALE_EMISSION_INCONCLUSIVE",
-                "SALE_GATEWAY_REGISTER_FAILED",
-            },
-        )
-
-    def test_terminals_sorted_by_severity(self) -> None:
-        snapshot, _ = build_snapshot(self.source, self.cache, window())
-        self.assertIs(snapshot.terminales[0].salud, TerminalHealth.CRITICAL)
-        self.assertEqual(
-            {item.instancia for item in snapshot.terminales[:3]},
-            {"Caminos", "La Rambla", "Salaverry"},
-        )
-        la_rambla = next(
-            item for item in snapshot.terminales if item.instancia == "La Rambla"
-        )
-        self.assertEqual(la_rambla.ultima_clave, "BALANCE_OPEN_FAILED")
-        self.assertEqual(la_rambla.ultima_falla, "BALANCE_OPEN_FAILED")
-        self.assertEqual(la_rambla.ultima_falla_at, T - timedelta(minutes=50))
-        self.assertEqual(la_rambla.version, "3.2.2")
 
     def test_series_hourly_and_zero_filled(self) -> None:
         snapshot, _ = build_snapshot(self.source, self.cache, window(hours=24))
@@ -204,8 +161,6 @@ class TestSnapshot(unittest.TestCase):
         )
         self.assertEqual(len(snapshot.series), 31)
         self.assertTrue(snapshot.window.includes_value is False)
-        self.assertIsNone(snapshot.kpis.monto_en_riesgo)
-        self.assertIsNone(snapshot.kpis.terminales_sin_serial)
 
     def test_second_call_hits_cache(self) -> None:
         first, hit1 = build_snapshot(self.source, self.cache, window())
@@ -217,8 +172,6 @@ class TestSnapshot(unittest.TestCase):
 
     def test_empty_window_is_valid(self) -> None:
         snapshot, _ = build_snapshot(FakeSource([]), self.cache, window())
-        self.assertEqual(snapshot.kpis.eventos, 0)
-        self.assertEqual(snapshot.terminales, ())
         self.assertIsNone(snapshot.kpis.ultimo_evento)
 
 
@@ -352,29 +305,6 @@ class TestEventDetail(unittest.TestCase):
             obtener_evento(source, cache, window(), "", T)
         with self.assertRaises(InvalidPosFilterError):
             obtener_evento(source, cache, window(), "1", datetime(2026, 11, 24))
-
-
-class TestOrderSearch(unittest.TestCase):
-    def test_builds_order_filter_and_caches(self) -> None:
-        source = FakeSource(snapshot_data())
-        cache = TTLCache(max_entries=4, max_bytes=1_000_000)
-
-        first, hit1 = buscar_pedido(source, cache, window(), "03902")
-        second, hit2 = buscar_pedido(source, cache, window(), "03902")
-
-        self.assertEqual(first, second)
-        self.assertFalse(hit1)
-        self.assertTrue(hit2)
-        self.assertEqual(len(source.calls), 1)
-        self.assertEqual(source.calls[0]["message"], "%Order 03902,%")
-
-    def test_rejects_non_numeric_order(self) -> None:
-        source = FakeSource([])
-        cache = TTLCache(max_entries=4, max_bytes=1_000_000)
-        for number in ("", "A123", "1234567890123"):
-            with self.assertRaises(InvalidPosFilterError):
-                buscar_pedido(source, cache, window(), number)
-        self.assertEqual(source.calls, [])
 
 
 if __name__ == "__main__":

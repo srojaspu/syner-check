@@ -226,10 +226,6 @@
   --pos-table-bg: var(--card);
 }
 
-.pos-table-scroll--popover {
-  --pos-table-bg: var(--popover);
-}
-
 .pos-table-scroll [data-slot="table-container"] {
   overflow: visible;
 }

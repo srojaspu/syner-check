@@ -655,7 +655,6 @@ export interface SerieSucursalUpdateRequest {
 /* --- Terminales / logs POS (API /api/pos) ------------------------------- */
 
 export type PosNivel = "INFO" | "WARN" | "ERROR" | "UNKNOWN";
-export type PosSalud = "OK" | "DEGRADED" | "CRITICAL" | "NO_DATA";
 
 export interface PosVentana {
   desde: string;
@@ -672,19 +671,6 @@ export interface PosFuente {
 }
 
 export interface PosKpis {
-  eventos: number;
-  info: number;
-  warn: number;
-  error: number;
-  desconocidos: number;
-  terminales: number;
-  terminalesSinSerial: number | null;
-  instancias: number;
-  cobrosTarjeta: number;
-  emisionesOk: number;
-  emisionesInconclusas: number;
-  montoEnRiesgo: string | null;
-  cajasConFalla: number;
   ultimoEvento: string | null;
 }
 
@@ -694,30 +680,6 @@ export interface PosSerie {
   warn: number;
   error: number;
   unknown: number;
-}
-
-export interface PosTerminal {
-  instancia: string;
-  serial: string | null;
-  salud: PosSalud;
-  eventos: number;
-  errores: number;
-  advertencias: number;
-  ultimaActividad: string;
-  version: string | null;
-  ultimaClave: string;
-  ultimaFalla: string | null;
-  ultimaFallaFecha: string | null;
-}
-
-export interface PosFalla {
-  clave: string;
-  instancia: string;
-  nivel: PosNivel;
-  conteo: number;
-  primera: string;
-  ultima: string;
-  oidMuestra: string;
 }
 
 export interface PosClave {
@@ -795,8 +757,6 @@ export interface PosAnalysis {
   fuente: PosFuente;
   kpis: PosKpis;
   series: PosSerie[];
-  terminales: PosTerminal[];
-  fallas: PosFalla[];
   claves: PosClave[];
   versiones: PosVersion[];
   eventos: PosEventosPage;
@@ -809,12 +769,5 @@ export interface PosEventoResponse {
   fuente: PosFuente;
 }
 
-export interface PosPedidoResponse {
-  numero: string;
-  ventana: PosVentana;
-  eventos: PosEvento[];
-  total: number;
-  fuente: PosFuente;
-  aviso: string;
-}
+
 

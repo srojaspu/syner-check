@@ -14,11 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.auth import current_user
 from app.executor import run_blocking
 from src.domain.pos_logs import LIMA_TZ
-from src.interfaces.pos_logs_wiring import (
-    analisis_pos,
-    evento_pos,
-    pedido_pos,
-)
+from src.interfaces.pos_logs_wiring import analisis_pos, evento_pos
 
 logger = logging.getLogger("syner_check")
 
@@ -84,17 +80,3 @@ async def evento(
     )
 
 
-@router.get("/pedido/{numero}")
-async def pedido(
-    request: Request,
-    numero: str,
-    desde: str = Query(..., min_length=10, max_length=40),
-    hasta: str = Query(..., min_length=10, max_length=40),
-):
-    _protected(request)
-    return await run_blocking(
-        pedido_pos,
-        numero=numero,
-        desde=desde,
-        hasta=hasta,
-    )

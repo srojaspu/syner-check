@@ -14,18 +14,15 @@ from src.domain.pos_logs import (
     EventLevel,
     PosLogEvent,
     PosValue,
-    TerminalHealth,
     TerminalRef,
     TimeWindow,
     bucket_floor,
     bucket_granularity,
-    group_faults,
     parse_datetime,
     parse_event,
     parse_level,
     parse_value,
     safe_text,
-    terminal_health,
 )
 
 
@@ -353,76 +350,6 @@ class TestTimeWindow(unittest.TestCase):
         window = TimeWindow(start=start, end=start + timedelta(hours=1))
         self.assertTrue(window.contains(start))
         self.assertFalse(window.contains(start + timedelta(hours=1)))
-
-
-class TestTerminalHealth(unittest.TestCase):
-    NOW = datetime(2026, 11, 24, 14, 0, tzinfo=LIMA_TZ)
-
-    def test_no_data(self) -> None:
-        self.assertIs(terminal_health([]), TerminalHealth.NO_DATA)
-
-    def test_only_info_is_ok(self) -> None:
-        events = [_event(oid="1", at=self.NOW, level=EventLevel.INFO)]
-        self.assertIs(terminal_health(events), TerminalHealth.OK)
-
-    def test_warn_is_degraded(self) -> None:
-        events = [
-            _event(oid="1", at=self.NOW, level=EventLevel.INFO),
-            _event(oid="2", at=self.NOW, level=EventLevel.WARN),
-        ]
-        self.assertIs(terminal_health(events), TerminalHealth.DEGRADED)
-
-    def test_error_wins_over_warn(self) -> None:
-        events = [
-            _event(oid="1", at=self.NOW, level=EventLevel.WARN),
-            _event(oid="2", at=self.NOW, level=EventLevel.ERROR),
-        ]
-        self.assertIs(terminal_health(events), TerminalHealth.CRITICAL)
-
-
-class TestGroupFaults(unittest.TestCase):
-    NOW = datetime(2026, 11, 24, 14, 0, tzinfo=LIMA_TZ)
-
-    def test_groups_by_key_and_instance_and_ignores_info(self) -> None:
-        events = [
-            _event(oid="info", at=self.NOW, level=EventLevel.INFO),
-            _event(oid="w1", at=self.NOW - timedelta(minutes=5), level=EventLevel.WARN),
-            _event(oid="w2", at=self.NOW - timedelta(minutes=1), level=EventLevel.WARN),
-            _event(oid="e1", at=self.NOW, level=EventLevel.ERROR, key="BALANCE_OPEN_FAILED"),
-        ]
-        groups = group_faults(events)
-        self.assertEqual(len(groups), 2)
-        repeated = groups[0]
-        self.assertEqual(repeated.key, "SALE_EMISSION_SUCCEEDED")
-        self.assertEqual(repeated.count, 2)
-        self.assertIs(repeated.level, EventLevel.WARN)
-        self.assertEqual(repeated.sample_oid, "w2")
-        self.assertEqual(repeated.first_at, self.NOW - timedelta(minutes=5))
-        self.assertEqual(repeated.last_at, self.NOW - timedelta(minutes=1))
-
-        balance = groups[1]
-        self.assertEqual(balance.key, "BALANCE_OPEN_FAILED")
-        self.assertEqual(balance.count, 1)
-        self.assertIs(balance.level, EventLevel.ERROR)
-        self.assertEqual(balance.sample_oid, "e1")
-
-    def test_mixed_levels_report_error(self) -> None:
-        events = [
-            _event(oid="w", at=self.NOW, level=EventLevel.WARN, key="K"),
-            _event(oid="e", at=self.NOW, level=EventLevel.ERROR, key="K"),
-        ]
-        [group] = group_faults(events)
-        self.assertIs(group.level, EventLevel.ERROR)
-
-    def test_sorted_by_count_desc(self) -> None:
-        events = [
-            _event(oid="a1", at=self.NOW, level=EventLevel.ERROR, key="A"),
-            _event(oid="b1", at=self.NOW, level=EventLevel.ERROR, key="B"),
-            _event(oid="b2", at=self.NOW, level=EventLevel.ERROR, key="B"),
-            _event(oid="b3", at=self.NOW, level=EventLevel.ERROR, key="B"),
-        ]
-        groups = group_faults(events)
-        self.assertEqual([group.key for group in groups], ["B", "A"])
 
 
 class TestBuckets(unittest.TestCase):

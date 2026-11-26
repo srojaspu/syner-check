@@ -10,12 +10,9 @@ import { cn } from "cn";
 export function FadeScroll({
   children,
   className,
-  fadeFrom = "card",
 }: {
   children: ReactNode;
   className?: string;
-  /** Superficie sobre la que se dibuja el degradado inferior. */
-  fadeFrom?: "card" | "popover";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hayMas, setHayMas] = useState(false);
@@ -50,7 +47,6 @@ export function FadeScroll({
         ref={ref}
         className={cn(
           "pos-table-scroll overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          fadeFrom === "popover" && "pos-table-scroll--popover",
           className,
         )}
       >
@@ -58,9 +54,7 @@ export function FadeScroll({
       </div>
       {hayMas ? (
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t to-transparent ${
-            fadeFrom === "popover" ? "from-popover" : "from-card"
-          }`}
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card to-transparent"
           aria-hidden
         />
       ) : null}

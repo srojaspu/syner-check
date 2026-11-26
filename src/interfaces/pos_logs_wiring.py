@@ -17,7 +17,6 @@ from fastapi import HTTPException
 
 from src.application.pos_logs import (
     analizar,
-    buscar_pedido,
     obtener_evento,
     parse_niveles,
     validate_clave,
@@ -208,23 +207,6 @@ def _analysis_dict(result, latencia_ms: int) -> dict[str, Any]:
             "parcial": not snapshot.window.includes_value,
         },
         "kpis": {
-            "eventos": kpis.eventos,
-            "info": kpis.info,
-            "warn": kpis.warn,
-            "error": kpis.error,
-            "desconocidos": kpis.desconocidos,
-            "terminales": kpis.terminales,
-            "terminalesSinSerial": kpis.terminales_sin_serial,
-            "instancias": kpis.instancias,
-            "cobrosTarjeta": kpis.cobros_tarjeta,
-            "emisionesOk": kpis.emisiones_ok,
-            "emisionesInconclusas": kpis.emisiones_inconclusas,
-            "montoEnRiesgo": (
-                format(kpis.monto_en_riesgo, ".2f")
-                if kpis.monto_en_riesgo is not None
-                else None
-            ),
-            "cajasConFalla": kpis.cajas_con_falla,
             "ultimoEvento": (
                 kpis.ultimo_evento.isoformat() if kpis.ultimo_evento else None
             ),
@@ -238,38 +220,6 @@ def _analysis_dict(result, latencia_ms: int) -> dict[str, Any]:
                 "unknown": item.unknown,
             }
             for item in snapshot.series
-        ],
-        "terminales": [
-            {
-                "instancia": item.instancia,
-                "serial": item.serial,
-                "salud": item.salud.value,
-                "eventos": item.eventos,
-                "errores": item.errores,
-                "advertencias": item.advertencias,
-                "ultimaActividad": item.ultima_actividad.isoformat(),
-                "version": item.version,
-                "ultimaClave": item.ultima_clave,
-                "ultimaFalla": item.ultima_falla,
-                "ultimaFallaFecha": (
-                    item.ultima_falla_at.isoformat()
-                    if item.ultima_falla_at is not None
-                    else None
-                ),
-            }
-            for item in snapshot.terminales
-        ],
-        "fallas": [
-            {
-                "clave": item.key,
-                "instancia": item.instance,
-                "nivel": item.level.value,
-                "conteo": item.count,
-                "primera": item.first_at.isoformat(),
-                "ultima": item.last_at.isoformat(),
-                "oidMuestra": item.sample_oid,
-            }
-            for item in snapshot.fallas
         ],
         "claves": [
             {
@@ -370,32 +320,3 @@ def evento_pos(
         },
     }
 
-
-def pedido_pos(
-    *,
-    numero: str,
-    desde: str,
-    hasta: str,
-) -> dict[str, Any]:
-    source, cache = _deps()
-    try:
-        window = TimeWindow.parse(desde, hasta)
-        started = time.perf_counter()
-        events, hit = buscar_pedido(source, cache, window, numero, ttl=_ttl())
-        latencia_ms = int((time.perf_counter() - started) * 1000)
-    except (InvalidRangeError, InvalidPosFilterError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except UpstreamError as exc:
-        _raise_upstream(exc)
-    return {
-        "numero": numero,
-        "ventana": _ventana(window),
-        "eventos": [_event_summary(event) for event in events],
-        "total": len(events),
-        "fuente": {
-            "cache": "hit" if hit else "miss",
-            "latenciaMs": latencia_ms,
-            "parcial": not window.includes_value,
-        },
-        "aviso": AVISO,
-    }

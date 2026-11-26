@@ -280,6 +280,30 @@ describe("posAnalytics — clasificación de las 5 tarjetas y filtrado interacti
       { key: "Tienda A", label: "Tienda A", count: 3 },
       { key: "Tienda C", label: "Tienda C", count: 1 },
     ]);
+
+    expect(model.instancias).toEqual([
+      {
+        instancia: "Tienda A",
+        eventos: 7,
+        fallas: 3,
+        errores: 2,
+        advertencias: 1,
+      },
+      {
+        instancia: "Tienda B",
+        eventos: 2,
+        fallas: 0,
+        errores: 0,
+        advertencias: 0,
+      },
+      {
+        instancia: "Tienda C",
+        eventos: 1,
+        fallas: 1,
+        errores: 1,
+        advertencias: 0,
+      },
+    ]);
   });
 
   it("filtra los eventos por cada una de las 5 tarjetas y restaura al limpiar", () => {

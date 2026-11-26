@@ -1,19 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  Cancel01Icon,
-} from "@hugeicons/core-free-icons";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import type { PosClave, PosEvento } from "../../api/types";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EventosFiltros } from "./EventosFiltros";
 import { EventosTable } from "./EventosTable";
-import { FadeScroll } from "./FadeScroll";
-import { numeroFmt } from "./format";
-import { TODAS, TODOS, type EventosScope } from "./eventos";
+import { TODAS, type EventosScope } from "./eventos";
 import { KPI_CARD_TITLES } from "./TerminalesIndicadores";
 import {
   filterPosLogs,
@@ -22,11 +16,9 @@ import {
   type PosKpiCardId,
 } from "./posAnalytics";
 
-const PAGE_SIZE = 50;
-
 /**
- * Espacio de trabajo reutilizable de eventos (usado tanto en la pestaña
- * principal de Terminales como en el modal ampliado `EventosDialog`).
+ * Espacio de trabajo de eventos de la pestaña Terminales: filtros, desgloses
+ * contextuales de las tarjetas KPI y tabla con ordenamiento y paginación.
  */
 export function PosEventosWorkspace({
   model,
@@ -38,18 +30,13 @@ export function PosEventosWorkspace({
   onScopeChange,
   clave,
   onClaveChange,
-  nivel,
-  onNivelChange,
   q,
   onQChange,
   subGrupo,
   onSubGrupoChange,
   loading,
-  fadeFrom = "card",
   maxHeightClass = "max-h-[30rem]",
   onDetalle,
-  onVerPedido,
-  onActualizar,
 }: {
   model: PosAnalyticsModel;
   claves: PosClave[];
@@ -60,26 +47,16 @@ export function PosEventosWorkspace({
   onScopeChange: (scope: EventosScope) => void;
   clave: string;
   onClaveChange: (value: string) => void;
-  nivel: string;
-  onNivelChange: (value: string) => void;
   q: string;
   onQChange: (value: string) => void;
   subGrupo: string | null;
   onSubGrupoChange: (value: string | null) => void;
   loading: boolean;
-  fadeFrom?: "card" | "popover";
   maxHeightClass?: string;
   onDetalle: (evento: PosEvento) => void;
-  onVerPedido?: (numero: string) => void;
-  onActualizar?: () => void;
 }) {
-  const [page, setPage] = useState(1);
   const qDebounced = useDebouncedValue(q, 150);
   const effectiveQ = q === "" ? "" : qDebounced;
-
-  useEffect(() => {
-    setPage(1);
-  }, [activeCard, subGrupo, scope.instancia, scope.serial, clave, nivel, effectiveQ]);
 
   const filtered = useMemo(
     () =>
@@ -88,18 +65,18 @@ export function PosEventosWorkspace({
         subGrupo,
         instancia: scope.instancia,
         serial: scope.serial,
-        nivel: nivel === TODOS ? null : nivel,
         clave: clave === TODAS ? null : clave,
         q: effectiveQ,
       }),
-    [model, activeCard, subGrupo, scope.instancia, scope.serial, nivel, clave, effectiveQ],
-  );
-
-  const paginas = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, paginas);
-  const slice = useMemo(
-    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [filtered, safePage],
+    [
+      model,
+      activeCard,
+      subGrupo,
+      scope.instancia,
+      scope.serial,
+      clave,
+      effectiveQ,
+    ],
   );
 
   const hasActiveFilter = Boolean(
@@ -107,7 +84,6 @@ export function PosEventosWorkspace({
       subGrupo ||
       scope.instancia ||
       scope.serial ||
-      nivel !== TODOS ||
       clave !== TODAS ||
       q.trim(),
   );
@@ -116,10 +92,8 @@ export function PosEventosWorkspace({
     onSelectCard(null);
     onSubGrupoChange(null);
     onScopeChange({ instancia: null, serial: null });
-    onNivelChange(TODOS);
     onClaveChange(TODAS);
     onQChange("");
-    setPage(1);
   }
 
   // Sub-agrupaciones contextuales para Card 3 (pedidos), Card 4 (cajas) y Card 5 (instancias)
@@ -212,70 +186,21 @@ export function PosEventosWorkspace({
         scope={scope}
         instancias={instancias}
         claves={claves}
-        nivel={nivel}
         clave={clave}
         q={q}
-        loading={loading}
         hasActiveFilter={hasActiveFilter}
         onScopeChange={onScopeChange}
-        onNivel={onNivelChange}
         onClave={onClaveChange}
         onQ={onQChange}
         onLimpiar={limpiarTodo}
-        onActualizar={onActualizar}
       />
 
-      <FadeScroll
-        className={`${maxHeightClass} rounded-md border`}
-        fadeFrom={fadeFrom}
-      >
-        <EventosTable
-          items={slice}
-          loading={loading && model.items.length === 0}
-          onDetalle={onDetalle}
-          onVerPedido={onVerPedido}
-        />
-      </FadeScroll>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          {numeroFmt.format(filtered.length)} de{" "}
-          {numeroFmt.format(model.items.length)} eventos · página {safePage} de{" "}
-          {paginas}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={loading || safePage <= 1}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-          >
-            <HugeiconsIcon
-              icon={ArrowLeftIcon}
-              size={14}
-              strokeWidth={2}
-              aria-hidden
-            />
-            Anterior
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={loading || safePage >= paginas}
-            onClick={() => setPage((current) => Math.min(paginas, current + 1))}
-          >
-            Siguiente
-            <HugeiconsIcon
-              icon={ArrowRightIcon}
-              size={14}
-              strokeWidth={2}
-              aria-hidden
-            />
-          </Button>
-        </div>
-      </div>
+      <EventosTable
+        items={filtered}
+        loading={loading && model.items.length === 0}
+        onDetalle={onDetalle}
+        maxHeightClass={maxHeightClass}
+      />
     </div>
   );
 }

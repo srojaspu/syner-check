@@ -1,9 +1,8 @@
-import type { PosClientLog, PosNivel } from "../../api/types";
+import type { PosClientLog } from "../../api/types";
 import { numeroFmt } from "./format";
 
 export interface EventCatalogEntry {
   clave: string;
-  nivel: PosNivel;
   corto: string;
   mensaje: string;
 }
@@ -15,69 +14,59 @@ export interface EventCatalogEntry {
 export const EVENT_DICTIONARY: Record<string, EventCatalogEntry> = {
   SALE_GATEWAY_CHARGE_APPROVED: {
     clave: "SALE_GATEWAY_CHARGE_APPROVED",
-    nivel: "INFO",
     corto: "Cobro con tarjeta aprobado",
     mensaje: "La pasarela aprobó el cobro con tarjeta exitosamente.",
   },
   SALE_GATEWAY_REGISTER_FAILED: {
     clave: "SALE_GATEWAY_REGISTER_FAILED",
-    nivel: "WARN",
     corto: "Cobro no registrado en POS",
     mensaje:
       "Cobro aprobado en tarjeta, pero falló el registro en el punto de venta. La venta continuó.",
   },
   SALE_GATEWAY_REGISTER_SKIPPED: {
     clave: "SALE_GATEWAY_REGISTER_SKIPPED",
-    nivel: "WARN",
     corto: "Pasarela sin serial de terminal",
     mensaje:
       "Cobro aprobado, pero la pasarela no envió el serial del terminal. La venta continuó.",
   },
   SALE_EMISSION_SUCCEEDED: {
     clave: "SALE_EMISSION_SUCCEEDED",
-    nivel: "INFO",
     corto: "Comprobante emitido",
     mensaje:
       "Comprobante emitido correctamente (Boleta/Factura/Ticket/Nota de Crédito).",
   },
   SALE_EMISSION_NOT_SENT: {
     clave: "SALE_EMISSION_NOT_SENT",
-    nivel: "WARN",
     corto: "Emisión no enviada (sin conexión)",
     mensaje:
       "No se pudo enviar la solicitud de comprobante (sin conexión). Se puede reintentar.",
   },
   SALE_EMISSION_INCONCLUSIVE: {
     clave: "SALE_EMISSION_INCONCLUSIVE",
-    nivel: "ERROR",
     corto: "Emisión inconclusa (verificar)",
     mensaje:
       "Falló la emisión del comprobante y el estado final es incierto. Requiere verificación manual.",
   },
   BALANCE_FETCH_FAILED: {
     clave: "BALANCE_FETCH_FAILED",
-    nivel: "ERROR",
     corto: "Error al consultar caja (bloqueado)",
     mensaje:
       "Error al consultar la caja abierta. Se han bloqueado las ventas en el terminal.",
   },
   BALANCE_OPEN_FAILED: {
     clave: "BALANCE_OPEN_FAILED",
-    nivel: "ERROR",
     corto: "Error al abrir caja (bloqueado)",
     mensaje:
       "Error al abrir la caja registradora. Se han bloqueado las ventas en el terminal.",
   },
   BALANCE_CLOSE_FAILED: {
     clave: "BALANCE_CLOSE_FAILED",
-    nivel: "ERROR",
     corto: "Error al cerrar caja (bloqueado)",
     mensaje:
       "Error al cerrar la caja registradora. Se han bloqueado las ventas en el terminal.",
   },
   BALANCE_REPORT_FAILED: {
     clave: "BALANCE_REPORT_FAILED",
-    nivel: "WARN",
     corto: "Fallo en reporte de caja",
     mensaje:
       "Falló la carga del reporte/resumen de caja. Las ventas continúan activas.",
@@ -260,15 +249,11 @@ function translateEndpoint(endpoint: string | undefined): string | null {
 
 export interface PosEventDescription {
   mensajeLegible: string;
-  corto: string;
-  conocida: boolean;
   subtexto: string | null;
   tooltip: {
     mensajeOriginal: string;
     motivo: string | null;
     elapsedMs: string | null;
-    comprobante: string | null;
-    pasarela: string | null;
     caja: string | null;
     endpoint: string | null;
     excepcion: string | null;
@@ -286,7 +271,6 @@ export function describePosEvent(
   const parsed = preParsed ?? parsePosValueSafe(log.value);
   const entry = EVENT_DICTIONARY[log.clave];
   const mensajeLegible = entry ? entry.mensaje : log.mensaje;
-  const corto = entry ? entry.corto : log.clave;
 
   const { motivoLegible, motivoTecnico } = translateFailureMotive(
     log.mensaje,
@@ -337,15 +321,11 @@ export function describePosEvent(
 
   return {
     mensajeLegible,
-    corto,
-    conocida: Boolean(entry),
     subtexto: subParts.length > 0 ? subParts.join(" · ") : null,
     tooltip: {
       mensajeOriginal: log.mensaje,
       motivo: motivoLegible,
       elapsedMs: elapsedLabel,
-      comprobante: comprobante ?? null,
-      pasarela,
       caja,
       endpoint,
       excepcion: excepcion ?? null,

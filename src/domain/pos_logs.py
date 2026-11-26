@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from src.domain.errors import InvalidPosLogError, InvalidRangeError
 
@@ -63,15 +63,6 @@ class EventLevel(str, Enum):
     WARN = "WARN"
     ERROR = "ERROR"
     UNKNOWN = "UNKNOWN"
-
-
-class TerminalHealth(str, Enum):
-    """Salud categórica y explicable (sin scores inventados)."""
-
-    OK = "OK"
-    DEGRADED = "DEGRADED"
-    CRITICAL = "CRITICAL"
-    NO_DATA = "NO_DATA"
 
 
 _LEVEL_ALIASES = {
@@ -454,65 +445,6 @@ class TimeWindow:
 
     def contains(self, moment: datetime) -> bool:
         return self.start <= moment < self.end
-
-
-@dataclass(frozen=True, slots=True)
-class FaultGroup:
-    """Fallas agrupadas por clave e instancia: la vista de diagnóstico."""
-
-    key: str
-    instance: str
-    level: EventLevel
-    count: int
-    first_at: datetime
-    last_at: datetime
-    sample_oid: str
-
-
-def group_faults(events: Sequence[PosLogEvent]) -> list[FaultGroup]:
-    """Agrupa WARN/ERROR por ``(key, instance)``, de más a menos frecuente.
-
-    La muestra es el evento más reciente del grupo (el que el operador quiere
-    abrir para ver el `value` actual). Los INFO se ignoran.
-    """
-    buckets: dict[tuple[str, str], list[PosLogEvent]] = {}
-    for event in events:
-        if not event.is_failure:
-            continue
-        buckets.setdefault((event.key, event.instance), []).append(event)
-
-    groups: list[FaultGroup] = []
-    for (key, instance), items in buckets.items():
-        ordered = sorted(items, key=lambda item: item.at)
-        newest = ordered[-1]
-        groups.append(
-            FaultGroup(
-                key=key,
-                instance=instance,
-                level=(
-                    EventLevel.ERROR
-                    if any(item.level is EventLevel.ERROR for item in items)
-                    else EventLevel.WARN
-                ),
-                count=len(items),
-                first_at=ordered[0].at,
-                last_at=newest.at,
-                sample_oid=newest.oid,
-            )
-        )
-    groups.sort(key=lambda group: (-group.count, group.key, group.instance))
-    return groups
-
-
-def terminal_health(events: Sequence[PosLogEvent]) -> TerminalHealth:
-    """Salud del terminal en la ventana: CRITICAL > DEGRADED > OK > NO_DATA."""
-    if not events:
-        return TerminalHealth.NO_DATA
-    if any(event.level is EventLevel.ERROR for event in events):
-        return TerminalHealth.CRITICAL
-    if any(event.level is EventLevel.WARN for event in events):
-        return TerminalHealth.DEGRADED
-    return TerminalHealth.OK
 
 
 def bucket_floor(moment: datetime, granularity: str) -> datetime:

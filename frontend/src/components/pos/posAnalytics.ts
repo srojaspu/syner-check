@@ -1,9 +1,4 @@
-import type {
-  PosAnalysis,
-  PosClientLog,
-  PosEvento,
-  PosNivel,
-} from "../../api/types";
+import type { PosAnalysis, PosClientLog, PosEvento } from "../../api/types";
 import {
   describePosEvent,
   extractOrderNumber,
@@ -74,10 +69,19 @@ export interface PosOperationalCards {
   };
 }
 
+export interface PosInstanceStats {
+  instancia: string;
+  eventos: number;
+  fallas: number;
+  errores: number;
+  advertencias: number;
+}
+
 export interface PosAnalyticsModel {
   items: EnrichedPosLog[];
   cards: PosOperationalCards;
   cardOids: Record<PosKpiCardId, Set<string>>;
+  instancias: PosInstanceStats[];
 }
 
 const BALANCE_MSG_RE = /\bbalance\s+([A-Za-z0-9_-]{1,24})\b/i;
@@ -378,9 +382,31 @@ export function analyzePosLogs(rawLogs: PosClientLog[]): PosAnalyticsModel {
     .map(([key, count]) => ({ key, label: key, count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
+  const instanciasMap = new Map<string, PosInstanceStats>();
+  for (const item of enriched) {
+    const current = instanciasMap.get(item.instancia) ?? {
+      instancia: item.instancia,
+      eventos: 0,
+      fallas: 0,
+      errores: 0,
+      advertencias: 0,
+    };
+    current.eventos += 1;
+    if (item.nivel === "ERROR") current.errores += 1;
+    if (item.nivel === "WARN") current.advertencias += 1;
+    if (item.nivel === "ERROR" || item.nivel === "WARN") current.fallas += 1;
+    instanciasMap.set(item.instancia, current);
+  }
+
+  const instancias = Array.from(instanciasMap.values()).sort(
+    (a, b) =>
+      b.eventos - a.eventos || a.instancia.localeCompare(b.instancia),
+  );
+
   return {
     items: enriched,
     cardOids,
+    instancias,
     cards: {
       ventasExitosas: {
         count: okCount,
@@ -425,7 +451,6 @@ export interface PosLogFilterCriteria {
   subGrupo?: string | null;
   instancia?: string | null;
   serial?: string | null;
-  nivel?: PosNivel | string | null;
   clave?: string | null;
   q?: string | null;
 }
@@ -459,13 +484,6 @@ export function filterPosLogs(
       return false;
     }
     if (criteria.serial && item.serial !== criteria.serial) {
-      return false;
-    }
-    if (
-      criteria.nivel &&
-      criteria.nivel !== "__todos__" &&
-      item.nivel !== criteria.nivel
-    ) {
       return false;
     }
     if (

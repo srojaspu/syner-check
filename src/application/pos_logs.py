@@ -10,12 +10,10 @@ inyectados, así que se prueba con fakes.
 
 from __future__ import annotations
 
-import re
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
 from typing import Any, Iterable, Sequence
 
 from src.application.ports import PosLogSource
@@ -26,31 +24,19 @@ from src.domain.pos_logs import (
     MAX_INSTANCE_CHARS,
     MAX_KEY_CHARS,
     EventLevel,
-    FaultGroup,
     PosLogEvent,
-    TerminalHealth,
     TimeWindow,
     bucket_floor,
     bucket_granularity,
-    group_faults,
     parse_level,
     safe_text,
-    terminal_health,
 )
 
 CACHE_TTL_SECONDS = 60
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 MAX_TEXT_FILTER = 64
-MAX_ORDER_CHARS = 12
 
-_ORDER_RE = re.compile(r"^\d{1,12}$")
-_HEALTH_RANK = {
-    TerminalHealth.CRITICAL: 0,
-    TerminalHealth.DEGRADED: 1,
-    TerminalHealth.OK: 2,
-    TerminalHealth.NO_DATA: 3,
-}
 _LEVEL_RANK = {
     EventLevel.UNKNOWN: 0,
     EventLevel.INFO: 1,
@@ -61,19 +47,6 @@ _LEVEL_RANK = {
 
 @dataclass(frozen=True, slots=True)
 class PosKpis:
-    eventos: int
-    info: int
-    warn: int
-    error: int
-    desconocidos: int
-    terminales: int
-    terminales_sin_serial: int | None
-    instancias: int
-    cobros_tarjeta: int
-    emisiones_ok: int
-    emisiones_inconclusas: int
-    monto_en_riesgo: Decimal | None
-    cajas_con_falla: int
     ultimo_evento: datetime | None
 
 
@@ -84,21 +57,6 @@ class SeriesBucket:
     warn: int
     error: int
     unknown: int
-
-
-@dataclass(frozen=True, slots=True)
-class TerminalSummary:
-    instancia: str
-    serial: str | None
-    salud: TerminalHealth
-    eventos: int
-    errores: int
-    advertencias: int
-    ultima_actividad: datetime
-    version: str | None
-    ultima_clave: str
-    ultima_falla: str | None
-    ultima_falla_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,8 +85,6 @@ class PosSnapshot:
     events: tuple[PosLogEvent, ...]
     kpis: PosKpis
     series: tuple[SeriesBucket, ...]
-    terminales: tuple[TerminalSummary, ...]
-    fallas: tuple[FaultGroup, ...]
     claves: tuple[KeySummary, ...]
     versiones: tuple[tuple[str, int], ...]
     generado_en: datetime
@@ -271,51 +227,6 @@ def _series(
     )
 
 
-def _terminales(
-    events: Sequence[PosLogEvent],
-) -> tuple[TerminalSummary, ...]:
-    grouped: dict[tuple[str, str | None], list[PosLogEvent]] = defaultdict(list)
-    for event in events:
-        grouped[(event.instance, event.terminal.serial)].append(event)
-
-    summaries: list[TerminalSummary] = []
-    for (instance, serial), items in grouped.items():
-        ordered = sorted(items, key=lambda event: (event.at, event.oid))
-        last = ordered[-1]
-        version = next(
-            (
-                event.value.version
-                for event in reversed(ordered)
-                if event.value is not None and event.value.version
-            ),
-            None,
-        )
-        failures = [item for item in ordered if item.is_failure]
-        last_failure = failures[-1] if failures else None
-        summaries.append(
-            TerminalSummary(
-                instancia=instance,
-                serial=serial,
-                salud=terminal_health(items),
-                eventos=len(items),
-                errores=sum(1 for item in items if item.level is EventLevel.ERROR),
-                advertencias=sum(
-                    1 for item in items if item.level is EventLevel.WARN
-                ),
-                ultima_actividad=last.at,
-                version=version,
-                ultima_clave=last.key,
-                ultima_falla=last_failure.key if last_failure else None,
-                ultima_falla_at=last_failure.at if last_failure else None,
-            )
-        )
-
-    # Primero actividad reciente, luego severidad y cantidad de errores.
-    summaries.sort(key=lambda item: item.ultima_actividad, reverse=True)
-    summaries.sort(key=lambda item: (_HEALTH_RANK[item.salud], -item.errores))
-    return tuple(summaries)
-
-
 def _assemble(
     window: TimeWindow,
     events: Sequence[PosLogEvent],
@@ -324,7 +235,6 @@ def _assemble(
     now: datetime | None = None,
 ) -> PosSnapshot:
     ordered = tuple(sorted(events, key=lambda event: (event.at, event.oid)))
-    levels = Counter(event.level for event in ordered)
     versions = Counter(
         event.value.version
         for event in ordered
@@ -332,20 +242,7 @@ def _assemble(
     )
 
     key_stats: dict[str, list[Any]] = {}
-    monto_riesgo = Decimal("0")
-    cajas_con_falla: set[str] = set()
-    terminals = set()
     for event in ordered:
-        terminals.add((event.instance, event.terminal.serial))
-        if (
-            event.key == "SALE_EMISSION_INCONCLUSIVE"
-            and event.value is not None
-            and event.value.amount is not None
-        ):
-            monto_riesgo += event.value.amount
-        if event.level is EventLevel.ERROR and event.key.startswith("BALANCE_"):
-            cajas_con_falla.add(event.instance)
-
         stat = key_stats.get(event.key)
         if stat is None:
             key_stats[event.key] = [1, event.level, event.at]
@@ -354,28 +251,7 @@ def _assemble(
             stat[1] = _max_level(stat[1], event.level)
             stat[2] = max(stat[2], event.at)
 
-    kpis = PosKpis(
-        eventos=len(ordered),
-        info=levels[EventLevel.INFO],
-        warn=levels[EventLevel.WARN],
-        error=levels[EventLevel.ERROR],
-        desconocidos=levels[EventLevel.UNKNOWN],
-        terminales=len(terminals),
-        terminales_sin_serial=(
-            sum(1 for _, serial in terminals if serial is None)
-            if window.includes_value
-            else None
-        ),
-        instancias=len({instance for instance, _ in terminals}),
-        cobros_tarjeta=key_stats.get("SALE_GATEWAY_CHARGE_APPROVED", [0])[0],
-        emisiones_ok=key_stats.get("SALE_EMISSION_SUCCEEDED", [0])[0],
-        emisiones_inconclusas=key_stats.get(
-            "SALE_EMISSION_INCONCLUSIVE", [0]
-        )[0],
-        monto_en_riesgo=monto_riesgo if window.includes_value else None,
-        cajas_con_falla=len(cajas_con_falla),
-        ultimo_evento=ordered[-1].at if ordered else None,
-    )
+    kpis = PosKpis(ultimo_evento=ordered[-1].at if ordered else None)
 
     claves = tuple(
         KeySummary(
@@ -394,8 +270,6 @@ def _assemble(
         events=ordered,
         kpis=kpis,
         series=_series(ordered, window),
-        terminales=_terminales(ordered),
-        fallas=tuple(group_faults(ordered)),
         claves=claves,
         versiones=tuple(versions.most_common()),
         generado_en=(now or datetime.now(LIMA_TZ)).astimezone(LIMA_TZ),
@@ -554,36 +428,3 @@ def obtener_evento(
         )
     return found, False
 
-
-def buscar_pedido(
-    source: PosLogSource,
-    cache: TTLCache,
-    window: TimeWindow,
-    numero: str,
-    *,
-    ttl: float = CACHE_TTL_SECONDS,
-    now: datetime | None = None,
-) -> tuple[tuple[PosLogEvent, ...], bool]:
-    """Eventos de un pedido (búsqueda puntual al endpoint, cacheada 60 s).
-
-    Devuelve ``(eventos, cache_hit)``.
-    """
-    number = safe_text(numero, MAX_ORDER_CHARS + 1)
-    if not _ORDER_RE.match(number):
-        raise InvalidPosFilterError(
-            "El número de pedido debe tener solo dígitos (máximo 12)."
-        )
-
-    key = f"pos:pedido:{window.start.isoformat()}:{window.end.isoformat()}:{number}"
-    cache_hit = cache.get(key) is not None
-
-    def load() -> tuple[PosLogEvent, ...]:
-        return tuple(source.fetch(window, message=f"%Order {number},%"))
-
-    events = cache.get_or_load(
-        key,
-        load,
-        ttl,
-        sizer=lambda values: 400 + len(values) * 800,
-    )
-    return events, cache_hit  # type: ignore[return-value]

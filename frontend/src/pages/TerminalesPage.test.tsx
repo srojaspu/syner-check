@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthError } from "../api/client";
 import type {
@@ -14,18 +15,15 @@ import type {
   PosClientLog,
   PosEvento,
   PosEventoDetalle,
-  PosPedidoResponse,
 } from "../api/types";
 import TerminalesPage from "./TerminalesPage";
 
 const mockAnalysis = vi.hoisted(() => vi.fn());
 const mockEvent = vi.hoisted(() => vi.fn());
-const mockOrder = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/posLogs", () => ({
   getPosAnalysis: mockAnalysis,
   getPosEvent: mockEvent,
-  searchPosOrder: mockOrder,
 }));
 
 vi.mock("sonner", () => ({
@@ -167,19 +165,6 @@ const ANALYSIS: PosAnalysis = {
     parcial: false,
   },
   kpis: {
-    eventos: 5,
-    info: 2,
-    warn: 1,
-    error: 2,
-    desconocidos: 0,
-    terminales: 2,
-    terminalesSinSerial: 0,
-    instancias: 2,
-    cobrosTarjeta: 1,
-    emisionesOk: 2,
-    emisionesInconclusas: 1,
-    montoEnRiesgo: "53.47",
-    cajasConFalla: 1,
     ultimoEvento: "2026-11-24T14:00:00-05:00",
   },
   series: [
@@ -189,45 +174,6 @@ const ANALYSIS: PosAnalysis = {
       warn: 1,
       error: 2,
       unknown: 0,
-    },
-  ],
-  terminales: [
-    {
-      instancia: "La Rambla",
-      serial: "S1",
-      salud: "CRITICAL",
-      eventos: 2,
-      errores: 2,
-      advertencias: 0,
-      ultimaActividad: "2026-11-24T14:00:00-05:00",
-      version: "3.2.3",
-      ultimaClave: "BALANCE_OPEN_FAILED",
-      ultimaFalla: "BALANCE_OPEN_FAILED",
-      ultimaFallaFecha: "2026-11-24T14:00:00-05:00",
-    },
-    {
-      instancia: "Salaverry",
-      serial: "S2",
-      salud: "DEGRADED",
-      eventos: 3,
-      errores: 0,
-      advertencias: 1,
-      ultimaActividad: "2026-11-24T13:57:00-05:00",
-      version: "3.2.2",
-      ultimaClave: "SALE_EMISSION_SUCCEEDED",
-      ultimaFalla: "SALE_GATEWAY_REGISTER_FAILED",
-      ultimaFallaFecha: "2026-11-24T13:56:00-05:00",
-    },
-  ],
-  fallas: [
-    {
-      clave: "BALANCE_OPEN_FAILED",
-      instancia: "La Rambla",
-      nivel: "ERROR",
-      conteo: 1,
-      primera: "2026-11-24T14:00:00-05:00",
-      ultima: "2026-11-24T14:00:00-05:00",
-      oidMuestra: "80957.1",
     },
   ],
   claves: [
@@ -256,20 +202,6 @@ const ANALYSIS: PosAnalysis = {
   aviso: "La ausencia de un evento no prueba que la operación no ocurrió.",
 };
 
-const PEDIDO: PosPedidoResponse = {
-  numero: "03902",
-  ventana: {
-    desde: "2026-11-17T14:00:00-05:00",
-    hasta: "2026-11-24T14:00:00-05:00",
-    tz: "America/Lima",
-    dias: 7,
-  },
-  eventos: [EVENTO],
-  total: 1,
-  fuente: { cache: "miss", latenciaMs: 600, upstreamMs: 590, parcial: false },
-  aviso: "aviso",
-};
-
 describe("TerminalesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -278,7 +210,6 @@ describe("TerminalesPage", () => {
       evento: DETALLE,
       fuente: { cache: "miss", latenciaMs: 300, parcial: false },
     });
-    mockOrder.mockResolvedValue(PEDIDO);
   });
 
   afterEach(cleanup);
@@ -296,7 +227,9 @@ describe("TerminalesPage", () => {
       expect(screen.getByText("Ventas Fallidas o Inconclusas")).toBeTruthy();
       expect(screen.getByText("Incidentes de Caja")).toBeTruthy();
       expect(screen.getByText("Errores de Instancia / NUC")).toBeTruthy();
-      expect(screen.getByText(/S\/ 53\.47 en riesgo/)).toBeTruthy();
+      expect(
+        screen.getAllByText(/S\/ 53\.47 en riesgo/).length,
+      ).toBeGreaterThan(0);
       expect(
         screen.getAllByText(
           "Error al abrir la caja registradora. Se han bloqueado las ventas en el terminal.",
@@ -309,11 +242,41 @@ describe("TerminalesPage", () => {
     expect(firstCallArgs.hasta).toMatch(/-05:00$/);
   });
 
+  it("permite autocompletar y seleccionar una instancia", async () => {
+    const user = userEvent.setup();
+    render(<TerminalesPage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Mostrando 1–5 de 5/)).toBeTruthy(),
+    );
+
+    const combo = screen.getByRole("combobox", {
+      name: "Filtrar eventos por instancia",
+    });
+    await user.click(
+      screen.getByRole("button", {
+        name: "Abrir Filtrar eventos por instancia",
+      }),
+    );
+    expect(await screen.findByRole("listbox")).toBeTruthy();
+
+    await user.type(combo, "Sala");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Salaverry" })).toBeTruthy();
+      expect(screen.queryByRole("option", { name: "La Rambla" })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("option", { name: "Salaverry" }));
+    await waitFor(() =>
+      expect(screen.getByText(/Mostrando 1–3 de 3/)).toBeTruthy(),
+    );
+  });
+
   it("filtra la tabla interactivamente al hacer clic en una tarjeta y restaura al segundo clic o Limpiar filtro", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() =>
-      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+      expect(screen.getByText(/Mostrando 1–5 de 5/)).toBeTruthy(),
     );
 
     // Clic en Card 1: Ventas 100% Exitosas -> solo pedido 01001 (1 evento)
@@ -323,7 +286,7 @@ describe("TerminalesPage", () => {
     fireEvent.click(cardExitosas);
 
     await waitFor(() => {
-      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText(/Mostrando 1–1 de 1/)).toBeTruthy();
       expect(screen.getByText("01001")).toBeTruthy();
       expect(screen.queryByText("03902")).toBeNull();
     });
@@ -335,7 +298,7 @@ describe("TerminalesPage", () => {
     fireEvent.click(cardFallidas);
 
     await waitFor(() => {
-      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText(/Mostrando 1–1 de 1/)).toBeTruthy();
       expect(screen.getByText("03902")).toBeTruthy();
       expect(screen.queryByText("01001")).toBeNull();
     });
@@ -347,38 +310,44 @@ describe("TerminalesPage", () => {
     fireEvent.click(cardCaja);
 
     await waitFor(() => {
-      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText(/Mostrando 1–1 de 1/)).toBeTruthy();
       expect(screen.getAllByText(/Caja 00960/).length).toBeGreaterThan(0);
     });
 
     // Segundo clic en la tarjeta activa restaura todos los registros
     fireEvent.click(cardCaja);
     await waitFor(() => {
-      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText(/Mostrando 1–5 de 5/)).toBeTruthy();
     });
   });
 
-  it("abre el modal de eventos sincronizado y el detalle en un sheet", async () => {
+  it("abre el detalle del evento en un sheet desde la tabla inline", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() =>
-      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+      expect(screen.getByText(/Mostrando 1–5 de 5/)).toBeTruthy(),
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "Ver eventos" })[0]);
 
-    const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByRole("heading", { name: "Eventos" }),
-    ).toBeTruthy();
-    expect(
-      within(dialog).getByRole("combobox", {
+      screen.getByRole("combobox", {
         name: "Filtrar eventos por instancia",
       }),
     ).toBeTruthy();
 
-    const row = within(dialog)
-      .getByText("BALANCE_OPEN_FAILED")
-      .closest("tr");
+    const table = screen.getByRole("table", { name: "Eventos" });
+    expect(within(table).getByText("24/11, 14:00:00")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Ordenar por Fecha" }),
+    ).toBeTruthy();
+
+    // Orden ascendente por Fecha: el primer registro pasa a ser el más antiguo.
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por Fecha" }));
+    await waitFor(() => {
+      const rows = within(table).getAllByRole("row").slice(1);
+      expect(within(rows[0]).getByText("24/11, 13:55:00")).toBeTruthy();
+    });
+
+    const row = within(table).getByText("BALANCE_OPEN_FAILED").closest("tr");
     expect(row).toBeTruthy();
     fireEvent.click(row as HTMLElement);
 
@@ -397,7 +366,6 @@ describe("TerminalesPage", () => {
   it("muestra el estado vacío cuando no hay eventos", async () => {
     mockAnalysis.mockResolvedValue({
       ...ANALYSIS,
-      kpis: { ...ANALYSIS.kpis, eventos: 0 },
       series: [],
       eventos: { ...ANALYSIS.eventos, items: [], total: 0 },
       logs: [],
@@ -430,11 +398,6 @@ describe("TerminalesPage", () => {
     mockAnalysis.mockResolvedValue({
       ...ANALYSIS,
       fuente: { ...ANALYSIS.fuente, parcial: true },
-      kpis: {
-        ...ANALYSIS.kpis,
-        montoEnRiesgo: null,
-        terminalesSinSerial: null,
-      },
       logs: CLIENT_LOGS.map((item) => ({ ...item, value: null })),
     });
 
@@ -452,28 +415,11 @@ describe("TerminalesPage", () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() =>
-      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+      expect(screen.getByText(/Mostrando 1–5 de 5/)).toBeTruthy(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Actualizar" }));
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
-  });
-
-  it("busca un pedido y muestra sus eventos traducidos", async () => {
-    render(<TerminalesPage onAuthFailure={vi.fn()} />);
-    await waitFor(() =>
-      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
-    );
-
-    fireEvent.change(screen.getByLabelText("Número de pedido"), {
-      target: { value: "03902" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
-
-    await waitFor(() => {
-      expect(mockOrder).toHaveBeenCalledWith("03902", expect.any(Object));
-      expect(screen.getByRole("heading", { name: "Pedido 03902" })).toBeTruthy();
-    });
   });
 
   it("notifica a la app cuando la sesión expira", async () => {
