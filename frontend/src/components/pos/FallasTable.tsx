@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fmtFecha, numeroFmt } from "./format";
+import { EVENT_DICTIONARY, shortEventLabel } from "./posCatalog";
 import { PosLevelBadge } from "./PosLevelBadge";
 
 export function FallasTable({
@@ -34,7 +35,8 @@ export function FallasTable({
       <CardHeader>
         <CardTitle>Fallas agrupadas</CardTitle>
         <CardDescription>
-          Clave × instancia, de más a menos frecuente.
+          Incidencias recurrentes por tipo e instancia, de mayor a menor
+          frecuencia.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -42,7 +44,7 @@ export function FallasTable({
           <Table aria-label="Fallas agrupadas">
             <TableHeader>
               <TableRow>
-                <TableHead>Clave</TableHead>
+                <TableHead>Falla / clave</TableHead>
                 <TableHead>Instancia</TableHead>
                 <TableHead>Nivel</TableHead>
                 <TableHead className="text-right">Conteo</TableHead>
@@ -53,8 +55,18 @@ export function FallasTable({
             <TableBody>
               {fallas.slice(0, 10).map((falla) => (
                 <TableRow key={`${falla.clave}-${falla.instancia}`}>
-                  <TableCell className="max-w-72 truncate font-medium">
-                    {falla.clave}
+                  <TableCell
+                    className="max-w-80"
+                    title={EVENT_DICTIONARY[falla.clave]?.mensaje ?? falla.clave}
+                  >
+                    <div className="flex flex-col">
+                      <span className="truncate text-xs font-medium">
+                        {shortEventLabel(falla.clave)}
+                      </span>
+                      <span className="truncate font-mono text-[10px] text-muted-foreground">
+                        {falla.clave}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-48 truncate">
                     {falla.instancia}

@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TODAS, TODOS, type EventosScope } from "./eventos";
+import { shortEventLabel } from "./posCatalog";
 
 export function EventosFiltros({
   scope,
@@ -26,6 +27,7 @@ export function EventosFiltros({
   clave,
   q,
   loading,
+  hasActiveFilter = false,
   onScopeChange,
   onNivel,
   onClave,
@@ -40,12 +42,13 @@ export function EventosFiltros({
   clave: string;
   q: string;
   loading: boolean;
+  hasActiveFilter?: boolean;
   onScopeChange: (scope: EventosScope) => void;
   onNivel: (value: string) => void;
   onClave: (value: string) => void;
   onQ: (value: string) => void;
   onLimpiar: () => void;
-  onActualizar: () => void;
+  onActualizar?: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -113,10 +116,12 @@ export function EventosFiltros({
       </Select>
 
       <Select value={clave} onValueChange={(next) => onClave(next ?? TODAS)}>
-        <SelectTrigger className="w-60" aria-label="Filtrar eventos por clave">
+        <SelectTrigger className="w-64" aria-label="Filtrar eventos por clave">
           <SelectValue>
             {(current) =>
-              current === TODAS || !current ? "Todas las claves" : current
+              current === TODAS || !current
+                ? "Todas las claves"
+                : shortEventLabel(String(current))
             }
           </SelectValue>
         </SelectTrigger>
@@ -124,7 +129,7 @@ export function EventosFiltros({
           <SelectItem value={TODAS}>Todas las claves</SelectItem>
           {claves.slice(0, 40).map((item) => (
             <SelectItem key={item.clave} value={item.clave}>
-              {item.clave} ({item.conteo})
+              {shortEventLabel(item.clave)} ({item.conteo})
             </SelectItem>
           ))}
         </SelectContent>
@@ -141,31 +146,39 @@ export function EventosFiltros({
         <Input
           value={q}
           onChange={(event) => onQ(event.target.value)}
-          placeholder="Buscar en mensaje o clave"
+          placeholder="Buscar pedido, descripción, caja o clave"
           aria-label="Buscar eventos por mensaje o clave"
           className="pl-8"
         />
       </div>
 
-      <Button type="button" variant="ghost" size="sm" onClick={onLimpiar}>
-        Limpiar
-      </Button>
       <Button
         type="button"
-        variant="outline"
+        variant={hasActiveFilter ? "secondary" : "ghost"}
         size="sm"
-        onClick={onActualizar}
-        disabled={loading}
+        onClick={onLimpiar}
       >
-        <HugeiconsIcon
-          icon={loading ? Loading02Icon : RefreshIcon}
-          size={14}
-          strokeWidth={2}
-          className={loading ? "animate-spin" : undefined}
-          aria-hidden
-        />
-        Actualizar
+        Limpiar filtro
       </Button>
+
+      {onActualizar ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onActualizar}
+          disabled={loading}
+        >
+          <HugeiconsIcon
+            icon={loading ? Loading02Icon : RefreshIcon}
+            size={14}
+            strokeWidth={2}
+            className={loading ? "animate-spin" : undefined}
+            aria-hidden
+          />
+          Actualizar
+        </Button>
+      ) : null}
     </div>
   );
 }

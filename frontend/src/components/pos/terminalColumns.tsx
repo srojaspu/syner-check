@@ -1,6 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import type { PosTerminal } from "../../api/types";
 import { fmtFecha, numeroFmt } from "./format";
+import { EVENT_DICTIONARY, shortEventLabel } from "./posCatalog";
 import { PosHealthBadge } from "./PosLevelBadge";
 
 /** Columnas de la tabla de instancias/terminales (DataTable compartido). */
@@ -79,19 +80,16 @@ export function terminalColumns(): ColumnDef<PosTerminal, unknown>[] {
         if (!ultimaFalla) {
           return <span className="text-xs text-muted-foreground">—</span>;
         }
+        const fullMsg = EVENT_DICTIONARY[ultimaFalla]?.mensaje ?? ultimaFalla;
         return (
-          <div className="flex flex-col">
-            <span
-              className="max-w-56 truncate text-xs font-medium"
-              title={ultimaFalla}
-            >
-              {ultimaFalla}
+          <div className="flex flex-col" title={fullMsg}>
+            <span className="max-w-56 truncate text-xs font-medium">
+              {shortEventLabel(ultimaFalla)}
             </span>
-            {ultimaFallaFecha ? (
-              <span className="text-[11px] text-muted-foreground">
-                {fmtFecha(ultimaFallaFecha)}
-              </span>
-            ) : null}
+            <span className="max-w-56 truncate font-mono text-[10px] text-muted-foreground">
+              {ultimaFalla}
+              {ultimaFallaFecha ? ` · ${fmtFecha(ultimaFallaFecha)}` : ""}
+            </span>
           </div>
         );
       },

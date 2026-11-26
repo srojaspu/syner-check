@@ -124,6 +124,7 @@ def _ventana(window: TimeWindow) -> dict[str, Any]:
 def _value_dict(value) -> dict[str, Any] | None:
     if value is None:
         return None
+    extra = value.safe_extra_fields()
     return {
         "version": value.version,
         "serial": value.serial,
@@ -131,6 +132,7 @@ def _value_dict(value) -> dict[str, Any] | None:
         "importe": (
             format(value.amount, "f") if value.amount is not None else None
         ),
+        "importeCobrado": extra.get("chargedAmount"),
         "moneda": value.currency,
         "elapsedMs": value.elapsed_ms,
         "tipoDocumento": (
@@ -140,7 +142,29 @@ def _value_dict(value) -> dict[str, Any] | None:
         ),
         "documento": value.document_number,
         "pasarela": value.gateway,
+        "marca": extra.get("brand"),
         "panEnmascarado": value.masked_pan,
+        "balanceId": extra.get("balanceId"),
+        "balanceNumber": extra.get("balanceNumber"),
+        "previousState": extra.get("previousState"),
+        "failedEndpoint": extra.get("failedEndpoint"),
+        "excepcion": extra.get("exception"),
+        "excepcionMensaje": extra.get("exceptionMessage"),
+    }
+
+
+def _client_log(event: PosLogEvent) -> dict[str, Any]:
+    """Registro liviano con `value` JSON sanitizado para clasificación en el cliente."""
+    return {
+        "oid": event.oid,
+        "fecha": event.at.isoformat(),
+        "nivel": event.level.value,
+        "clave": event.key,
+        "instancia": event.instance,
+        "mensaje": event.message,
+        "value": (
+            event.value.sanitized_raw_json() if event.value is not None else None
+        ),
     }
 
 
@@ -267,6 +291,7 @@ def _analysis_dict(result, latencia_ms: int) -> dict[str, Any]:
             "limit": result.page.limit,
             "hayMas": result.page.hay_mas,
         },
+        "logs": [_client_log(event) for event in reversed(snapshot.events)],
         "aviso": AVISO,
     }
 

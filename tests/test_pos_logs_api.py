@@ -110,6 +110,13 @@ def test_analisis_shape_y_cache(sesion, monkeypatch) -> None:
     item = body["eventos"]["items"][0]
     assert item["pedido"] == "03902"
     assert "valor" not in item  # el listado no expone el detalle técnico
+    assert "logs" in body
+    assert len(body["logs"]) == 1
+    assert body["logs"][0]["oid"] == "80957.1"
+    assert body["logs"][0]["clave"] == "SALE_GATEWAY_REGISTER_FAILED"
+    assert '"orderNumber":"03902"' in (body["logs"][0]["value"] or "")
+    assert "authorization" not in (body["logs"][0]["value"] or "")
+    assert "gatewayTrace" not in (body["logs"][0]["value"] or "")
 
     second = sesion.get(
         "/api/pos/analisis",

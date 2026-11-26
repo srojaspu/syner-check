@@ -265,6 +265,45 @@ class TestParseEvent(unittest.TestCase):
         self.assertEqual(public["terminal"]["serial"], None)
         self.assertEqual(public["value"]["order_number"], "03902")
 
+    def test_sanitized_raw_json_keeps_operational_and_strips_secrets(self) -> None:
+        raw_value = {
+            "version": "3.2.3",
+            "serial": "PN63225X40337",
+            "orderNumber": "03902",
+            "amount": "53.47",
+            "chargedAmount": "33.47",
+            "currency": "PEN",
+            "elapsedMs": "15002",
+            "gateway": "IZIPAY",
+            "brand": "VISA",
+            "maskedPan": "491257**6574",
+            "balanceId": "bal-01",
+            "balanceNumber": "00960",
+            "previousState": "OPEN",
+            "failedEndpoint": "/api/invoices",
+            "exception": "java.net.SocketTimeoutException",
+            "exceptionMessage": "timeout",
+            "authorization": "SECRET-AUTH-999",
+            "gatewayTrace": '{"provider":"IZIPAY","response":"secret"}',
+            "stackTrace": "at com.synerpos...",
+            "merchantId": "999999",
+        }
+        event = parse_event({**self.BASE, "value": json.dumps(raw_value)})
+        assert event.value is not None
+        sanitized_str = event.value.sanitized_raw_json()
+        assert sanitized_str is not None
+        parsed = json.loads(sanitized_str)
+        self.assertEqual(parsed["orderNumber"], "03902")
+        self.assertEqual(parsed["balanceNumber"], "00960")
+        self.assertEqual(parsed["balanceId"], "bal-01")
+        self.assertEqual(parsed["failedEndpoint"], "/api/invoices")
+        self.assertEqual(parsed["exception"], "java.net.SocketTimeoutException")
+        self.assertEqual(parsed["elapsedMs"], 15002)
+        self.assertNotIn("authorization", parsed)
+        self.assertNotIn("gatewayTrace", parsed)
+        self.assertNotIn("stackTrace", parsed)
+        self.assertNotIn("merchantId", parsed)
+
 
 class TestTimeWindow(unittest.TestCase):
     def test_valid_day(self) -> None:

@@ -1,12 +1,17 @@
 import { Badge } from "@/components/ui/badge";
 import type { PosClave, PosVersion } from "../../api/types";
+import { EVENT_DICTIONARY, shortEventLabel } from "./posCatalog";
 
 export function PosTopClaves({
   claves,
   versiones,
+  selectedClave,
+  onSelectClave,
 }: {
   claves: PosClave[];
   versiones: PosVersion[];
+  selectedClave?: string;
+  onSelectClave?: (clave: string) => void;
 }) {
   if (claves.length === 0) {
     return (
@@ -28,13 +33,20 @@ export function PosTopClaves({
               : item.nivel === "WARN"
                 ? "bg-chart-4"
                 : "bg-chart-2";
-          return (
-            <li key={item.clave} className="flex flex-col gap-1">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="truncate font-medium" title={item.clave}>
-                  {item.clave}
-                </span>
-                <span className="tabular-nums text-muted-foreground">
+          const isSelected = selectedClave === item.clave;
+          const fullDesc = EVENT_DICTIONARY[item.clave]?.mensaje ?? item.clave;
+          const rowContent = (
+            <>
+              <div className="flex items-baseline justify-between gap-2 text-xs">
+                <div className="min-w-0">
+                  <span className="block truncate font-medium">
+                    {shortEventLabel(item.clave)}
+                  </span>
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                    {item.clave}
+                  </span>
+                </div>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
                   {item.conteo}
                 </span>
               </div>
@@ -47,6 +59,28 @@ export function PosTopClaves({
                   }}
                 />
               </div>
+            </>
+          );
+
+          return (
+            <li key={item.clave}>
+              {onSelectClave ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectClave(item.clave)}
+                  aria-pressed={isSelected}
+                  title={fullDesc}
+                  className={`flex w-full flex-col gap-1 rounded-lg p-1.5 text-left transition-colors hover:bg-muted/60 ${
+                    isSelected ? "bg-muted ring-1 ring-primary/40" : ""
+                  }`}
+                >
+                  {rowContent}
+                </button>
+              ) : (
+                <div className="flex flex-col gap-1" title={fullDesc}>
+                  {rowContent}
+                </div>
+              )}
             </li>
           );
         })}

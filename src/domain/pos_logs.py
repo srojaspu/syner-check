@@ -167,6 +167,22 @@ def _json_depth(value: Any, current: int = 0) -> int:
     return current
 
 
+_SAFE_RAW_TEXT_LIMITS: tuple[tuple[str, int], ...] = (
+    ("orderId", 64),
+    ("chargedAmount", 24),
+    ("brand", 24),
+    ("documentId", 64),
+    ("balanceId", 64),
+    ("balanceNumber", 40),
+    ("balanceOid", 40),
+    ("balanceStartAt", 40),
+    ("previousState", 24),
+    ("failedEndpoint", 120),
+    ("exception", 120),
+    ("exceptionMessage", 240),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class PosValue:
     """Datos de `value` ya normalizados.
@@ -189,6 +205,49 @@ class PosValue:
     masked_pan: str | None = None
     merchant_id: str | None = None
     raw: Mapping[str, Any] | None = field(default=None, repr=False, compare=False)
+
+    def safe_extra_fields(self) -> dict[str, str]:
+        """Campos operativos de `raw` seguros para el cliente (sin secretos ni trazas)."""
+        if not isinstance(self.raw, Mapping):
+            return {}
+        extra: dict[str, str] = {}
+        for key, limit in _SAFE_RAW_TEXT_LIMITS:
+            val = safe_text(self.raw.get(key), limit)
+            if val:
+                extra[key] = val
+        return extra
+
+    def sanitized_raw_json(self) -> str | None:
+        """JSON serializado seguro (`log.value`) para clasificación en el cliente.
+
+        Excluye `authorization`, `gatewayTrace`, `stackTrace`, `merchantId` y
+        cualquier clave no autorizada en la lista blanca.
+        """
+        payload: dict[str, Any] = {}
+        if self.version is not None:
+            payload["version"] = self.version
+        if self.serial is not None:
+            payload["serial"] = self.serial
+        if self.order_number is not None:
+            payload["orderNumber"] = self.order_number
+        if self.amount is not None:
+            payload["amount"] = format(self.amount, "f")
+        if self.currency is not None:
+            payload["currency"] = self.currency
+        if self.elapsed_ms is not None:
+            payload["elapsedMs"] = self.elapsed_ms
+        if self.doc_type is not None:
+            payload["docType"] = self.doc_type
+        if self.document_number is not None:
+            payload["documentNumber"] = self.document_number
+        if self.gateway is not None:
+            payload["gateway"] = self.gateway
+        if self.masked_pan is not None:
+            payload["maskedPan"] = self.masked_pan
+        payload.update(self.safe_extra_fields())
+        if not payload:
+            return None
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
     def public_dict(self) -> dict[str, Any]:
         """Vista segura para listados y export: sin datos técnicos sensibles."""

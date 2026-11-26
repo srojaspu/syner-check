@@ -11,6 +11,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { fmtFecha, numeroFmt } from "./format";
+import { describePosEvent } from "./posCatalog";
 import { PosLevelBadge } from "./PosLevelBadge";
 
 export function EventoDetalleSheet({
@@ -24,11 +25,33 @@ export function EventoDetalleSheet({
   loading: boolean;
   evento: PosEventoDetalle | null;
 }) {
+  const desc = evento
+    ? describePosEvent(evento, {
+        version: evento.valor?.version ?? undefined,
+        serial: evento.valor?.serial ?? undefined,
+        orderNumber: evento.valor?.pedido ?? undefined,
+        amount: evento.valor?.importe ?? undefined,
+        chargedAmount: evento.valor?.importeCobrado ?? undefined,
+        currency: evento.valor?.moneda ?? undefined,
+        elapsedMs: evento.valor?.elapsedMs ?? undefined,
+        docType: evento.valor?.tipoDocumento ?? undefined,
+        documentNumber: evento.valor?.documento ?? undefined,
+        gateway: evento.valor?.pasarela ?? undefined,
+        brand: evento.valor?.marca ?? undefined,
+        maskedPan: evento.valor?.panEnmascarado ?? undefined,
+        balanceId: evento.valor?.balanceId ?? undefined,
+        balanceNumber: evento.valor?.balanceNumber ?? undefined,
+        previousState: evento.valor?.previousState ?? undefined,
+        failedEndpoint: evento.valor?.failedEndpoint ?? undefined,
+        exception: evento.valor?.excepcion ?? undefined,
+        exceptionMessage: evento.valor?.excepcionMensaje ?? undefined,
+      })
+    : null;
+
   return (
     <Sheet
       open={open}
       onOpenChange={(nextOpen, eventDetails) => {
-        // Un clic fuera del panel no debe cerrar el detalle.
         if (eventDetails?.reason === "outside-press") return;
         onOpenChange(nextOpen);
       }}
@@ -64,6 +87,22 @@ export function EventoDetalleSheet({
           </div>
         ) : evento ? (
           <div className="flex flex-col gap-5 px-6 pb-6">
+            {desc ? (
+              <div className="flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-3">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Interpretación operativa
+                </span>
+                <p className="text-sm font-medium leading-snug text-foreground">
+                  {desc.mensajeLegible}
+                </p>
+                {desc.subtexto ? (
+                  <p className="text-xs text-muted-foreground">
+                    {desc.subtexto}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <Dato
@@ -120,6 +159,24 @@ export function EventoDetalleSheet({
                     : "—"
                 }
               />
+              {evento.valor?.balanceNumber || evento.valor?.balanceId ? (
+                <Dato
+                  label="Caja (Balance)"
+                  value={
+                    evento.valor?.balanceNumber ?? evento.valor?.balanceId ?? "—"
+                  }
+                />
+              ) : null}
+              {evento.valor?.failedEndpoint ? (
+                <Dato
+                  label="Endpoint de reporte"
+                  value={
+                    <span className="font-mono text-xs">
+                      {evento.valor.failedEndpoint}
+                    </span>
+                  }
+                />
+              ) : null}
               <div className="col-span-2">
                 <Dato
                   label="Fecha exacta"
@@ -134,9 +191,9 @@ export function EventoDetalleSheet({
 
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
-                Mensaje
+                Mensaje técnico original (POS)
               </span>
-              <p className="rounded-md border bg-muted/40 p-3 text-sm leading-relaxed">
+              <p className="rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed">
                 {evento.mensaje}
               </p>
             </div>

@@ -14,11 +14,15 @@ export function TerminalesGraficos({
   claves,
   versiones,
   granularity,
+  selectedClave,
+  onSelectClave,
 }: {
   series: PosSerie[];
   claves: PosClave[];
   versiones: PosVersion[];
   granularity: "hour" | "day";
+  selectedClave?: string;
+  onSelectClave?: (clave: string) => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -40,10 +44,17 @@ export function TerminalesGraficos({
       <Card>
         <CardHeader>
           <CardTitle>Claves más frecuentes</CardTitle>
-          <CardDescription>Catálogo observado en la ventana.</CardDescription>
+          <CardDescription>
+            Haz clic en un tipo de evento para filtrarlo en la tabla.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <PosTopClaves claves={claves.slice(0, 8)} versiones={versiones} />
+          <PosTopClaves
+            claves={claves.slice(0, 8)}
+            versiones={versiones}
+            selectedClave={selectedClave}
+            onSelectClave={onSelectClave}
+          />
         </CardContent>
       </Card>
     </div>

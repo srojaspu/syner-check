@@ -746,17 +746,35 @@ export interface PosEvento {
   version: string | null;
 }
 
+export interface PosClientLog {
+  oid: string;
+  fecha: string;
+  nivel: PosNivel;
+  clave: string;
+  instancia: string;
+  mensaje: string;
+  value: string | null;
+}
+
 export interface PosEventoValor {
   version: string | null;
   serial: string | null;
   pedido: string | null;
   importe: string | null;
+  importeCobrado?: string | null;
   moneda: string | null;
   elapsedMs: number | null;
   tipoDocumento: string | null;
   documento: string | null;
   pasarela: string | null;
+  marca?: string | null;
   panEnmascarado: string | null;
+  balanceId?: string | null;
+  balanceNumber?: string | null;
+  previousState?: string | null;
+  failedEndpoint?: string | null;
+  excepcion?: string | null;
+  excepcionMensaje?: string | null;
 }
 
 export interface PosEventoDetalle extends PosEvento {
@@ -782,6 +800,7 @@ export interface PosAnalysis {
   claves: PosClave[];
   versiones: PosVersion[];
   eventos: PosEventosPage;
+  logs?: PosClientLog[];
   aviso: string;
 }
 

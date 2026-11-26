@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthError } from "../api/client";
 import type {
   PosAnalysis,
+  PosClientLog,
   PosEvento,
   PosEventoDetalle,
   PosPedidoResponse,
@@ -24,22 +32,111 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+const CLIENT_LOGS: PosClientLog[] = [
+  // Pedido 01001: Venta 100% exitosa
+  {
+    oid: "80957.10",
+    fecha: "2026-11-24T13:55:00-05:00",
+    nivel: "INFO",
+    clave: "SALE_EMISSION_SUCCEEDED",
+    instancia: "Salaverry",
+    mensaje: "Sale emitted as document BS01-0001. Order 01001, PEN 120.00.",
+    value: JSON.stringify({
+      orderNumber: "01001",
+      amount: "120.00",
+      currency: "PEN",
+      documentNumber: "BS01-0001",
+      serial: "S2",
+    }),
+  },
+  // Pedido 02002: Venta con incidencia resuelta (WARN + SUCCEEDED)
+  {
+    oid: "80957.20",
+    fecha: "2026-11-24T13:56:00-05:00",
+    nivel: "WARN",
+    clave: "SALE_GATEWAY_REGISTER_FAILED",
+    instancia: "Salaverry",
+    mensaje:
+      "Register of the IZIPAY charge failed; the payment goes on. Order 02002, PEN 80.00.",
+    value: JSON.stringify({
+      orderNumber: "02002",
+      amount: "80.00",
+      currency: "PEN",
+      gateway: "IZIPAY",
+      serial: "S2",
+    }),
+  },
+  {
+    oid: "80957.21",
+    fecha: "2026-11-24T13:57:00-05:00",
+    nivel: "INFO",
+    clave: "SALE_EMISSION_SUCCEEDED",
+    instancia: "Salaverry",
+    mensaje: "Sale emitted as document BS01-0002. Order 02002, PEN 80.00.",
+    value: JSON.stringify({
+      orderNumber: "02002",
+      amount: "80.00",
+      currency: "PEN",
+      documentNumber: "BS01-0002",
+      serial: "S2",
+    }),
+  },
+  // Pedido 03902: Venta fallida / inconclusa (S/ 53.47 en riesgo) + error NUC timeout
+  {
+    oid: "80957.30",
+    fecha: "2026-11-24T13:59:00-05:00",
+    nivel: "ERROR",
+    clave: "SALE_EMISSION_INCONCLUSIVE",
+    instancia: "La Rambla",
+    mensaje:
+      "Sale emission inconclusive (no response before the timeout); the document may or may not exist. Order 03902, PEN 53.47.",
+    value: JSON.stringify({
+      orderNumber: "03902",
+      amount: "53.47",
+      currency: "PEN",
+      elapsedMs: 15002,
+      serial: "S1",
+    }),
+  },
+  // Incidente de caja + error NUC timeout
+  {
+    oid: "80957.1",
+    fecha: "2026-11-24T14:00:00-05:00",
+    nivel: "ERROR",
+    clave: "BALANCE_OPEN_FAILED",
+    instancia: "La Rambla",
+    mensaje:
+      "Balance open failed (no response before the timeout); new sales are blocked until it succeeds.",
+    value: JSON.stringify({
+      balanceNumber: "00960",
+      balanceId: "bal-960",
+      elapsedMs: 15001,
+      serial: "S1",
+      version: "3.2.3",
+    }),
+  },
+];
+
 const EVENTO: PosEvento = {
   oid: "80957.1",
   fecha: "2026-11-24T14:00:00-05:00",
   nivel: "ERROR",
   clave: "BALANCE_OPEN_FAILED",
   instancia: "La Rambla",
-  mensaje: "Balance open failed; new sales are blocked until it succeeds.",
-  pedido: "03902",
-  importe: "53.47",
-  moneda: "PEN",
+  mensaje:
+    "Balance open failed (no response before the timeout); new sales are blocked until it succeeds.",
+  pedido: null,
+  importe: null,
+  moneda: null,
   serial: "S1",
   version: "3.2.3",
 };
 
 const DETALLE: PosEventoDetalle = {
   ...EVENTO,
+  pedido: "03902",
+  importe: "53.47",
+  moneda: "PEN",
   valor: {
     version: "3.2.3",
     serial: "S1",
@@ -51,6 +148,7 @@ const DETALLE: PosEventoDetalle = {
     documento: "BS02-00003270",
     pasarela: "IZIPAY",
     panEnmascarado: "491257**6574",
+    balanceNumber: "00960",
   },
 };
 
@@ -69,34 +167,27 @@ const ANALYSIS: PosAnalysis = {
     parcial: false,
   },
   kpis: {
-    eventos: 120,
-    info: 100,
-    warn: 10,
-    error: 10,
+    eventos: 5,
+    info: 2,
+    warn: 1,
+    error: 2,
     desconocidos: 0,
-    terminales: 3,
+    terminales: 2,
     terminalesSinSerial: 0,
     instancias: 2,
-    cobrosTarjeta: 40,
-    emisionesOk: 60,
+    cobrosTarjeta: 1,
+    emisionesOk: 2,
     emisionesInconclusas: 1,
     montoEnRiesgo: "53.47",
     cajasConFalla: 1,
-    ultimoEvento: "2026-11-24T13:59:00-05:00",
+    ultimoEvento: "2026-11-24T14:00:00-05:00",
   },
   series: [
     {
       bucket: "2026-11-24T13:00:00-05:00",
-      info: 90,
-      warn: 8,
-      error: 9,
-      unknown: 0,
-    },
-    {
-      bucket: "2026-11-24T14:00:00-05:00",
-      info: 10,
-      warn: 2,
-      error: 1,
+      info: 2,
+      warn: 1,
+      error: 2,
       unknown: 0,
     },
   ],
@@ -105,27 +196,27 @@ const ANALYSIS: PosAnalysis = {
       instancia: "La Rambla",
       serial: "S1",
       salud: "CRITICAL",
-      eventos: 60,
-      errores: 9,
-      advertencias: 4,
-      ultimaActividad: "2026-11-24T13:58:00-05:00",
+      eventos: 2,
+      errores: 2,
+      advertencias: 0,
+      ultimaActividad: "2026-11-24T14:00:00-05:00",
       version: "3.2.3",
       ultimaClave: "BALANCE_OPEN_FAILED",
       ultimaFalla: "BALANCE_OPEN_FAILED",
-      ultimaFallaFecha: "2026-11-24T13:58:00-05:00",
+      ultimaFallaFecha: "2026-11-24T14:00:00-05:00",
     },
     {
       instancia: "Salaverry",
-      serial: null,
-      salud: "OK",
-      eventos: 60,
-      errores: 1,
-      advertencias: 6,
-      ultimaActividad: "2026-11-24T13:50:00-05:00",
+      serial: "S2",
+      salud: "DEGRADED",
+      eventos: 3,
+      errores: 0,
+      advertencias: 1,
+      ultimaActividad: "2026-11-24T13:57:00-05:00",
       version: "3.2.2",
       ultimaClave: "SALE_EMISSION_SUCCEEDED",
-      ultimaFalla: null,
-      ultimaFallaFecha: null,
+      ultimaFalla: "SALE_GATEWAY_REGISTER_FAILED",
+      ultimaFallaFecha: "2026-11-24T13:56:00-05:00",
     },
   ],
   fallas: [
@@ -133,9 +224,9 @@ const ANALYSIS: PosAnalysis = {
       clave: "BALANCE_OPEN_FAILED",
       instancia: "La Rambla",
       nivel: "ERROR",
-      conteo: 9,
-      primera: "2026-11-24T12:00:00-05:00",
-      ultima: "2026-11-24T13:58:00-05:00",
+      conteo: 1,
+      primera: "2026-11-24T14:00:00-05:00",
+      ultima: "2026-11-24T14:00:00-05:00",
       oidMuestra: "80957.1",
     },
   ],
@@ -143,27 +234,25 @@ const ANALYSIS: PosAnalysis = {
     {
       clave: "SALE_EMISSION_SUCCEEDED",
       nivel: "INFO",
-      conteo: 100,
-      ultima: "2026-11-24T13:59:00-05:00",
+      conteo: 2,
+      ultima: "2026-11-24T13:57:00-05:00",
     },
     {
       clave: "BALANCE_OPEN_FAILED",
       nivel: "ERROR",
-      conteo: 9,
-      ultima: "2026-11-24T13:58:00-05:00",
+      conteo: 1,
+      ultima: "2026-11-24T14:00:00-05:00",
     },
   ],
-  versiones: [
-    { version: "3.2.3", conteo: 80 },
-    { version: "3.2.2", conteo: 40 },
-  ],
+  versiones: [{ version: "3.2.3", conteo: 2 }],
   eventos: {
     items: [EVENTO],
-    total: 1,
+    total: 5,
     page: 1,
     limit: 50,
     hayMas: false,
   },
+  logs: CLIENT_LOGS,
   aviso: "La ausencia de un evento no prueba que la operación no ocurrió.",
 };
 
@@ -194,7 +283,7 @@ describe("TerminalesPage", () => {
 
   afterEach(cleanup);
 
-  it("muestra KPIs, terminales y eventos", async () => {
+  it("muestra las 5 tarjetas KPI operativas, traducciones y consulta con offset -05:00", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     expect(
@@ -202,19 +291,79 @@ describe("TerminalesPage", () => {
     ).toBeTruthy();
 
     await waitFor(() => {
-      expect(screen.getByText("120")).toBeTruthy();
-      expect(screen.getByText("S/ 53.47 en riesgo")).toBeTruthy();
-        expect(screen.getAllByText("La Rambla").length).toBeGreaterThan(0);
+      expect(screen.getByText("Ventas 100% Exitosas")).toBeTruthy();
+      expect(screen.getByText("Ventas con Incidencias Resueltas")).toBeTruthy();
+      expect(screen.getByText("Ventas Fallidas o Inconclusas")).toBeTruthy();
+      expect(screen.getByText("Incidentes de Caja")).toBeTruthy();
+      expect(screen.getByText("Errores de Instancia / NUC")).toBeTruthy();
+      expect(screen.getByText(/S\/ 53\.47 en riesgo/)).toBeTruthy();
       expect(
-        screen.getAllByText("BALANCE_OPEN_FAILED").length,
+        screen.getAllByText(
+          "Error al abrir la caja registradora. Se han bloqueado las ventas en el terminal.",
+        ).length,
       ).toBeGreaterThan(0);
+    });
+
+    const firstCallArgs = mockAnalysis.mock.calls[0][0];
+    expect(firstCallArgs.desde).toMatch(/-05:00$/);
+    expect(firstCallArgs.hasta).toMatch(/-05:00$/);
+  });
+
+  it("filtra la tabla interactivamente al hacer clic en una tarjeta y restaura al segundo clic o Limpiar filtro", async () => {
+    render(<TerminalesPage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+    );
+
+    // Clic en Card 1: Ventas 100% Exitosas -> solo pedido 01001 (1 evento)
+    const cardExitosas = screen
+      .getByText("Ventas 100% Exitosas")
+      .closest("button") as HTMLElement;
+    fireEvent.click(cardExitosas);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText("01001")).toBeTruthy();
+      expect(screen.queryByText("03902")).toBeNull();
+    });
+
+    // Clic en Card 3: Ventas Fallidas o Inconclusas -> solo pedido 03902 (1 evento)
+    const cardFallidas = screen
+      .getByText("Ventas Fallidas o Inconclusas")
+      .closest("button") as HTMLElement;
+    fireEvent.click(cardFallidas);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getByText("03902")).toBeTruthy();
+      expect(screen.queryByText("01001")).toBeNull();
+    });
+
+    // Clic en Card 4: Incidentes de Caja -> muestra BALANCE_OPEN_FAILED y agrupación Caja 00960
+    const cardCaja = screen
+      .getByText("Incidentes de Caja")
+      .closest("button") as HTMLElement;
+    fireEvent.click(cardCaja);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 de 5 eventos · página 1 de 1")).toBeTruthy();
+      expect(screen.getAllByText(/Caja 00960/).length).toBeGreaterThan(0);
+    });
+
+    // Segundo clic en la tarjeta activa restaura todos los registros
+    fireEvent.click(cardCaja);
+    await waitFor(() => {
+      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy();
     });
   });
 
-  it("abre el modal de eventos y el detalle en un sheet", async () => {
+  it("abre el modal de eventos sincronizado y el detalle en un sheet", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText("120")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+    );
     fireEvent.click(screen.getAllByRole("button", { name: "Ver eventos" })[0]);
 
     const dialog = await screen.findByRole("dialog");
@@ -234,12 +383,14 @@ describe("TerminalesPage", () => {
     fireEvent.click(row as HTMLElement);
 
     await waitFor(() => {
+      const sheet = screen.getByLabelText("Detalle del evento");
       expect(
-        screen.getByRole("heading", { name: "Evento 80957.1" }),
+        within(sheet).getByRole("heading", { name: "Evento 80957.1" }),
       ).toBeTruthy();
-      expect(screen.getByText("IZIPAY")).toBeTruthy();
-      expect(screen.getByText("Pan enmascarado")).toBeTruthy();
-      expect(screen.getByText("Fecha exacta")).toBeTruthy();
+      expect(within(sheet).getByText("IZIPAY")).toBeTruthy();
+      expect(within(sheet).getByText("Pan enmascarado")).toBeTruthy();
+      expect(within(sheet).getByText("Fecha exacta")).toBeTruthy();
+      expect(within(sheet).getByText("00960")).toBeTruthy();
     });
   });
 
@@ -249,6 +400,7 @@ describe("TerminalesPage", () => {
       kpis: { ...ANALYSIS.kpis, eventos: 0 },
       series: [],
       eventos: { ...ANALYSIS.eventos, items: [], total: 0 },
+      logs: [],
     });
 
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
@@ -283,6 +435,7 @@ describe("TerminalesPage", () => {
         montoEnRiesgo: null,
         terminalesSinSerial: null,
       },
+      logs: CLIENT_LOGS.map((item) => ({ ...item, value: null })),
     });
 
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
@@ -291,22 +444,26 @@ describe("TerminalesPage", () => {
       expect(
         screen.getByText("Ventana larga: detalle técnico no descargado"),
       ).toBeTruthy();
-      expect(screen.getByText("monto no disponible")).toBeTruthy();
+      expect(screen.getByText(/monto no disponible/)).toBeTruthy();
     });
   });
 
-  it("actualizar vuelve a consultar y usa caché del backend", async () => {
+  it("actualizar vuelve a consultar el backend", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText("120")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Actualizar" }));
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
   });
 
-  it("busca un pedido y muestra sus eventos", async () => {
+  it("busca un pedido y muestra sus eventos traducidos", async () => {
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("120")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("5 de 5 eventos · página 1 de 1")).toBeTruthy(),
+    );
 
     fireEvent.change(screen.getByLabelText("Número de pedido"), {
       target: { value: "03902" },

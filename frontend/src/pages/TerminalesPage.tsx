@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   InformationCircleIcon,
+  Search01Icon,
   TriangleAlertIcon,
 } from "@hugeicons/core-free-icons";
 import { toast } from "sonner";
@@ -20,8 +21,16 @@ import {
   EventosDialog,
   type EventosScope,
 } from "../components/pos/EventosDialog";
+import { TODAS, TODOS } from "../components/pos/eventos";
 import { FallasTable } from "../components/pos/FallasTable";
 import { PedidoSheet } from "../components/pos/PedidoSheet";
+import {
+  analyzePosLogs,
+  extractClientLogsFromAnalysis,
+  type PosKpiCardId,
+} from "../components/pos/posAnalytics";
+import { formatLimaIso } from "../components/pos/posCatalog";
+import { PosEventosWorkspace } from "../components/pos/PosEventosWorkspace";
 import {
   horasDeRango,
   RANGO_POR_DEFECTO,
@@ -34,6 +43,13 @@ import { TerminalesTable } from "../components/pos/TerminalesTable";
 import { TerminalesToolbar } from "../components/pos/TerminalesToolbar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface TerminalesPageProps {
@@ -44,7 +60,7 @@ function calcularVentana(horas: number): { desde: string; hasta: string } {
   const hasta = new Date();
   hasta.setSeconds(0, 0); // minuto exacto: comparte caché con otras peticiones
   const desde = new Date(hasta.getTime() - horas * 3_600_000);
-  return { desde: desde.toISOString(), hasta: hasta.toISOString() };
+  return { desde: formatLimaIso(desde), hasta: formatLimaIso(hasta) };
 }
 
 export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
@@ -57,11 +73,17 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [eventosAbierto, setEventosAbierto] = useState(false);
+  // Estado compartido de clasificación/filtrado entre KPIs, tabla en página y modal
+  const [activeCard, setActiveCard] = useState<PosKpiCardId | null>(null);
+  const [subGrupo, setSubGrupo] = useState<string | null>(null);
   const [eventosScope, setEventosScope] = useState<EventosScope>({
     instancia: null,
     serial: null,
   });
+  const [claveFiltro, setClaveFiltro] = useState<string>(TODAS);
+  const [nivelFiltro, setNivelFiltro] = useState<string>(TODOS);
+  const [textoFiltro, setTextoFiltro] = useState("");
+  const [eventosAbierto, setEventosAbierto] = useState(false);
 
   const [detalleAbierto, setDetalleAbierto] = useState(false);
   const [detalleLoading, setDetalleLoading] = useState(false);
@@ -77,8 +99,6 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
     setLoading(true);
     setError(null);
 
-    // La pantalla principal solo necesita agregados y tablas; los eventos se
-    // consultan en el modal con sus propios filtros.
     getPosAnalysis(
       { desde: ventana.desde, hasta: ventana.hasta, page: 1, limit: 1 },
       controller.signal,
@@ -104,13 +124,21 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
     return () => controller.abort();
   }, [ventana, onAuthFailure]);
 
+  const analyticsModel = useMemo(
+    () => analyzePosLogs(extractClientLogsFromAnalysis(data)),
+    [data],
+  );
+
   const instancias = useMemo(() => {
     const unicas = new Set<string>();
     for (const terminal of data?.terminales ?? []) {
       unicas.add(terminal.instancia);
     }
+    for (const item of analyticsModel.items) {
+      unicas.add(item.instancia);
+    }
     return Array.from(unicas).sort((a, b) => a.localeCompare(b));
-  }, [data]);
+  }, [data, analyticsModel]);
 
   const granularity: "hour" | "day" =
     (data?.ventana.dias ?? 1) <= 3 ? "hour" : "day";
@@ -119,7 +147,7 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
     desde: ventana.desde,
     hasta: ventana.hasta,
     tz: "America/Lima",
-    dias: horasDeRango(rango),
+    dias: horasDeRango(rango) / 24,
   };
 
   function cambiarRango(next: RangoId) {
@@ -131,17 +159,43 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
     setVentana(calcularVentana(horasDeRango(rango)));
   }
 
+  function limpiarFiltros() {
+    setActiveCard(null);
+    setSubGrupo(null);
+    setEventosScope({ instancia: null, serial: null });
+    setClaveFiltro(TODAS);
+    setNivelFiltro(TODOS);
+    setTextoFiltro("");
+  }
+
   function abrirEventos(
-    scope: { instancia?: string | null; serial?: string | null } = {},
+    opts: {
+      instancia?: string | null;
+      serial?: string | null;
+      clave?: string;
+      card?: PosKpiCardId | null;
+    } = {},
   ) {
-    setEventosScope({
-      instancia: scope.instancia ?? null,
-      serial: scope.serial ?? null,
-    });
+    if (opts.instancia !== undefined || opts.serial !== undefined) {
+      setEventosScope({
+        instancia: opts.instancia ?? null,
+        serial: opts.serial ?? null,
+      });
+    }
+    if (opts.clave !== undefined) {
+      setClaveFiltro(opts.clave);
+    }
+    if (opts.card !== undefined) {
+      setActiveCard(opts.card);
+      setSubGrupo(null);
+    }
     setEventosAbierto(true);
   }
 
   function verTerminal(terminal: PosTerminal) {
+    setActiveCard(null);
+    setSubGrupo(null);
+    setClaveFiltro(TODAS);
     abrirEventos({
       instancia: terminal.instancia,
       serial: terminal.serial,
@@ -149,7 +203,18 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
   }
 
   function verFalla(falla: PosFalla) {
-    abrirEventos({ instancia: falla.instancia });
+    setActiveCard(null);
+    setSubGrupo(null);
+    abrirEventos({
+      instancia: falla.instancia,
+      clave: falla.clave,
+    });
+  }
+
+  function toggleClaveFrecuente(clave: string) {
+    setActiveCard(null);
+    setSubGrupo(null);
+    setClaveFiltro((prev) => (prev === clave ? TODAS : clave));
   }
 
   async function abrirDetalle(evento: { oid: string; fecha: string }) {
@@ -178,12 +243,13 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
     }
   }
 
-  async function buscarPedido() {
-    const numero = pedidoNumero.trim();
+  async function ejecutarBusquedaPedido(rawNumero: string) {
+    const numero = rawNumero.trim();
     if (!/^\d{1,12}$/.test(numero)) {
       toast.error("El número de pedido debe tener solo dígitos.");
       return;
     }
+    setPedidoNumero(numero);
     setPedidoAbierto(true);
     setPedido(null);
     setPedidoLoading(true);
@@ -214,7 +280,7 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
       <TerminalesHeader
         data={data}
         loading={loading}
-        onVerEventos={() => abrirEventos()}
+        onVerEventos={() => setEventosAbierto(true)}
         onActualizar={actualizar}
       />
 
@@ -223,7 +289,7 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
         onRango={cambiarRango}
         pedidoNumero={pedidoNumero}
         onPedidoNumero={setPedidoNumero}
-        onBuscarPedido={() => void buscarPedido()}
+        onBuscarPedido={() => void ejecutarBusquedaPedido(pedidoNumero)}
         pedidoLoading={pedidoLoading}
       />
 
@@ -264,9 +330,9 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
       ) : null}
 
       {loading && !data ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-24 w-full" />
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-28 w-full rounded-xl" />
           ))}
         </div>
       ) : null}
@@ -277,18 +343,82 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
             {loading ? "Actualizando el monitoreo…" : ""}
           </span>
 
-          <TerminalesIndicadores kpis={data.kpis} />
+          <TerminalesIndicadores
+            cards={analyticsModel.cards}
+            activeCard={activeCard}
+            onSelectCard={(next) => {
+              setActiveCard(next);
+              setSubGrupo(null);
+            }}
+            onClearFilter={limpiarFiltros}
+            parcial={data.fuente.parcial}
+          />
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-0.5">
+                <CardTitle>Registro de eventos</CardTitle>
+                <CardDescription>
+                  Traducción operativa de los eventos del periodo. Pasa el
+                  cursor sobre la descripción para ver el detalle técnico.
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEventosAbierto(true)}
+              >
+                <HugeiconsIcon
+                  icon={Search01Icon}
+                  size={14}
+                  strokeWidth={2}
+                  aria-hidden
+                />
+                Vista ampliada
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <PosEventosWorkspace
+                model={analyticsModel}
+                claves={data.claves}
+                instancias={instancias}
+                activeCard={activeCard}
+                onSelectCard={(next) => {
+                  setActiveCard(next);
+                  setSubGrupo(null);
+                }}
+                scope={eventosScope}
+                onScopeChange={setEventosScope}
+                clave={claveFiltro}
+                onClaveChange={setClaveFiltro}
+                nivel={nivelFiltro}
+                onNivelChange={setNivelFiltro}
+                q={textoFiltro}
+                onQChange={setTextoFiltro}
+                subGrupo={subGrupo}
+                onSubGrupoChange={setSubGrupo}
+                loading={loading}
+                fadeFrom="card"
+                maxHeightClass="max-h-[28rem]"
+                onDetalle={abrirDetalle}
+                onVerPedido={(num) => void ejecutarBusquedaPedido(num)}
+              />
+            </CardContent>
+          </Card>
 
           <TerminalesGraficos
             series={data.series}
             claves={data.claves}
             versiones={data.versiones}
             granularity={granularity}
+            selectedClave={claveFiltro === TODAS ? undefined : claveFiltro}
+            onSelectClave={toggleClaveFrecuente}
           />
 
           <TerminalesTable
             terminales={data.terminales}
-            hayEventos={data.kpis.eventos > 0}
+            hayEventos={analyticsModel.items.length > 0 || data.kpis.eventos > 0}
             onVerEventos={verTerminal}
           />
 
@@ -311,12 +441,29 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
         open={eventosAbierto}
         onOpenChange={setEventosAbierto}
         ventana={ventanaDialogo}
+        model={analyticsModel}
+        parcial={data?.fuente.parcial ?? false}
         instancias={instancias}
         claves={data?.claves ?? []}
+        activeCard={activeCard}
+        onSelectCard={(next) => {
+          setActiveCard(next);
+          setSubGrupo(null);
+        }}
+        subGrupo={subGrupo}
+        onSubGrupoChange={setSubGrupo}
         scope={eventosScope}
         onScopeChange={setEventosScope}
-        onAuthFailure={onAuthFailure}
+        clave={claveFiltro}
+        onClaveChange={setClaveFiltro}
+        nivel={nivelFiltro}
+        onNivelChange={setNivelFiltro}
+        q={textoFiltro}
+        onQChange={setTextoFiltro}
+        loading={loading}
+        onActualizar={actualizar}
         onDetalle={abrirDetalle}
+        onVerPedido={(num) => void ejecutarBusquedaPedido(num)}
       />
 
       <EventoDetalleSheet

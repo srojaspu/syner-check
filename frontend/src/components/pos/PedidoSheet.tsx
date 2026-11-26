@@ -16,6 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { fmtFecha } from "./format";
+import { describePosEvent } from "./posCatalog";
 import { PosLevelBadge } from "./PosLevelBadge";
 
 export function PedidoSheet({
@@ -37,7 +38,6 @@ export function PedidoSheet({
     <Sheet
       open={open}
       onOpenChange={(nextOpen, eventDetails) => {
-        // Un clic fuera del panel no debe cerrar la búsqueda del pedido.
         if (eventDetails?.reason === "outside-press") return;
         onOpenChange(nextOpen);
       }}
@@ -76,35 +76,43 @@ export function PedidoSheet({
               </EmptyDescription>
             </Empty>
           ) : (
-            (pedido?.eventos ?? []).map((evento) => (
-              <div
-                key={evento.oid}
-                className="flex flex-col gap-2 rounded-md border p-3"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <PosLevelBadge nivel={evento.nivel} />
-                  <Badge variant="outline">{evento.clave}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {fmtFecha(evento.fecha)}
-                  </span>
+            (pedido?.eventos ?? []).map((evento) => {
+              const desc = describePosEvent(evento);
+              return (
+                <div
+                  key={evento.oid}
+                  className="flex flex-col gap-2 rounded-md border p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PosLevelBadge nivel={evento.nivel} />
+                    <Badge variant="outline">{evento.clave}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {fmtFecha(evento.fecha)}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium leading-snug text-foreground">
+                    {desc.mensajeLegible}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {evento.mensaje}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {evento.instancia}
+                      {evento.serial ? ` · ${evento.serial}` : ""}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onVerDetalle(evento)}
+                    >
+                      Ver detalle
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{evento.mensaje}</p>
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">
-                    {evento.instancia}
-                    {evento.serial ? ` · ${evento.serial}` : ""}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onVerDetalle(evento)}
-                  >
-                    Ver detalle
-                  </Button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </SheetContent>
