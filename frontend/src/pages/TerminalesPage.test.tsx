@@ -422,6 +422,99 @@ describe("TerminalesPage", () => {
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
   });
 
+  it("aplica un rango personalizado y lo conserva al actualizar", async () => {
+    const user = userEvent.setup();
+    render(<TerminalesPage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole("button", { name: "Personalizado" }),
+    );
+    fireEvent.change(screen.getByLabelText("Desde"), {
+      target: { value: "2026-11-24T08:15" },
+    });
+    fireEvent.change(screen.getByLabelText("Hasta"), {
+      target: { value: "2026-11-24T11:45" },
+    });
+    // Editar el borrador no debe consultar: solo se aplica al enviar.
+    expect(mockAnalysis).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Aplicar" }));
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
+    expect(mockAnalysis.mock.calls[1][0]).toMatchObject({
+      desde: "2026-11-24T08:15:00-05:00",
+      hasta: "2026-11-24T11:45:00-05:00",
+    });
+    expect(
+      screen.getByText(/24 nov, 08:15 → 24 nov, 11:45/),
+    ).toBeTruthy();
+
+    const actualizar = screen.getByRole("button", { name: "Actualizar" });
+    await waitFor(() => expect(actualizar.hasAttribute("disabled")).toBe(false));
+    await user.click(actualizar);
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(3));
+    expect(mockAnalysis.mock.calls[2][0]).toMatchObject({
+      desde: "2026-11-24T08:15:00-05:00",
+      hasta: "2026-11-24T11:45:00-05:00",
+    });
+  });
+
+  it("no consulta si el rango personalizado es inválido", async () => {
+    const user = userEvent.setup();
+    render(<TerminalesPage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole("button", { name: "Personalizado" }),
+    );
+    fireEvent.change(screen.getByLabelText("Desde"), {
+      target: { value: "2026-11-24T12:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Hasta"), {
+      target: { value: "2026-11-24T10:00" },
+    });
+    await user.click(screen.getByRole("button", { name: "Aplicar" }));
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "La fecha final debe ser posterior a la inicial.",
+    );
+    expect(screen.getByLabelText("Desde")).toBeTruthy();
+    expect(mockAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it("vuelve al preset y recalcula la ventana", async () => {
+    const user = userEvent.setup();
+    render(<TerminalesPage onAuthFailure={vi.fn()} />);
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole("button", { name: "Personalizado" }),
+    );
+    fireEvent.change(screen.getByLabelText("Desde"), {
+      target: { value: "2026-11-24T08:15" },
+    });
+    fireEvent.change(screen.getByLabelText("Hasta"), {
+      target: { value: "2026-11-24T11:45" },
+    });
+    await user.click(screen.getByRole("button", { name: "Aplicar" }));
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole("button", { name: "7 días" }));
+
+    await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(3));
+    expect(
+      screen.getByRole("button", { name: "7 días" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    const presetArgs = mockAnalysis.mock.calls[2][0];
+    expect(Date.parse(presetArgs.hasta) - Date.parse(presetArgs.desde)).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+  });
+
   it("notifica a la app cuando la sesión expira", async () => {
     const onAuthFailure = vi.fn();
     mockAnalysis.mockRejectedValue(new AuthError());

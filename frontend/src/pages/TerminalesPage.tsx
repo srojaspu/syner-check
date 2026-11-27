@@ -15,13 +15,13 @@ import {
   extractClientLogsFromAnalysis,
   type PosKpiCardId,
 } from "../components/pos/posAnalytics";
-import { formatLimaIso } from "../components/pos/posCatalog";
 import { PosEventosWorkspace } from "../components/pos/PosEventosWorkspace";
+import { RANGO_POR_DEFECTO, type RangoId } from "../components/pos/rangos";
 import {
-  horasDeRango,
-  RANGO_POR_DEFECTO,
-  type RangoId,
-} from "../components/pos/rangos";
+  ventanaDeRango,
+  type SeleccionVentana,
+  type Ventana,
+} from "../components/pos/ventana";
 import { TerminalesGraficos } from "../components/pos/TerminalesGraficos";
 import { TerminalesHeader } from "../components/pos/TerminalesHeader";
 import { TerminalesIndicadores } from "../components/pos/TerminalesIndicadores";
@@ -41,17 +41,13 @@ interface TerminalesPageProps {
   onAuthFailure: () => void;
 }
 
-function calcularVentana(horas: number): { desde: string; hasta: string } {
-  const hasta = new Date();
-  hasta.setSeconds(0, 0); // minuto exacto: comparte caché con otras peticiones
-  const desde = new Date(hasta.getTime() - horas * 3_600_000);
-  return { desde: formatLimaIso(desde), hasta: formatLimaIso(hasta) };
-}
-
 export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
-  const [rango, setRango] = useState<RangoId>(RANGO_POR_DEFECTO);
-  const [ventana, setVentana] = useState(() =>
-    calcularVentana(horasDeRango(RANGO_POR_DEFECTO)),
+  const [seleccion, setSeleccion] = useState<SeleccionVentana>({
+    tipo: "preset",
+    rango: RANGO_POR_DEFECTO,
+  });
+  const [ventana, setVentana] = useState<Ventana>(() =>
+    ventanaDeRango(RANGO_POR_DEFECTO),
   );
 
   const [data, setData] = useState<PosAnalysis | null>(null);
@@ -118,13 +114,32 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
   const granularity: "hour" | "day" =
     (data?.ventana.dias ?? 1) <= 3 ? "hour" : "day";
 
-  function cambiarRango(next: RangoId) {
-    setRango(next);
-    setVentana(calcularVentana(horasDeRango(next)));
+  function aplicarPreset(next: RangoId) {
+    setSeleccion({ tipo: "preset", rango: next });
+    setVentana(ventanaDeRango(next));
+  }
+
+  function aplicarVentanaPersonalizada(desde: string, hasta: string) {
+    // Reaplicar el mismo rango no debe generar otra consulta; para refrescar
+    // existe el botón Actualizar.
+    if (
+      seleccion.tipo === "personalizada" &&
+      ventana.desde === desde &&
+      ventana.hasta === hasta
+    ) {
+      return;
+    }
+    setSeleccion({ tipo: "personalizada" });
+    setVentana({ desde, hasta });
   }
 
   function actualizar() {
-    setVentana(calcularVentana(horasDeRango(rango)));
+    setVentana(
+      seleccion.tipo === "preset"
+        ? ventanaDeRango(seleccion.rango)
+        : // Rango fijo: se reconsulta el mismo tramo, sin mover el fin a "ahora".
+          { ...ventana },
+    );
   }
 
   function limpiarFiltros() {
@@ -175,7 +190,12 @@ export default function TerminalesPage({ onAuthFailure }: TerminalesPageProps) {
         onActualizar={actualizar}
       />
 
-      <TerminalesToolbar rango={rango} onRango={cambiarRango} />
+      <TerminalesToolbar
+        seleccion={seleccion}
+        ventana={ventana}
+        onPreset={aplicarPreset}
+        onPersonalizada={aplicarVentanaPersonalizada}
+      />
 
       {error ? (
         <Alert variant="destructive">
