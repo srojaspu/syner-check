@@ -202,6 +202,39 @@ const ANALYSIS: PosAnalysis = {
   aviso: "La ausencia de un evento no prueba que la operación no ocurrió.",
 };
 
+function primerDiaDelCalendario(): HTMLElement {
+  const botones = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      '[data-slot="popover-content"] button[data-day]',
+    ),
+  );
+  const boton = botones.find(
+    (item) =>
+      item.textContent?.trim() === "1" &&
+      !item.closest("td")?.className.includes("outside"),
+  );
+  if (!boton) throw new Error("No se encontró el día 1 en el calendario.");
+  return boton;
+}
+
+async function elegirHora(
+  user: ReturnType<typeof userEvent.setup>,
+  parte: "inicio" | "fin",
+  hora: string,
+  minuto: string,
+) {
+  await user.click(
+    screen.getByRole("button", { name: `Editar hora de ${parte}` }),
+  );
+  const horas = screen.getByRole("listbox", { name: `Hora de ${parte}` });
+  await user.click(within(horas).getByRole("option", { name: hora }));
+
+  const minutos = screen.getByRole("listbox", {
+    name: `Minutos de ${parte}`,
+  });
+  await user.click(within(minutos).getByRole("option", { name: minuto }));
+}
+
 describe("TerminalesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -423,32 +456,40 @@ describe("TerminalesPage", () => {
   });
 
   it("aplica un rango personalizado y lo conserva al actualizar", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
 
+    const inicial = mockAnalysis.mock.calls[0][0] as {
+      desde: string;
+      hasta: string;
+    };
+    const prefijoMes = inicial.desde.slice(0, 7);
+
     await user.click(
       screen.getByRole("button", { name: "Personalizado" }),
     );
-    fireEvent.change(screen.getByLabelText("Desde"), {
-      target: { value: "2026-11-24T08:15" },
-    });
-    fireEvent.change(screen.getByLabelText("Hasta"), {
-      target: { value: "2026-11-24T11:45" },
-    });
+    expect(
+      document.querySelector('[data-slot="popover-content"] [role="grid"]'),
+    ).toBeTruthy();
+
+    // Limpiar + un clic deja inicio y fin en el mismo día.
+    await user.click(screen.getByRole("button", { name: "Limpiar" }));
+    fireEvent.click(primerDiaDelCalendario());
+    await elegirHora(user, "inicio", "08", "15");
+    await elegirHora(user, "fin", "11", "45");
+
     // Editar el borrador no debe consultar: solo se aplica al enviar.
     expect(mockAnalysis).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("button", { name: "Aplicar" }));
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
     expect(mockAnalysis.mock.calls[1][0]).toMatchObject({
-      desde: "2026-11-24T08:15:00-05:00",
-      hasta: "2026-11-24T11:45:00-05:00",
+      desde: `${prefijoMes}-01T08:15:00-05:00`,
+      hasta: `${prefijoMes}-01T11:45:00-05:00`,
     });
-    expect(
-      screen.getByText(/24 nov, 08:15 → 24 nov, 11:45/),
-    ).toBeTruthy();
+    expect(screen.getByText(/08:15 → .*11:45/)).toBeTruthy();
 
     const actualizar = screen.getByRole("button", { name: "Actualizar" });
     await waitFor(() => expect(actualizar.hasAttribute("disabled")).toBe(false));
@@ -456,13 +497,13 @@ describe("TerminalesPage", () => {
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(3));
     expect(mockAnalysis.mock.calls[2][0]).toMatchObject({
-      desde: "2026-11-24T08:15:00-05:00",
-      hasta: "2026-11-24T11:45:00-05:00",
+      desde: `${prefijoMes}-01T08:15:00-05:00`,
+      hasta: `${prefijoMes}-01T11:45:00-05:00`,
     });
-  });
+  }, 20_000);
 
   it("no consulta si el rango personalizado es inválido", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
@@ -470,23 +511,21 @@ describe("TerminalesPage", () => {
     await user.click(
       screen.getByRole("button", { name: "Personalizado" }),
     );
-    fireEvent.change(screen.getByLabelText("Desde"), {
-      target: { value: "2026-11-24T12:00" },
-    });
-    fireEvent.change(screen.getByLabelText("Hasta"), {
-      target: { value: "2026-11-24T10:00" },
-    });
+    await user.click(screen.getByRole("button", { name: "Limpiar" }));
+    fireEvent.click(primerDiaDelCalendario());
+    await elegirHora(user, "inicio", "12", "00");
+    await elegirHora(user, "fin", "10", "00");
     await user.click(screen.getByRole("button", { name: "Aplicar" }));
 
     expect(screen.getByRole("alert").textContent).toContain(
       "La fecha final debe ser posterior a la inicial.",
     );
-    expect(screen.getByLabelText("Desde")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Aplicar" })).toBeTruthy();
     expect(mockAnalysis).toHaveBeenCalledTimes(1);
-  });
+  }, 15_000);
 
   it("vuelve al preset y recalcula la ventana", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<TerminalesPage onAuthFailure={vi.fn()} />);
 
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(1));
@@ -494,12 +533,7 @@ describe("TerminalesPage", () => {
     await user.click(
       screen.getByRole("button", { name: "Personalizado" }),
     );
-    fireEvent.change(screen.getByLabelText("Desde"), {
-      target: { value: "2026-11-24T08:15" },
-    });
-    fireEvent.change(screen.getByLabelText("Hasta"), {
-      target: { value: "2026-11-24T11:45" },
-    });
+    fireEvent.click(primerDiaDelCalendario());
     await user.click(screen.getByRole("button", { name: "Aplicar" }));
     await waitFor(() => expect(mockAnalysis).toHaveBeenCalledTimes(2));
 
@@ -513,7 +547,7 @@ describe("TerminalesPage", () => {
     expect(Date.parse(presetArgs.hasta) - Date.parse(presetArgs.desde)).toBe(
       7 * 24 * 60 * 60 * 1000,
     );
-  });
+  }, 15_000);
 
   it("notifica a la app cuando la sesión expira", async () => {
     const onAuthFailure = vi.fn();

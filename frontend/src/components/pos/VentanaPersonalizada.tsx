@@ -1,12 +1,19 @@
-import { useState, type FormEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useState,
+  type FormEvent,
+} from "react";
+import { es } from "date-fns/locale";
+import type { DateRange } from "react-day-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
   Calendar03Icon,
 } from "@hugeicons/core-free-icons";
+import { cn } from "cn";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
@@ -15,21 +22,50 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { RuedaHora, type HoraMinuto } from "./RuedaHora";
 import {
-  isoAHoraLocal,
-  resolverVentanaPersonalizada,
+  diaHoraLimaAIso,
+  hoyLima,
+  isoADiaLima,
+  isoAHoraMinutoLima,
+  validarVentana,
 } from "./ventana";
 
-const DESDE_ID = "pos-ventana-desde";
-const HASTA_ID = "pos-ventana-hasta";
 const ERROR_ID = "pos-ventana-error";
 
 /**
- * Selector de ventana personalizada (fecha y hora de inicio y fin).
+ * El calendario no depende de las horas: se memoiza para que mover la rueda
+ * no vuelva a renderizar todo el mes en cada paso.
+ */
+const CalendarioRango = memo(function CalendarioRango({
+  rango,
+  hoy,
+  onSelect,
+}: {
+  rango: DateRange | undefined;
+  hoy: Date;
+  onSelect: (next: DateRange | undefined) => void;
+}) {
+  return (
+    <Calendar
+      mode="range"
+      locale={es}
+      numberOfMonths={1}
+      selected={rango}
+      onSelect={onSelect}
+      defaultMonth={rango?.from ?? hoy}
+      disabled={{ after: hoy }}
+      className="mx-auto"
+    />
+  );
+});
+
+/**
+ * Selector de ventana personalizada.
  *
- * Mantiene un borrador local: mientras el usuario edita no se consulta nada.
- * Solo al enviar el formulario se valida y se entrega la ventana en ISO con
- * offset de Perú. El popover se cierra sin aplicar con Cancelar o Escape.
+ * Calendario a la izquierda para el rango de días y rueda estilo iOS a la
+ * derecha para la hora. El segmento Inicio/Fin decide qué extremo edita la
+ * rueda. El borrador solo se aplica al enviar el formulario.
  */
 export function VentanaPersonalizada({
   activa,
@@ -43,47 +79,82 @@ export function VentanaPersonalizada({
   onAplicar: (desde: string, hasta: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [borradorDesde, setBorradorDesde] = useState("");
-  const [borradorHasta, setBorradorHasta] = useState("");
+  const [rango, setRango] = useState<DateRange | undefined>(undefined);
+  const [extremo, setExtremo] = useState<"inicio" | "fin">("inicio");
+  const [inicio, setInicio] = useState<HoraMinuto>({ hora: "00", minuto: "00" });
+  const [fin, setFin] = useState<HoraMinuto>({ hora: "23", minuto: "59" });
   const [error, setError] = useState<string | null>(null);
+  const [hoy, setHoy] = useState(() => hoyLima());
+
+  const cambiarRango = useCallback((next: DateRange | undefined) => {
+    setRango(next);
+    setError(null);
+  }, []);
 
   function cambiarOpen(next: boolean) {
     if (next) {
-      setBorradorDesde(isoAHoraLocal(desde));
-      setBorradorHasta(isoAHoraLocal(hasta));
+      setHoy(hoyLima());
+      setRango({
+        from: isoADiaLima(desde) ?? undefined,
+        to: isoADiaLima(hasta) ?? undefined,
+      });
+      const horaInicio = isoAHoraMinutoLima(desde);
+      const horaFin = isoAHoraMinutoLima(hasta);
+      if (horaInicio) setInicio(horaInicio);
+      if (horaFin) setFin(horaFin);
+      setExtremo("inicio");
       setError(null);
     }
     setOpen(next);
   }
 
-  function cambiarBorrador(
-    setter: (valor: string) => void,
-    valor: string,
-  ) {
-    setter(valor);
+  function limpiar() {
+    setRango(undefined);
+    setError(null);
+  }
+
+  function cambiarHora(next: HoraMinuto) {
+    if (extremo === "inicio") setInicio(next);
+    else setFin(next);
     setError(null);
   }
 
   function usarAhora() {
-    cambiarBorrador(
-      setBorradorHasta,
-      isoAHoraLocal(new Date().toISOString()),
-    );
+    const ahora = isoAHoraMinutoLima(new Date().toISOString());
+    const dia = hoyLima();
+    setRango((previo) => ({ from: previo?.from ?? dia, to: dia }));
+    if (ahora) setFin(ahora);
+    setExtremo("fin");
+    setError(null);
   }
 
   function enviar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const resultado = resolverVentanaPersonalizada(
-      borradorDesde,
-      borradorHasta,
-    );
+    if (!rango?.from) {
+      setError("Elige el día de inicio en el calendario.");
+      return;
+    }
+
+    // Con un solo clic en el calendario, inicio y fin comparten el mismo día.
+    const diaFin = rango.to ?? rango.from;
+    const desdeIso = diaHoraLimaAIso(rango.from, inicio.hora, inicio.minuto);
+    const hastaIso = diaHoraLimaAIso(diaFin, fin.hora, fin.minuto);
+    if (!desdeIso || !hastaIso) {
+      setError("Usa una fecha y hora válidas.");
+      return;
+    }
+
+    const resultado = validarVentana(desdeIso, hastaIso);
     if (!resultado.ok) {
       setError(resultado.error);
       return;
     }
+
     onAplicar(resultado.ventana.desde, resultado.ventana.hasta);
     setOpen(false);
   }
+
+  const horaActiva = extremo === "inicio" ? inicio : fin;
 
   return (
     <Popover open={open} onOpenChange={cambiarOpen}>
@@ -114,58 +185,94 @@ export function VentanaPersonalizada({
 
       <PopoverContent
         align="start"
-        className="w-[min(22rem,calc(100vw-1.5rem))] gap-3"
+        className="max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-1.5rem))] gap-3 overflow-y-auto"
       >
-        <PopoverHeader>
-          <PopoverTitle>Rango personalizado</PopoverTitle>
-          <PopoverDescription>
-            Fecha y hora de Perú (GMT-5). Máximo 31 días.
-          </PopoverDescription>
-        </PopoverHeader>
+        <div className="flex items-start justify-between gap-2">
+          <PopoverHeader>
+            <PopoverTitle>Rango personalizado</PopoverTitle>
+            <PopoverDescription>
+              Fecha y hora de Perú (GMT-5). Máximo 31 días.
+            </PopoverDescription>
+          </PopoverHeader>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-auto shrink-0 px-1.5 text-xs"
+            onClick={limpiar}
+          >
+            Limpiar
+          </Button>
+        </div>
 
         <form className="flex flex-col gap-3" onSubmit={enviar} noValidate>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={DESDE_ID}>Desde</Label>
-            <Input
-              id={DESDE_ID}
-              type="datetime-local"
-              step={60}
-              value={borradorDesde}
-              max={borradorHasta || undefined}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? ERROR_ID : undefined}
-              autoFocus
-              onChange={(event) =>
-                cambiarBorrador(setBorradorDesde, event.target.value)
-              }
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor={HASTA_ID}>Hasta</Label>
-              <Button
-                type="button"
-                variant="link"
-                size="xs"
-                className="h-auto px-0 text-xs"
-                onClick={usarAhora}
-              >
-                Ahora
-              </Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+            <div className="shrink-0 rounded-2xl border border-border/60">
+              <CalendarioRango
+                rango={rango}
+                hoy={hoy}
+                onSelect={cambiarRango}
+              />
             </div>
-            <Input
-              id={HASTA_ID}
-              type="datetime-local"
-              step={60}
-              value={borradorHasta}
-              min={borradorDesde || undefined}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? ERROR_ID : undefined}
-              onChange={(event) =>
-                cambiarBorrador(setBorradorHasta, event.target.value)
-              }
-            />
+
+            <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 rounded-2xl border border-border/60 p-3">
+              <div
+                role="group"
+                aria-label="Extremo a editar"
+                className="grid grid-cols-2 gap-0.5 rounded-full bg-muted p-0.5"
+              >
+                {([
+                  { lado: "inicio" as const, texto: "Inicio", valor: inicio },
+                  { lado: "fin" as const, texto: "Fin", valor: fin },
+                ]).map(({ lado, texto, valor }) => {
+                  const activo = extremo === lado;
+                  return (
+                    <button
+                      key={lado}
+                      type="button"
+                      aria-label={`Editar hora de ${lado}`}
+                      aria-pressed={activo}
+                      onClick={() => {
+                        setExtremo(lado);
+                        setError(null);
+                      }}
+                      className={cn(
+                        "flex items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-xs transition-colors",
+                        activo
+                          ? "bg-background font-medium text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span>{texto}</span>
+                      <span className="font-mono tabular-nums">
+                        {valor.hora}:{valor.minuto}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <RuedaHora
+                etiqueta={extremo}
+                valor={horaActiva}
+                onChange={cambiarHora}
+              />
+
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="text-[11px] text-muted-foreground">
+                  Hora de Perú
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-auto px-0 text-xs"
+                  onClick={usarAhora}
+                >
+                  Ahora
+                </Button>
+              </div>
+            </div>
           </div>
 
           {error ? (

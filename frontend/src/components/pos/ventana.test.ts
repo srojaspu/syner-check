@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  diaHoraLimaAIso,
   duracionLegible,
   etiquetaVentana,
   horaLocalAIso,
+  isoADiaLima,
   isoAHoraLocal,
+  isoAHoraMinutoLima,
   resolverVentanaPersonalizada,
+  validarVentana,
   ventanaDeRango,
 } from "./ventana";
 
@@ -115,6 +119,43 @@ describe("ventana de logs POS", () => {
         "2026-11-26T03:00:00-05:00",
       ),
     ).toBe("8 d 3 h");
+  });
+
+  it("lleva el instante ISO al día de calendario de Perú", () => {
+    // 03:30 UTC del 25 es 22:30 del 24 en Lima: el calendario debe mostrar 24.
+    const dia = isoADiaLima("2026-11-25T03:30:00Z");
+
+    expect(dia).not.toBeNull();
+    expect(dia?.getFullYear()).toBe(2026);
+    expect(dia?.getMonth()).toBe(10);
+    expect(dia?.getDate()).toBe(24);
+  });
+
+  it("extrae la hora y el minuto de Perú", () => {
+    expect(isoAHoraMinutoLima("2026-11-24T08:15:00-05:00")).toEqual({
+      hora: "08",
+      minuto: "15",
+    });
+    expect(isoAHoraMinutoLima("no-es-fecha")).toBeNull();
+  });
+
+  it("compone día de calendario y hora en ISO con offset", () => {
+    expect(diaHoraLimaAIso(new Date(2026, 10, 24), "08", "15")).toBe(
+      "2026-11-24T08:15:00-05:00",
+    );
+    expect(diaHoraLimaAIso(new Date(2026, 10, 24), "8", "15")).toBeNull();
+  });
+
+  it("valida extremos ya serializados en ISO", () => {
+    expect(
+      validarVentana(
+        "2026-11-24T08:15:00-05:00",
+        "2026-11-24T11:45:00-05:00",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      validarVentana("invalida", "2026-11-24T11:45:00-05:00"),
+    ).toMatchObject({ ok: false });
   });
 
   it("etiqueta el rango en hora de Perú e incluye el año si cruza", () => {

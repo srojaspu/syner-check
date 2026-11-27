@@ -80,6 +80,28 @@ export function horaLocalAIso(valor: string): string | null {
   return iso;
 }
 
+/** Valida dos extremos ya serializados en ISO con offset. */
+export function validarVentana(
+  desde: string,
+  hasta: string,
+): ResultadoVentana {
+  const inicio = Date.parse(desde);
+  const fin = Date.parse(hasta);
+  if (Number.isNaN(inicio) || Number.isNaN(fin)) {
+    return { ok: false, error: "Usa una fecha y hora válidas." };
+  }
+  if (fin <= inicio) {
+    return { ok: false, error: "La fecha final debe ser posterior a la inicial." };
+  }
+  if (fin - inicio > MAX_VENTANA_DIAS * DIA_MS) {
+    return {
+      ok: false,
+      error: `El rango no puede superar ${MAX_VENTANA_DIAS} días.`,
+    };
+  }
+  return { ok: true, ventana: { desde, hasta } };
+}
+
 export function resolverVentanaPersonalizada(
   desdeLocal: string,
   hastaLocal: string,
@@ -93,19 +115,45 @@ export function resolverVentanaPersonalizada(
   if (!desde || !hasta) {
     return { ok: false, error: "Usa una fecha y hora válidas." };
   }
+  return validarVentana(desde, hasta);
+}
 
-  const inicio = Date.parse(desde);
-  const fin = Date.parse(hasta);
-  if (fin <= inicio) {
-    return { ok: false, error: "La fecha final debe ser posterior a la inicial." };
-  }
-  if (fin - inicio > MAX_VENTANA_DIAS * DIA_MS) {
-    return {
-      ok: false,
-      error: `El rango no puede superar ${MAX_VENTANA_DIAS} días.`,
-    };
-  }
-  return { ok: true, ventana: { desde, hasta } };
+/**
+ * Día del calendario (medianoche local del navegador) correspondiente a un
+ * instante ISO. Se construye con los componentes de fecha de Lima para que el
+ * calendario muestre el día correcto aunque el navegador esté en otra zona.
+ */
+export function isoADiaLima(iso: string): Date | null {
+  const local = isoAHoraLocal(iso);
+  if (!local) return null;
+  const [anio, mes, dia] = local.slice(0, 10).split("-").map(Number);
+  return new Date(anio, mes - 1, dia);
+}
+
+/** Día actual de Perú como fecha de calendario (medianoche local). */
+export function hoyLima(ahora: Date = new Date()): Date {
+  return isoADiaLima(ahora.toISOString()) ?? new Date();
+}
+
+export function isoAHoraMinutoLima(
+  iso: string,
+): { hora: string; minuto: string } | null {
+  const local = isoAHoraLocal(iso);
+  if (!local) return null;
+  return { hora: local.slice(11, 13), minuto: local.slice(14, 16) };
+}
+
+/** Compone un día del calendario y una hora de Perú en ISO con offset. */
+export function diaHoraLimaAIso(
+  dia: Date,
+  hora: string,
+  minuto: string,
+): string | null {
+  if (!/^\d{2}$/.test(hora) || !/^\d{2}$/.test(minuto)) return null;
+  const anio = dia.getFullYear();
+  const mes = String(dia.getMonth() + 1).padStart(2, "0");
+  const numeroDia = String(dia.getDate()).padStart(2, "0");
+  return horaLocalAIso(`${anio}-${mes}-${numeroDia}T${hora}:${minuto}`);
 }
 
 /** Duración compacta para el resumen: `45 min`, `6 h 30 min`, `8 d 3 h`. */
